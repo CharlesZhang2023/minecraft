@@ -13,6 +13,7 @@ import { aabbIntersects } from '../math';
 import { Random } from '../noise';
 import { GameMode } from './player';
 import { findFrameAt, frameBlocks } from './portal';
+import { level } from './enchant';
 
 export interface Breaking { x: number; y: number; z: number; progress: number; face: number; sound: number }
 
@@ -85,6 +86,8 @@ export class Interaction {
       else if (t.type === 'shears' && def.sound === 'cloth') speed = 5;
       else if (t.type === 'hoe' && isLeaves(blockId)) speed = t.speed;
     }
+    const eff = level(held, 'efficiency');
+    if (eff > 0 && speed > 1) speed += eff * eff + 1;
     const eyeId = this.world.getId(Math.floor(p.x), Math.floor(p.y + p.eyeHeight()), Math.floor(p.z));
     if (eyeId === B.WATER) speed /= 5;
     if (!p.onGround && !p.flying) speed /= 5;
@@ -148,6 +151,9 @@ export class Interaction {
     this.removeBlockAndPartner(x, y, z, v);
     if (!p.creative) {
       const drops = blockDrops(id, metaOf(v), tool, this.rng);
+      const fortune = level(held, 'fortune');
+      if (fortune && [B.COAL_ORE, B.DIAMOND_ORE, B.EMERALD_ORE, B.LAPIS_ORE, B.REDSTONE_ORE, B.NETHER_QUARTZ_ORE].includes(id))
+        for (const d of drops) d.count *= Math.max(0, this.rng.int(fortune + 2) - 1) + 1;
       for (const d of drops) g.dropItem(x + 0.5, y + 0.5, z + 0.5, d);
       this.dropTileContents(x, y, z, v);
       // xp from ores
@@ -226,6 +232,8 @@ export class Interaction {
     if (!s) return;
     const d = getItem(s.id);
     if (!d.durability) return;
+    const ub = level(s, 'unbreaking');
+    if (ub && this.rng.int(ub + 1) > 0) return;
     s.damage = (s.damage ?? 0) + n;
     if (s.damage >= d.durability) {
       p.inventory.setHeld(null);
@@ -309,6 +317,7 @@ export class Interaction {
     const meta = metaOf(v);
     switch (id) {
       case B.CRAFTING_TABLE: g.ui.openCrafting(); return true;
+      case B.ENCHANTING_TABLE: g.ui.openEnchant(t.x, t.y, t.z); return true;
       case B.LEVER: g.redstone.toggleLever(t.x, t.y, t.z); return true;
       case B.STONE_BUTTON: g.redstone.pressButton(t.x, t.y, t.z); return true;
       case B.FURNACE: case B.LIT_FURNACE: g.ui.openFurnace(t.x, t.y, t.z); return true;
@@ -545,13 +554,20 @@ export class Interaction {
     f = (f * f + f * 2) / 3;
     if (f < 0.1) return;
     if (f > 1) f = 1;
-    if (!p.creative && !p.inventory.remove(I.ARROW, 1)) return;
+    const bowStack = p.inventory.held();
+    const infinity = level(bowStack, 'infinity') > 0;
+    if (!p.creative && !infinity && !p.inventory.remove(I.ARROW, 1)) return;
+    if (infinity && !p.creative && p.inventory.count(I.ARROW) < 1) return;
     const a = new Arrow(this.world, g, p);
+    const pw = level(bowStack, 'power');
+    if (pw) a.damageBase += pw * 0.5 + 0.5;
+    if (level(bowStack, 'flame')) a.fireTicks = 100;
+    (a as unknown as { punch: number }).punch = level(bowStack, 'punch');
     const eye = g.eyePos(1);
     const d = g.lookVec(p.yaw, p.pitch);
     a.setPos(eye.x, eye.y - 0.1, eye.z);
     a.shoot(d.x, d.y, d.z, f * 3, 1);
-    a.pickup = !p.creative;
+    a.pickup = !p.creative && !infinity;
     if (f >= 1) (a as unknown as { crit: boolean }).crit = true;
     g.addEntity(a);
     g.audio.play('bow', p, 1, 1 / (this.rng.next() * 0.4 + 1.2) + f * 0.5);
@@ -687,12 +703,16 @@ export class Interaction {
     if (p.spectator || !(e instanceof LivingEntity)) return;
     const held = p.inventory.held();
     const item = held ? getItem(held.id) : undefined;
-    let dmg = item?.attack ?? 1;
+    let dmg = (item?.attack ?? 1) + level(held, 'sharpness') * 1.25;
     const crit = p.fallDistance > 0 && !p.onGround && !p.onLadder && !p.inWater && p.vy < 0;
     if (crit) dmg *= 1.5;
     const hit = e.damage(dmg, 'player', p);
     if (hit) {
       if (crit) g.particles!.crit(e.x, e.y + e.height * 0.6, e.z);
+      const kb = level(held, 'knockback'), fa = level(held, 'fire_aspect');
+      if (kb) { const r = (p.yaw * Math.PI) / 180; e.vx -= Math.sin(r) * 0.5 * kb; e.vz += Math.cos(r) * 0.5 * kb; e.vy += 0.1; }
+      if (fa) e.fireTicks = Math.max(e.fireTicks, 80 * fa);
+      if (held?.ench) for (let k = 0; k < 6; k++) g.particles!.spell(e.x + (Math.random() - 0.5), e.y + e.height * 0.6, e.z + (Math.random() - 0.5), 0x8040ff);
       if (p.sprinting) {
         const r = (p.yaw * Math.PI) / 180;
         e.vx -= Math.sin(r) * 0.5;
@@ -719,8 +739,10 @@ export class Interaction {
         if ((a as unknown as { crit?: boolean }).crit) dmg += this.rng.int(Math.floor(dmg / 2) + 2);
         if (e.damage(dmg, 'arrow', a.shooter ?? a)) {
           const h = Math.hypot(a.vx, a.vz) || 1;
-          e.vx += (a.vx / h) * 0.6 * 0.6;
-          e.vz += (a.vz / h) * 0.6 * 0.6;
+          const punch = (a as unknown as { punch?: number }).punch ?? 0;
+          e.vx += (a.vx / h) * 0.6 * (0.6 + punch * 0.6);
+          e.vz += (a.vz / h) * 0.6 * (0.6 + punch * 0.6);
+          if (a.fireTicks > 0) e.fireTicks = Math.max(e.fireTicks, 100);
           e.vy += 0.1;
           g.audio.play('arrowHit', a, 1, 1.2);
           a.removed = true;

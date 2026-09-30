@@ -7,6 +7,7 @@ import { craft, SMELTING } from '../game/recipes';
 import { addToSlots } from '../game/inventory';
 import { BLOCKS, Render, B, isLeaves, isSapling, isStairs, isSlab } from '../world/blocks';
 import { COOK_TIME, FurnaceTile } from '../game/furnace';
+import { enchName } from '../game/enchant';
 
 interface Slot {
   x: number; y: number;
@@ -170,7 +171,7 @@ export abstract class ContainerScreen extends Screen {
       const have = cur ? cur.count : 0;
       const k = Math.min(per, max - have, left);
       if (k <= 0) continue;
-      s.set({ id: d.start.id, count: have + k, damage: d.start.damage });
+      s.set({ id: d.start.id, count: have + k, damage: d.start.damage, ...(d.start.ench ? { ench: d.start.ench } : {}) });
       left -= k;
     }
     this.cursor = left > 0 ? { ...d.start, count: left } : null;
@@ -305,7 +306,7 @@ export abstract class ContainerScreen extends Screen {
     for (const t of targets) {
       if (!t.get()) {
         const k = Math.min(Math.min(max, t.limit ?? 64), left);
-        t.set({ id: st.id, count: k, damage: st.damage });
+        t.set({ id: st.id, count: k, damage: st.damage, ...(st.ench ? { ench: st.ench } : {}) });
         left -= k;
         if (!left) return 0;
       }
@@ -378,7 +379,8 @@ export abstract class ContainerScreen extends Screen {
 
 export function tooltipLines(s: ItemStack): string[] {
   const d = getItem(s.id);
-  const lines = [(d.rarity === 'rare' ? '§b' : '') + d.display];
+  const lines = [(s.ench ? '§b' : d.rarity === 'rare' ? '§b' : '') + d.display];
+  if (s.ench) for (const [k, v] of Object.entries(s.ench)) lines.push('§7' + enchName(k, v));
   if (d.tool?.type === 'sword' || d.attack) lines.push('', `§9+${d.attack ?? 1} Attack Damage`);
   if (d.armor) lines.push('', `§9+${d.armor.points} Armor`);
   if (d.durability && s.damage) lines.push(`Durability: ${d.durability - s.damage} / ${d.durability}`);

@@ -8,6 +8,7 @@ import { ItemStack } from '../game/items';
 import * as Menus from './menus';
 import * as Containers from './containers';
 import { TradeScreen } from './trade';
+import { EnchantScreen } from './enchant';
 import type { Villager } from '../entity/mobs';
 
 export class UI {
@@ -96,6 +97,7 @@ export class UI {
   }
   openDeath(msg: string) { this.open(new Menus.DeathScreen(this, msg)); }
   openTrade(v: Villager) { this.open(new TradeScreen(this, v)); }
+  openEnchant(x: number, y: number, z: number) { this.open(new EnchantScreen(this, x, y, z)); }
   openSleep() { this.open(new Menus.SleepScreen(this)); }
 
   private keyDown(e: KeyboardEvent): boolean {
@@ -163,8 +165,28 @@ export class UI {
   }
 
   /** Draw an item icon with count / durability overlays at GUI position. */
+  private glintCanvas = document.createElement('canvas');
+  private glinted(icon: HTMLCanvasElement): HTMLCanvasElement {
+    const c = this.glintCanvas;
+    if (c.width !== icon.width) { c.width = icon.width; c.height = icon.height; }
+    const g = c.getContext('2d')!;
+    g.globalCompositeOperation = 'source-over';
+    g.clearRect(0, 0, c.width, c.height);
+    g.drawImage(icon, 0, 0);
+    g.globalCompositeOperation = 'source-atop';
+    const t = (performance.now() / 3000) % 1;
+    const grad = g.createLinearGradient(-c.width + t * c.width * 3, 0, t * c.width * 3, c.height);
+    grad.addColorStop(0, 'rgba(128,64,255,0.15)');
+    grad.addColorStop(0.5, 'rgba(190,120,255,0.55)');
+    grad.addColorStop(1, 'rgba(128,64,255,0.15)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, c.width, c.height);
+    return c;
+  }
+
   drawItem(ctx: Ctx, s: ItemStack, x: number, y: number, pop = 0) {
-    const icon = this.game.icons.get(s.id);
+    let icon = this.game.icons.get(s.id);
+    if (s.ench) icon = this.glinted(icon);
     if (pop > 0) {
       const f = 1 + pop / 5;
       ctx.save();

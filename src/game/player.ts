@@ -191,6 +191,17 @@ export class Player extends LivingEntity {
     if (this.difficulty === 0 && (source === 'mob')) return false;
     if (source === 'mob' && this.difficulty === 1) amount = Math.min(amount / 2 + 1, amount);
     if (source === 'mob' && this.difficulty === 3) amount *= 1.5;
+    // enchantment protection (EPF, capped at 20 -> 80%)
+    if (source !== 'void' && source !== 'kill' && source !== 'starve') {
+      let epf = 0;
+      for (const a of this.inventory.armor) {
+        const pr = a?.ench?.protection ?? 0;
+        if (pr) epf += Math.floor(((6 + pr * pr) * 0.75) / 3);
+        const ff = a?.ench?.feather_falling ?? 0;
+        if (ff && source === 'fall') epf += Math.floor(((6 + ff * ff) * 2.5) / 3);
+      }
+      if (epf) amount *= 1 - Math.min(20, epf) / 25;
+    }
     const before = this.health;
     const r = super.damage(amount, source, attacker);
     if (r) {

@@ -181,10 +181,11 @@ export interface ItemStack {
   id: number;
   count: number;
   damage?: number; // durability used
+  ench?: Record<string, number>;
 }
 export const stack = (id: number, count = 1, damage = 0): ItemStack => ({ id, count, damage });
-export const cloneStack = (s: ItemStack | null): ItemStack | null => (s ? { id: s.id, count: s.count, damage: s.damage ?? 0 } : null);
-export const sameItem = (a: ItemStack | null, b: ItemStack | null) => !!a && !!b && a.id === b.id && (a.damage ?? 0) === (b.damage ?? 0);
+export const cloneStack = (s: ItemStack | null): ItemStack | null => (s ? { id: s.id, count: s.count, damage: s.damage ?? 0, ...(s.ench ? { ench: { ...s.ench } } : {}) } : null);
+export const sameItem = (a: ItemStack | null, b: ItemStack | null) => !!a && !!b && a.id === b.id && (a.damage ?? 0) === (b.damage ?? 0) && JSON.stringify(a.ench ?? null) === JSON.stringify(b.ench ?? null);
 export const maxStack = (s: ItemStack) => getItem(s.id).maxStack;
 
 // ------------------------------------------------------------------ block drops

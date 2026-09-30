@@ -163,6 +163,8 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
       if (at === 0) return [box(5, 0, 6, 11, pressed ? 1 : 2, 10, T.stone)];
       return [rotY(box(5, 6, 0, 11, 10, pressed ? 1 : 2, T.stone), (at - 1) & 3)];
     }
+    case B.ENCHANTING_TABLE:
+      return [box(0, 0, 0, 16, 12, 16, [f[0], f[1], f[2], f[3], f[4], f[5]])];
     case B.STONE_PRESSURE_PLATE:
       return [box(1, 0, 1, 15, meta ? 0.5 : 1, 15, T.stone)];
     case B.LILY_PAD:

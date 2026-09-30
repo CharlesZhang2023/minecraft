@@ -91,6 +91,7 @@ S(['##'], { '#': B.STONE }, B.STONE_PRESSURE_PLATE);
 S([' R ', 'RGR', ' R '], { R: I.REDSTONE, G: B.GLOWSTONE }, B.REDSTONE_LAMP);
 S(['###', '###', '###'], { '#': I.REDSTONE }, B.REDSTONE_BLOCK);
 L([B.REDSTONE_BLOCK], I.REDSTONE, 9);
+S([' B ', 'DOD', 'OOO'], { B: I.BOOK, D: I.DIAMOND, O: B.OBSIDIAN }, B.ENCHANTING_TABLE);
 S([' # ', '#R#', ' # '], { '#': I.IRON_INGOT, R: I.REDSTONE }, I.COMPASS);
 S([' # ', '#R#', ' # '], { '#': I.GOLD_INGOT, R: I.REDSTONE }, I.CLOCK);
 S(['###', 'XXX'], { '#': [WOOL_COLORS[0], ...WOOL_COLORS], X: PLANKS }, I.RED_BED);

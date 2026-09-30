@@ -1181,6 +1181,19 @@ gens.redstone_lamp_on = (r) => {
   for (let i = 0; i < S; i++) { set(img, i, 0, hex('#6a4020')); set(img, 0, i, hex('#6a4020')); set(img, i, 15, hex('#6a4020')); set(img, 15, i, hex('#6a4020')); }
   return img;
 };
+gens.enchanting_table_top = (r) => {
+  const img = gens.obsidian(new Random(3));
+  for (let i = 0; i < S; i++) { set(img, i, 0, hex('#8a1a1a')); set(img, 0, i, hex('#8a1a1a')); set(img, i, 15, hex('#5a0a0a')); set(img, 15, i, hex('#5a0a0a')); }
+  for (let y = 3; y < 13; y++) for (let x = 2; x < 14; x++) set(img, x, y, (x === 7 || x === 8) ? hex('#6b4a2a') : r.int(4) ? hex('#b02a2a') : hex('#d04040'));
+  for (const [x, y] of [[4, 5], [5, 7], [10, 6], [11, 9]]) set(img, x, y, hex('#46d4d0'));
+  return img;
+};
+gens.enchanting_table_side = (r) => {
+  const img = gens.obsidian(new Random(4));
+  for (let x = 0; x < S; x++) for (let y = 0; y < 4; y++) set(img, x, y, y === 0 ? hex('#5a0a0a') : r.int(3) ? hex('#b02a2a') : hex('#8a1a1a'));
+  for (const [x, y] of [[3, 8], [8, 10], [12, 7]]) { set(img, x, y, hex('#46d4d0')); set(img, x + 1, y, hex('#2a9a98')); }
+  return img;
+};
 gens.redstone_block = metalBlock(['#6a0a04', '#a8140a', '#b81c10', '#d02818', '#ff5040']);
 
 // ---------------------------------------------------------------- particles

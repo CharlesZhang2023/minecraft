@@ -267,6 +267,7 @@ export const B = {
   REDSTONE_LAMP: reg('redstone_lamp', 'Redstone Lamp', { hardness: 0.3, sound: 'glass' }),
   LIT_REDSTONE_LAMP: reg('lit_redstone_lamp', 'Redstone Lamp', { tex: 'redstone_lamp_on', hardness: 0.3, sound: 'glass', light: 15, item: false, drop: 'redstone_lamp' }),
   REDSTONE_BLOCK: reg('redstone_block', 'Block of Redstone', { hardness: 5, tool: 'pickaxe', harvestLevel: 0, sound: 'metal' }),
+  ENCHANTING_TABLE: reg('enchanting_table', 'Enchanting Table', { render: Render.Model, top: 'enchanting_table_top', bottom: 'obsidian', side: 'enchanting_table_side', hardness: 5, tool: 'pickaxe', harvestLevel: 0, opaque: false, lightOpacity: 0, light: 7, blastResistance: 6000 }),
 } as const;
 
 export const BLOCK_COUNT = BLOCKS.length;
