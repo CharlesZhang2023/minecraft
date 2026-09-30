@@ -1135,6 +1135,54 @@ function portalFrame(frame: number): Img {
 }
 gens.nether_portal = () => portalFrame(0);
 
+// ---------------------------------------------------------------- redstone
+gens.redstone_dust_dot = () => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const d = Math.hypot(x - 7.5, y - 7.5);
+    if (d < 3.2 || (d < 4.5 && (x + y) % 3 === 0)) set(img, x, y, d < 2 ? [255, 255, 255] : [200, 200, 200]);
+  }
+  return img;
+};
+gens.redstone_dust_line = (r) => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 6; x < 10; x++) if (x === 7 || x === 8 || r.int(3) === 0) set(img, x, y, x === 7 || x === 8 ? [255, 255, 255] : [190, 190, 190]);
+  return img;
+};
+gens.lever = () => { const img = newImg(); for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) set(img, x, y, x < 8 ? hex('#8a6b3c') : hex('#6b5130')); return img; };
+function rsTorch(on: boolean): Gen {
+  return () => { const img = newImg(); art(img, [
+    '', '', '', '', '', '',
+    '.......rR.......',
+    '.......RW.......',
+    '.......rr.......',
+    '.......sS.......',
+    '.......sS.......',
+    '.......sS.......',
+    '.......sS.......',
+    '.......sS.......',
+    '.......sS.......',
+    '.......sS.......',
+  ], on ? { r: G('#d80000'), R: G('#ff3a2a'), W: G('#ffb0a0'), s: G('#8a6b3c'), S: G('#6b5130') } : { r: G('#4a0a0a'), R: G('#6a1414'), W: G('#7a2a2a'), s: G('#8a6b3c'), S: G('#6b5130') }); return img; };
+}
+gens.redstone_torch = rsTorch(true);
+gens.redstone_torch_off = rsTorch(false);
+gens.redstone_lamp = (r) => {
+  const img = newImg();
+  const { edge } = voronoi(r, 8);
+  for (let i = 0; i < S * S; i++) set(img, i % S, (i / S) | 0, edge[i] < 0.8 ? hex('#3a2418') : hex(['#6e4a2e', '#7a5434', '#5e3e26'][i % 3]));
+  for (let i = 0; i < S; i++) { set(img, i, 0, hex('#2a1a10')); set(img, 0, i, hex('#2a1a10')); set(img, i, 15, hex('#2a1a10')); set(img, 15, i, hex('#2a1a10')); }
+  return img;
+};
+gens.redstone_lamp_on = (r) => {
+  const img = newImg();
+  const { edge } = voronoi(r, 8);
+  for (let i = 0; i < S * S; i++) set(img, i % S, (i / S) | 0, edge[i] < 0.8 ? hex('#8a5a2a') : hex(['#ffd58a', '#ffe8b0', '#f8c070'][i % 3]));
+  for (let i = 0; i < S; i++) { set(img, i, 0, hex('#6a4020')); set(img, 0, i, hex('#6a4020')); set(img, i, 15, hex('#6a4020')); set(img, 15, i, hex('#6a4020')); }
+  return img;
+};
+gens.redstone_block = metalBlock(['#6a0a04', '#a8140a', '#b81c10', '#d02818', '#ff5040']);
+
 // ---------------------------------------------------------------- particles
 for (let i = 0; i < 8; i++) {
   gens['particle_smoke_' + i] = () => {

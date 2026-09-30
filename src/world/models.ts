@@ -35,6 +35,21 @@ function rotY(b: Box, facing: number): Box {
   return { ...b, x0, x1, z0, z1, tex: out, skip: ns, rot: [0, 0, facing, facing, 0, 0] };
 }
 
+/** Which horizontal sides (N,E,S,W) a redstone wire connects to (including up/down steps). */
+export function wireConnections(nb: Neighbor): boolean[] {
+  const comp = (v: number) => {
+    const id = idOf(v);
+    return id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH || id === B.REDSTONE_BLOCK;
+  };
+  const aboveOpaque = OPAQUE[idOf(nb(0, 1, 0))] === 1;
+  return HORIZ.map(([dx, dz]) => {
+    if (comp(nb(dx, 0, dz))) return true;
+    if (!aboveOpaque && idOf(nb(dx, 1, dz)) === B.REDSTONE_WIRE) return true;
+    if (OPAQUE[idOf(nb(dx, 0, dz))] !== 1 && idOf(nb(dx, -1, dz)) === B.REDSTONE_WIRE) return true;
+    return false;
+  });
+}
+
 const connectsFence = (v: number) => {
   const id = idOf(v);
   return id === B.OAK_FENCE || (OPAQUE[id] === 1);
@@ -124,6 +139,32 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
       return [box(0, 0, 0, 16, 14, 16, f[0])];
     case B.NETHER_PORTAL:
       return meta & 1 ? [box(6, 0, 0, 10, 16, 16, T.portal, { cullSame: true })] : [box(0, 0, 6, 16, 16, 10, T.portal, { cullSame: true })];
+    case B.REDSTONE_WIRE: {
+      const h = 0.25;
+      const out: Box[] = [box(0, 0, 0, 16, h, 16, T.dustDot, { skip: 0b110011 })];
+      if (nb) {
+        const conn = wireConnections(nb);
+        const arms: [number, number, number, number, number][] = [[0, 0, 16, 8, 0], [8, 0, 16, 16, 1], [0, 8, 16, 16, 0], [0, 0, 8, 16, 1]];
+        HORIZ.forEach((_, i) => {
+          if (!conn[i]) return;
+          const [ax0, az0, ax1, az1, r] = [arms[i][0], arms[i][1], arms[i][2], arms[i][3], arms[i][4]];
+          out.push(box(ax0, 0.01, az0, ax1, h + 0.01, az1, T.dustLine, { skip: 0b110111, rot: [0, 0, 0, r, 0, 0] }));
+        });
+      }
+      return out;
+    }
+    case B.LEVER: {
+      const on = (meta & 8) !== 0, at = meta & 7;
+      if (at === 0) return [box(5, 0, 4, 11, 3, 12, T.cobble), box(7, 3, on ? 5 : 9, 9, 11, on ? 7 : 11, T.lever)];
+      return [rotY(box(5, 4, 0, 11, 12, 3, T.cobble), (at - 1) & 3), rotY(box(7, on ? 9 : 5, 3, 9, on ? 11 : 7, 11, T.lever), (at - 1) & 3)];
+    }
+    case B.STONE_BUTTON: {
+      const pressed = (meta & 8) !== 0, at = meta & 7;
+      if (at === 0) return [box(5, 0, 6, 11, pressed ? 1 : 2, 10, T.stone)];
+      return [rotY(box(5, 6, 0, 11, 10, pressed ? 1 : 2, T.stone), (at - 1) & 3)];
+    }
+    case B.STONE_PRESSURE_PLATE:
+      return [box(1, 0, 1, 15, meta ? 0.5 : 1, 15, T.stone)];
     case B.LILY_PAD:
       return [box(0, 0, 0, 16, 0.25, 16, T.lilyPad, { skip: 0b110011, rot: [0, 0, meta & 3, meta & 3, 0, 0] })];
   }

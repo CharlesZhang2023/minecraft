@@ -149,7 +149,7 @@ export class UI {
     this.gui.setup(ctx, g.renderer.width, g.renderer.height, g.options.guiScale);
     const [mx, my] = this.toGui(g.input.mouseX, g.input.mouseY);
     if (g.world && g.player && !g.panorama) this.hud.render(ctx);
-    if (g.world && !g.panorama && !this.screen && !g.input.locked) {
+    if (g.world && !g.panorama && !this.screen && !g.input.locked && !g.hideHud) {
       const t = 'Click to play';
       const w = this.gui.font.width(t) + 8;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';

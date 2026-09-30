@@ -33,6 +33,7 @@ import { Random } from '../noise';
 import { BIOMES } from '../world/biomes';
 import { Commands } from './commands';
 import { Achievements } from './achievements';
+import { Redstone } from './redstone';
 import { LoadingScreen } from '../ui/menus';
 import { tickFurnaces } from './furnace';
 import { rainTexture, snowTexture } from './weather';
@@ -58,6 +59,7 @@ export class Game {
   weather: Weather | null = null;
   commands: Commands;
   achievements: Achievements;
+  redstone: Redstone;
   entityRenderer: EntityRenderer;
   time = 0;
   ticks = 0;
@@ -113,6 +115,7 @@ export class Game {
     this.entityRenderer = new EntityRenderer(this.renderer);
     this.commands = new Commands(this);
     this.achievements = new Achievements(this);
+    this.redstone = new Redstone(this);
     this.ui = new UI(this);
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -482,6 +485,7 @@ export class Game {
       if (e.removed) this.entities.splice(i, 1);
     }
     this.ticker!.tick();
+    this.redstone.tick();
     tickFurnaces(this);
     this.entityRenderer.tick();
     this.spawner!.tick();

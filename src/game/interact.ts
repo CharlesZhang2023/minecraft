@@ -256,7 +256,7 @@ export class Interaction {
     if (!t) return;
     const v = this.world.get(t.x, t.y, t.z);
     let id = idOf(v);
-    const map: Record<number, number> = { [B.WHEAT]: I.WHEAT_SEEDS, [B.OAK_DOOR]: I.OAK_DOOR, [B.BED]: I.RED_BED, [B.SUGAR_CANE]: I.SUGAR_CANE, [B.LIT_FURNACE]: B.FURNACE, [B.FARMLAND]: B.DIRT, [B.DOUBLE_STONE_SLAB]: B.DOUBLE_STONE_SLAB };
+    const map: Record<number, number> = { [B.REDSTONE_WIRE]: I.REDSTONE, [B.UNLIT_REDSTONE_TORCH]: B.REDSTONE_TORCH, [B.LIT_REDSTONE_LAMP]: B.REDSTONE_LAMP, [B.WHEAT]: I.WHEAT_SEEDS, [B.OAK_DOOR]: I.OAK_DOOR, [B.BED]: I.RED_BED, [B.SUGAR_CANE]: I.SUGAR_CANE, [B.LIT_FURNACE]: B.FURNACE, [B.FARMLAND]: B.DIRT, [B.DOUBLE_STONE_SLAB]: B.DOUBLE_STONE_SLAB };
     id = map[id] ?? id;
     const inv = p.inventory;
     for (let i = 0; i < 9; i++) if (inv.main[i]?.id === id) { inv.selected = i; return; }
@@ -309,6 +309,8 @@ export class Interaction {
     const meta = metaOf(v);
     switch (id) {
       case B.CRAFTING_TABLE: g.ui.openCrafting(); return true;
+      case B.LEVER: g.redstone.toggleLever(t.x, t.y, t.z); return true;
+      case B.STONE_BUTTON: g.redstone.pressButton(t.x, t.y, t.z); return true;
       case B.FURNACE: case B.LIT_FURNACE: g.ui.openFurnace(t.x, t.y, t.z); return true;
       case B.CHEST: {
         if (OPAQUE[w.getId(t.x, t.y + 1, t.z)]) return true;
@@ -603,14 +605,13 @@ export class Interaction {
     else if (isStairs(blockId)) meta = facing | (face === 2 || (face !== 3 && fracY > 0.5) ? 4 : 0);
     else if (isSlab(blockId)) meta = face === 2 || (face !== 3 && fracY > 0.5) ? 1 : 0;
     else if (isLeaves(blockId)) meta = 1;
-    else if (blockId === B.TORCH || blockId === B.LADDER) {
+    else if (blockId === B.TORCH || blockId === B.LADDER || blockId === B.REDSTONE_TORCH || blockId === B.LEVER || blockId === B.STONE_BUTTON) {
       const wallDir: Record<number, number> = { 0: 1, 1: 3, 4: 2, 5: 0 };
-      if (face === 3 && blockId === B.TORCH) meta = 0;
-      else if (face in wallDir) meta = blockId === B.TORCH ? wallDir[face] + 1 : wallDir[face];
+      const wallMounted = blockId !== B.LADDER;
+      if (face === 3 && wallMounted) meta = 0;
+      else if (face in wallDir) meta = wallMounted ? wallDir[face] + 1 : wallDir[face];
       else return false;
-      if (blockId === B.TORCH && face === 3 && !g.ticker!.canStay(x, y, z, pack(B.TORCH, 0))) {
-        return false;
-      }
+      if (!g.ticker!.canStay(x, y, z, pack(blockId, meta))) return false;
     } else if (blockId === B.LILY_PAD) return false;
     else if (blockId === B.WHEAT || blockId === B.PUMPKIN_STEM) meta = 0;
     const v = pack(blockId, meta);

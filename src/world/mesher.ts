@@ -501,7 +501,7 @@ function meshCrops(i: number, v: number, x: number, y: number, z: number) {
 function meshTorch(i: number, v: number, x: number, y: number, z: number) {
   const meta = metaOf(v);
   const s = sky[i], b = blk[i];
-  const tex = T.torch;
+  const tex = BLOCKS[v & 0xfff].faces[0];
   let ox = 0, oz = 0, lx = 0, lz = 0, oy = 0;
   if (meta >= 1 && meta <= 4) {
     const [dx, dz] = HORIZ[meta - 1]; // direction of the wall
@@ -558,9 +558,16 @@ function meshModel(i: number, v: number, id: number, def: BlockDef, x: number, y
           default: u = px * 16; vv = 16 - py * 16;
         }
         for (let r = 0; r < rot; r++) { const t = u; u = 16 - vv; vv = t; }
-        buf.v(x + px, y + py, z + pz, u, vv, bx.tex[f], s, b, id === B.LILY_PAD ? tint : WHITE, SHADE[f]);
+        buf.v(x + px, y + py, z + pz, u, vv, bx.tex[f], s, b, id === B.LILY_PAD ? tint : id === B.REDSTONE_WIRE ? wireColor(v >>> 12) : WHITE, SHADE[f]);
       }
     }
   }
   void isLeaves;
+}
+
+function wireColor(p: number): number {
+  const f = p / 15;
+  const r = p === 0 ? 0.3 : f * 0.6 + 0.4;
+  const g = Math.max(0, f * f * 0.7 - 0.5), b = Math.max(0, f * f * 0.6 - 0.7);
+  return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
 }

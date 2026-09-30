@@ -258,6 +258,15 @@ export const B = {
   NETHER_PORTAL: reg('nether_portal', 'Nether Portal', { render: Render.Model, tex: 'nether_portal', solid: false, opaque: false, translucent: true, lightOpacity: 0, light: 11, hardness: -1, item: false, drop: null, sound: 'glass', selectable: false }),
   QUARTZ_BLOCK: reg('quartz_block', 'Block of Quartz', { top: 'quartz_block_top', side: 'quartz_block_side', hardness: 0.8, tool: 'pickaxe', harvestLevel: 0 }),
   MAGMA_BLOCK: reg('magma_block', 'Magma Block', { hardness: 0.5, tool: 'pickaxe', harvestLevel: 0, light: 3 }),
+  REDSTONE_WIRE: reg('redstone_wire', 'Redstone Dust', { render: Render.Model, tex: 'redstone_dust_dot', solid: false, opaque: false, lightOpacity: 0, hardness: 0, sound: 'stone', needsSupport: true, drop: 'redstone', item: false }),
+  LEVER: reg('lever', 'Lever', { render: Render.Model, tex: 'lever', solid: false, opaque: false, lightOpacity: 0, hardness: 0.5, sound: 'wood', needsSupport: true }),
+  STONE_BUTTON: reg('stone_button', 'Stone Button', { render: Render.Model, tex: 'stone', solid: false, opaque: false, lightOpacity: 0, hardness: 0.5, sound: 'stone', needsSupport: true }),
+  STONE_PRESSURE_PLATE: reg('stone_pressure_plate', 'Stone Pressure Plate', { render: Render.Model, tex: 'stone', solid: false, opaque: false, lightOpacity: 0, hardness: 0.5, tool: 'pickaxe', sound: 'stone', needsSupport: true }),
+  REDSTONE_TORCH: reg('redstone_torch', 'Redstone Torch', { render: Render.Torch, tex: 'redstone_torch', solid: false, opaque: false, hardness: 0, light: 7, sound: 'wood', needsSupport: true, lightOpacity: 0 }),
+  UNLIT_REDSTONE_TORCH: reg('unlit_redstone_torch', 'Redstone Torch', { render: Render.Torch, tex: 'redstone_torch_off', solid: false, opaque: false, hardness: 0, sound: 'wood', needsSupport: true, lightOpacity: 0, item: false, drop: 'redstone_torch' }),
+  REDSTONE_LAMP: reg('redstone_lamp', 'Redstone Lamp', { hardness: 0.3, sound: 'glass' }),
+  LIT_REDSTONE_LAMP: reg('lit_redstone_lamp', 'Redstone Lamp', { tex: 'redstone_lamp_on', hardness: 0.3, sound: 'glass', light: 15, item: false, drop: 'redstone_lamp' }),
+  REDSTONE_BLOCK: reg('redstone_block', 'Block of Redstone', { hardness: 5, tool: 'pickaxe', harvestLevel: 0, sound: 'metal' }),
 } as const;
 
 export const BLOCK_COUNT = BLOCKS.length;
@@ -318,9 +327,19 @@ export const T = {
   stemBent: tex('pumpkin_stem'),
   lilyPad: tex('lily_pad'),
   portal: tex('nether_portal'),
+  dustDot: tex('redstone_dust_dot'),
+  dustLine: tex('redstone_dust_line'),
+  lever: tex('lever'),
+  cobble: tex('cobblestone'),
+  stone: tex('stone'),
   fire: tex('fire'),
   glassPaneTop: tex('glass_pane_top'),
   saplingOak: tex('oak_sapling'),
   sugarCane: tex('sugar_cane'),
 };
 // Wool texture names are the same as the block names already.
+
+export const isRedstoneTorch = (id: number) => id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH;
+export const isRedstoneComponent = (id: number) =>
+  id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || isRedstoneTorch(id) ||
+  id === B.REDSTONE_LAMP || id === B.LIT_REDSTONE_LAMP || id === B.REDSTONE_BLOCK || id === B.OAK_DOOR || id === B.TNT;

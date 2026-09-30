@@ -48,6 +48,7 @@ export class BlockTicker {
   onChange(x: number, y: number, z: number, old: number, v: number) {
     if (this.suppress) return;
     const oid = idOf(old), nid = idOf(v);
+    this.game.redstone.onChange(x, y, z, oid, nid);
     this.neighborChanged(x, y, z);
     for (const [dx, dy, dz] of DIRS6) this.neighborChanged(x + dx, y + dy, z + dz);
     // log/leaves removed: nearby leaves may decay
@@ -87,7 +88,14 @@ export class BlockTicker {
     const id = idOf(v), meta = metaOf(v);
     const below = w.getId(x, y - 1, z);
     const def = BLOCKS[id];
-    if (id === B.TORCH) {
+    if (id === B.REDSTONE_WIRE || id === B.STONE_PRESSURE_PLATE) return OPAQUE[below] === 1;
+    if (id === B.LEVER || id === B.STONE_BUTTON) {
+      const at = meta & 7;
+      if (at === 0) return OPAQUE[below] === 1;
+      const [dx, dz] = HORIZ[(at - 1) & 3];
+      return OPAQUE[w.getId(x + dx, y, z + dz)] === 1;
+    }
+    if (id === B.TORCH || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH) {
       if (meta === 0) return BLOCKS[below].solid && (OPAQUE[below] === 1 || below === B.OAK_FENCE || below === B.GLASS);
       const [dx, dz] = HORIZ[(meta - 1) & 3];
       return OPAQUE[w.getId(x + dx, y, z + dz)] === 1;
@@ -128,6 +136,7 @@ export class BlockTicker {
 
   private scheduledTick(x: number, y: number, z: number) {
     const w = this.world;
+    if (this.game.redstone.scheduled(x, y, z)) return;
     const v = w.get(x, y, z);
     const id = idOf(v);
     if (id === B.WATER || id === B.LAVA) this.fluidTick(x, y, z, v);

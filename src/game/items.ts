@@ -51,7 +51,7 @@ export const I = {
   GOLD_INGOT: item('gold_ingot', 'Gold Ingot'),
   DIAMOND: item('diamond', 'Diamond'),
   EMERALD: item('emerald', 'Emerald'),
-  REDSTONE: item('redstone', 'Redstone Dust'),
+  REDSTONE: item('redstone', 'Redstone Dust', { block: B.REDSTONE_WIRE }),
   LAPIS: item('lapis_lazuli', 'Lapis Lazuli'),
   FLINT: item('flint', 'Flint'),
   APPLE: item('apple', 'Apple', { food: { hunger: 4, saturation: 2.4 } }),
