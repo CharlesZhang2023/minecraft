@@ -19,6 +19,16 @@ try {
   (window as unknown as { game: Game }).game = game;
   (window as unknown as { __mc: unknown }).__mc = { BLOCKS, ITEMS, WorldGen, BIOMES, regionVillage };
   game.start();
+  // never lose progress: save when the tab is hidden or closed
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && game.world && !game.panorama) game.saveWorld();
+  });
+  window.addEventListener('beforeunload', (e) => {
+    if (game.world && !game.panorama) {
+      game.saveWorld();
+      e.preventDefault();
+    }
+  });
 
   // Automation hook: ?autoplay&seed=..&mode=..&time=..&x=..&z=..
   const q = new URLSearchParams(location.search);

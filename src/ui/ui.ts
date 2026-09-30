@@ -116,7 +116,13 @@ export class UI {
       case 'F3': g.showDebug = !g.showDebug; return true;
       case 'F5': g.thirdPerson = (g.thirdPerson + 1) % 3; return true;
       case 'F2': this.screenshot(); return true;
-      case 'F11': document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); return true;
+      case 'F11':
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen().then(() => {
+          // lets Ctrl+W sprint without closing the tab (Chromium keyboard lock)
+          (navigator as unknown as { keyboard?: { lock?: (k: string[]) => Promise<void> } }).keyboard?.lock?.(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ']).catch(() => {});
+        }).catch(() => {});
+        return true;
     }
     return false;
   }
@@ -143,6 +149,13 @@ export class UI {
     this.gui.setup(ctx, g.renderer.width, g.renderer.height, g.options.guiScale);
     const [mx, my] = this.toGui(g.input.mouseX, g.input.mouseY);
     if (g.world && g.player && !g.panorama) this.hud.render(ctx);
+    if (g.world && !g.panorama && !this.screen && !g.input.locked) {
+      const t = 'Click to play';
+      const w = this.gui.font.width(t) + 8;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(this.gui.w / 2 - w / 2, this.gui.h / 2 + 12, w, 12);
+      this.gui.textCenter(ctx, t, this.gui.w / 2, this.gui.h / 2 + 14, '#FFFFFF');
+    }
     if (this.screen) {
       this.screen.render(ctx, mx, my);
     }
