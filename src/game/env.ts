@@ -127,6 +127,19 @@ export function computeEnv(i: EnvInput): EnvState {
     cloudOffset: i.ticks * 0.03,
     moonPhase: Math.floor(i.time / 24000) % 8,
     rain: i.rain,
+    ambient: 0,
+    ambientCol: [0, 0, 0],
+  };
+}
+
+/** The Nether: no sky, dense reddish fog, dim ambient light. */
+export function netherEnv(renderDistance: number, gamma: number, flicker: number, underLava: boolean): EnvState {
+  const fog: [number, number, number] = underLava ? [0.6, 0.1, 0] : [0.2, 0.03, 0.03];
+  const far = renderDistance * 16;
+  return {
+    skyColor: fog, fogColor: fog, voidColor: fog, sunrise: [0, 0, 0, 0], celestial: 0.5, sunBright: 1, skyLightCol: [1, 1, 1], stars: 0,
+    fogStart: underLava ? 0 : far * 0.05, fogEnd: underLava ? 2 : Math.min(far, 192) * 0.5, gamma, flicker, cloudColor: [0, 0, 0], clouds: false,
+    cloudOffset: 0, moonPhase: 0, rain: 0, ambient: 0.1, ambientCol: [0.05, 0.02, 0.01], noSky: true,
   };
 }
 

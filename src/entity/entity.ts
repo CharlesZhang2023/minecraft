@@ -31,6 +31,7 @@ export class Entity {
   sneaking = false; // prevents walking off edges
   constructor(public world: World) {}
 
+
   setPos(x: number, y: number, z: number) {
     this.x = this.px = x;
     this.y = this.py = y;

@@ -251,6 +251,13 @@ export const B = {
   EMERALD_ORE: reg('emerald_ore', 'Emerald Ore', { ...ore(2), drop: 'emerald' }),
   COARSE_DIRT: reg('coarse_dirt', 'Coarse Dirt', { hardness: 0.5, tool: 'shovel', sound: 'gravel' }),
   LILY_PAD: reg('lily_pad', 'Lily Pad', { render: Render.Model, hardness: 0, sound: 'grass', opaque: false, lightOpacity: 0, tint: 'foliage', solid: true, needsSupport: true }),
+  NETHERRACK: reg('netherrack', 'Netherrack', { hardness: 0.4, tool: 'pickaxe', harvestLevel: 0, sound: 'stone', flammable: false }),
+  SOUL_SAND: reg('soul_sand', 'Soul Sand', { hardness: 0.5, tool: 'shovel', sound: 'sand', render: Render.Model, opaque: false, lightOpacity: 15 }),
+  NETHER_BRICKS: reg('nether_bricks', 'Nether Bricks', { ...stone, hardness: 2 }),
+  NETHER_QUARTZ_ORE: reg('nether_quartz_ore', 'Nether Quartz Ore', { ...ore(0), drop: 'quartz' }),
+  NETHER_PORTAL: reg('nether_portal', 'Nether Portal', { render: Render.Model, tex: 'nether_portal', solid: false, opaque: false, translucent: true, lightOpacity: 0, light: 11, hardness: -1, item: false, drop: null, sound: 'glass', selectable: false }),
+  QUARTZ_BLOCK: reg('quartz_block', 'Block of Quartz', { top: 'quartz_block_top', side: 'quartz_block_side', hardness: 0.8, tool: 'pickaxe', harvestLevel: 0 }),
+  MAGMA_BLOCK: reg('magma_block', 'Magma Block', { hardness: 0.5, tool: 'pickaxe', harvestLevel: 0, light: 3 }),
 } as const;
 
 export const BLOCK_COUNT = BLOCKS.length;
@@ -310,6 +317,7 @@ export const T = {
   chestFront: tex('chest_front'),
   stemBent: tex('pumpkin_stem'),
   lilyPad: tex('lily_pad'),
+  portal: tex('nether_portal'),
   fire: tex('fire'),
   glassPaneTop: tex('glass_pane_top'),
   saplingOak: tex('oak_sapling'),

@@ -5,7 +5,7 @@ import { Mat4, mat4, identity, translate, rotateX, rotateY, rotateZ, scale, mult
 import * as M from './models';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
-import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball } from '../entity/item';
+import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball } from '../entity/item';
 import { getItem, I } from '../game/items';
 import { BLOCKS, TEXTURES, Render, B, isLeaves, pack } from '../world/blocks';
 import { modelBoxes } from '../world/models';
@@ -31,12 +31,13 @@ export class EntityRenderer {
     const gl = r.gl;
     const defs: Record<string, M.ModelDef> = {
       biped: M.bipedModel(), bipedThin: M.bipedModel(true), creeper: M.creeperModel(), pig: M.pigModel(), cow: M.cowModel(),
-      sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(),
+      sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
       cow: M.cowSkin(), sheep: M.sheepSkin(), wool: M.woolSkin(), chicken: M.chickenSkin(), spider: M.spiderSkin(),
+      ghast: M.ghastSkin(false), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(),
     };
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     this.handMesh = new DynMesh(gl);
@@ -166,6 +167,7 @@ export class EntityRenderer {
       } else if (e instanceof Arrow) this.drawArrow(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof XpOrb) this.billboard(dyn, x, y + 0.25, z, 0.25, TEXTURES.indexOf('particle_spell'), 0x9ffc3a, 15, 15);
       else if (e instanceof Snowball) this.billboard(dyn, x, y + 0.125, z, 0.25, TEXTURES.indexOf('item/' + e.kind), 0xffffff, sky, blk);
+      else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
       else if (e instanceof LivingEntity) this.drawLiving(game, e, x, y, z, t, sky, blk);
     }
     // item pickup animations
@@ -351,6 +353,19 @@ export class EntityRenderer {
         pose.rightWing = [0, 0, wf];
         pose.leftWing = [0, 0, -wf];
         this.drawModel('chicken', 'chicken', base, pose, light, overlay);
+        break;
+      }
+      case 'ghast': {
+        for (let i = 0; i < 9; i++) pose['tentacle' + i] = [0.2 * Math.sin(age * 0.3 + i) + 0.4, 0, 0];
+        const g4 = mat4();
+        // ghasts are rendered at 4.5x the model scale
+        identity(g4);
+        translate(g4, g4, x, y - 1.85, z);
+        rotateY(g4, g4, (180 - bodyYaw) * DEG);
+        if (deathRoll) rotateZ(g4, g4, deathRoll * DEG);
+        scale(g4, g4, -4.5, -4.5, 4.5);
+        translate(g4, g4, 0, -1.501, 0);
+        this.drawModel('ghast', (anyE.shooting as boolean) ? 'ghastShoot' : 'ghast', g4, pose, [15, 15], overlay);
         break;
       }
       case 'spider': {

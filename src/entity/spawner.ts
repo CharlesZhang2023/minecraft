@@ -19,14 +19,14 @@ export class Spawner {
     const hostiles = mobs.filter((m) => m.hostile).length;
     const animals = mobs.length - hostiles;
     const peaceful = g.options.difficulty === 0;
-    if (peaceful) for (const m of mobs) if (m.hostile) m.removed = true;
+    if (peaceful) for (const m of mobs) if (m.hostile && m.typeName !== 'Zombie Pigman') m.removed = true;
     // hostile spawning every tick (cap ~ 70 in vanilla for 17x17 chunks; scaled to our view)
     const cap = Math.round(70 * Math.min(1, ((w.renderDistance * 2 + 1) ** 2) / 289));
-    if (!peaceful && hostiles < cap && g.ticks % 2 === 0) {
-      for (let attempt = 0; attempt < 3; attempt++) this.tryHostile();
+    if ((!peaceful || w.dimension === 'nether') && hostiles < cap && g.ticks % 2 === 0) {
+      for (let attempt = 0; attempt < (w.dimension === 'nether' ? 1 : 3); attempt++) this.tryHostile();
     }
     // passive animals: when new chunks come in, occasionally populate them
-    if (g.ticks % 20 === 0 && animals < 40) this.populateChunks();
+    if (g.ticks % 20 === 0 && animals < 40 && w.dimension === 'overworld') this.populateChunks();
     this.spawnerBlocks();
   }
 
@@ -41,8 +41,29 @@ export class Spawner {
     return true;
   }
 
+  private tryNether() {
+    const g = this.game, p = g.player!, w = g.world!;
+    const a = this.rng.next() * Math.PI * 2, d = 24 + this.rng.next() * 50;
+    const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
+    if (!w.chunkAt(x, z)) return;
+    const y = 32 + this.rng.int(90);
+    if (this.rng.int(20) === 0) {
+      // ghasts need a big open space
+      for (let dx = -2; dx <= 2; dx++) for (let dy = 0; dy <= 4; dy++) for (let dz = -2; dz <= 2; dz++) if (w.getId(x + dx, y + dy, z + dz) !== B.AIR) return;
+      g.interact!.spawnMob('ghast', x + 0.5, y, z + 0.5);
+      return;
+    }
+    if (!this.spawnable(x, y, z, 2) || w.getId(x, y - 1, z) !== B.NETHERRACK) return;
+    const n = 1 + this.rng.int(3);
+    for (let i = 0; i < n; i++) {
+      const xx = x + this.rng.int(5) - 2, zz = z + this.rng.int(5) - 2;
+      if (this.spawnable(xx, y, zz, 2)) g.interact!.spawnMob('zombie_pigman', xx + 0.5, y, zz + 0.5);
+    }
+  }
+
   private tryHostile() {
     const g = this.game, p = g.player!, w = g.world!;
+    if (w.dimension === 'nether') { this.tryNether(); return; }
     const a = this.rng.next() * Math.PI * 2, d = 24 + this.rng.next() * 56;
     const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
     if (!w.chunkAt(x, z)) return;

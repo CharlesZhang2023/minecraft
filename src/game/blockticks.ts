@@ -6,6 +6,7 @@ import { WorldGen, Setter } from '../world/worldgen';
 import { Random } from '../noise';
 import { FallingBlock } from '../entity/item';
 import { I, stack, TOOLS, ARMOR } from './items';
+import { portalCanStay } from './portal';
 
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
 const DIRS6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] as const;
@@ -66,8 +67,12 @@ export class BlockTicker {
     const id = idOf(v);
     if (id === 0) return;
     const def = BLOCKS[id];
-    if (def.fluid) { this.schedule(x, y, z, id === B.WATER ? 5 : 30); if (id === B.LAVA) this.lavaMix(x, y, z); return; }
+    if (def.fluid) { this.schedule(x, y, z, id === B.WATER ? 5 : w.dimension === 'nether' ? 10 : 30); if (id === B.LAVA) this.lavaMix(x, y, z); return; }
     if (def.gravity) { this.schedule(x, y, z, 2); return; }
+    if (id === B.NETHER_PORTAL) {
+      if (!portalCanStay(w, x, y, z)) w.set(x, y, z, B.AIR);
+      return;
+    }
     if (id === B.FIRE) { this.schedule(x, y, z, 1); return; }
     if (!this.canStay(x, y, z, v)) {
       this.game.interact!.breakBlockNaturally(x, y, z, true);
@@ -164,8 +169,9 @@ export class BlockTicker {
     const w = this.world;
     const fluid = idOf(v);
     const water = fluid === B.WATER;
-    const decay = water ? 1 : 2;
-    const rate = water ? 5 : 30;
+    const nether = this.world.dimension === 'nether';
+    const decay = water || nether ? 1 : 2;
+    const rate = water ? 5 : nether ? 10 : 30;
     let level = metaOf(v);
     if (level > 0) {
       let min = -100, sources = 0;

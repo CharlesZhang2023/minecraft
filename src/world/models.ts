@@ -120,6 +120,10 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
       if (conn[3]) boxes.push(box(0, 0, 7, 7, 16, 9, [t, t, e, e, t, t], { skip: 1 << 1 }));
       return boxes;
     }
+    case B.SOUL_SAND:
+      return [box(0, 0, 0, 16, 14, 16, f[0])];
+    case B.NETHER_PORTAL:
+      return meta & 1 ? [box(6, 0, 0, 10, 16, 16, T.portal, { cullSame: true })] : [box(0, 0, 6, 16, 16, 10, T.portal, { cullSame: true })];
     case B.LILY_PAD:
       return [box(0, 0, 0, 16, 0.25, 16, T.lilyPad, { skip: 0b110011, rot: [0, 0, meta & 3, meta & 3, 0, 0] })];
   }
@@ -147,6 +151,7 @@ export function collisionShapes(v: number, nb?: Neighbor): Shape[] {
   if (id === B.OAK_DOOR) return modelBoxes(v, nb).map(toShape);
   if (id === B.LILY_PAD) return [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1 / 64, z1: 1 }];
   if (id === B.SNOW) return [];
+  if (id === B.SOUL_SAND) return [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 14 / 16, z1: 1 }];
   if (def.render === Render.Model) return modelBoxes(v, nb).map(toShape);
   return FULL;
 }

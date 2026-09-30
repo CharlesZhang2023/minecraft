@@ -6,11 +6,12 @@ import { getItem, blockDrops, ItemStack, I, stack, ItemDef } from './items';
 import { BlockHit, raycastBlocks } from './raycast';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
-import { PrimedTnt, Arrow, Snowball, XpOrb, ItemEntity, FallingBlock } from '../entity/item';
+import { PrimedTnt, Arrow, Snowball, XpOrb, ItemEntity, FallingBlock, Fireball } from '../entity/item';
 import { createEntity } from '../entity/registry';
 import { aabbIntersects } from '../math';
 import { Random } from '../noise';
 import { GameMode } from './player';
+import { findFrameAt, frameBlocks } from './portal';
 
 export interface Breaking { x: number; y: number; z: number; progress: number; face: number; sound: number }
 
@@ -339,6 +340,12 @@ export class Interaction {
 
   private sleep(x: number, y: number, z: number): boolean {
     const g = this.game, p = this.player;
+    if (this.world.dimension === 'nether') {
+      // beds explode outside the overworld
+      this.removeBlockAndPartner(x, y, z, this.world.get(x, y, z));
+      this.explode(x + 0.5, y + 0.5, z + 0.5, 5, true, null);
+      return true;
+    }
     p.spawnX = x; p.spawnY = y + 1; p.spawnZ = z;
     if (g.meta) g.meta.spawn = [x, y + 1, z];
     if (g.isDaytime()) { g.ui.hud.actionBar('You can only sleep at night'); g.ui.chat.add('Respawn point set'); return true; }
@@ -373,6 +380,13 @@ export class Interaction {
         return false;
       case I.FLINT_AND_STEEL:
         if (w.getId(ax, ay, az) === B.AIR) {
+          const frame = findFrameAt(w, ax, ay, az);
+          if (frame) {
+            this.setAll(frameBlocks(frame));
+            g.audio.play('portalTrigger', { x: ax + 0.5, y: ay + 0.5, z: az + 0.5 }, 1, 1);
+            this.damageHeld(1);
+            return true;
+          }
           w.set(ax, ay, az, B.FIRE);
           g.ticker!.schedule(ax, ay, az, 30);
           g.audio.play('fire', { x: ax + 0.5, y: ay + 0.5, z: az + 0.5 }, 1, 1);
@@ -387,6 +401,13 @@ export class Interaction {
         if (BLOCKS[id].replaceable && !BLOCKS[id].fluid) { px = t.x; py = t.y; pz = t.z; }
         const cur = w.getId(px, py, pz);
         if (!BLOCKS[cur].replaceable && cur !== B.AIR) return false;
+        if (fluid === B.WATER && w.dimension === 'nether') {
+          // water evaporates in the Nether
+          g.audio.play('fizz', { x: px + 0.5, y: py + 0.5, z: pz + 0.5 }, 0.5, 2.6);
+          for (let i = 0; i < 8; i++) g.particles!.smoke(px + Math.random(), py + Math.random(), pz + Math.random(), true);
+          if (!p.creative) p.inventory.setHeld(stack(I.BUCKET));
+          return true;
+        }
         if (cur !== B.AIR && !BLOCKS[cur].fluid) g.interact!.dropBlockItems(px, py, pz, w.get(px, py, pz));
         w.set(px, py, pz, fluid);
         g.ticker!.schedule(px, py, pz, fluid === B.WATER ? 5 : 30);
@@ -636,6 +657,11 @@ export class Interaction {
   attack(e: Entity) {
     const g = this.game, p = this.player;
     p.swing();
+    if (e instanceof Fireball) {
+      const d = g.lookVec(p.yaw, p.pitch);
+      e.deflect(d.x, d.y, d.z);
+      return;
+    }
     if (p.spectator || !(e instanceof LivingEntity)) return;
     const held = p.inventory.held();
     const item = held ? getItem(held.id) : undefined;

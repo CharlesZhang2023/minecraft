@@ -169,10 +169,11 @@ function propagate(arr: Uint8Array, qh: number, qt: number) {
   }
 }
 
-function computeLight() {
+function computeLight(hasSky: boolean) {
   sky.fill(0);
   blk.fill(0);
   let qt = 0;
+  if (hasSky) {
   // direct sky light down each column
   for (let col = 0; col < RA; col++) {
     let l = 15;
@@ -203,6 +204,7 @@ function computeLight() {
       for (let y = h0; y < hmax; y++) { queue[qt] = col + y * RA; qt = (qt + 1) & QMASK; }
     }
   propagate(sky, 0, qt);
+  }
   // block light
   qt = 0;
   for (let i = 0; i < RSIZE; i++) {
@@ -239,7 +241,7 @@ function fluidCornerHeight(i: number, fluid: number, cx: number, cz: number): nu
 }
 
 // ------------------------------------------------------------------ main entry
-export function buildChunk(chunks: Uint16Array[], biomes: Uint8Array[]): MeshResult {
+export function buildChunk(chunks: Uint16Array[], biomes: Uint8Array[], hasSky = true): MeshResult {
   // assemble region
   for (let k = 0; k < 9; k++) {
     const ox = (k % 3) * 16, oz = ((k / 3) | 0) * 16;
@@ -252,7 +254,7 @@ export function buildChunk(chunks: Uint16Array[], biomes: Uint8Array[]): MeshRes
         rb.set(c.subarray(src, src + 16), ox + (oz + z) * R + y * RA);
       }
   }
-  computeLight();
+  computeLight(hasSky);
 
   // biome colour blending (5x5)
   for (let z = 0; z < 16; z++)

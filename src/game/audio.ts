@@ -168,6 +168,40 @@ const GENS: Record<string, Gen> = {
     return normalize(bandpass(b, 400, 3000), 0.6);
   },
   'animal.hurt': (r) => normalize(bandpass(env(tone(SR * 0.25, 400 + r.next() * 100, 250, 'square', 0.1, 30), 0.005, 0.22, 2), 200, 2000), 0.7),
+  portalTrigger: (r) => {
+    const n = SR * 2.5;
+    const b = new Float32Array(n);
+    let ph = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      ph += (220 + 300 * t + Math.sin(i / SR * 9) * 30) / SR;
+      b[i] = Math.sin(ph * 6.283) * 0.3 * Math.sin(t * Math.PI);
+    }
+    mixInto(b, env(bandpass(noise(n, r), 300, 2000), 0.5, 2, 1), 0.4);
+    return normalize(b, 0.6);
+  },
+  portalTravel: (r) => {
+    const n = SR * 3;
+    const b = env(bandpass(noise(n, r), 200, 1500), 0.3, 2.5, 1.2);
+    mixInto(b, env(tone(n, 440, 110, 'sine', 0.05, 5), 0.3, 2.6, 1.2), 0.6);
+    return normalize(b, 0.7);
+  },
+  'ghast.moan': (r) => normalize(env(tone(SR * 2.2, 520 + r.next() * 200, 380, 'sine', 0.08, 5.5), 0.3, 1.8, 1.2), 0.5),
+  'ghast.scream': (r) => {
+    const b = env(tone(SR * 0.9, 900 + r.next() * 200, 600, 'saw', 0.1, 12), 0.02, 0.8, 1.5);
+    return normalize(bandpass(b, 400, 4000), 0.6);
+  },
+  'ghast.death': (r) => normalize(bandpass(env(tone(SR * 1.8, 800 + r.next() * 100, 250, 'saw', 0.12, 8), 0.02, 1.7, 1.3), 300, 3000), 0.6),
+  'ghast.charge': (r) => normalize(env(tone(SR * 0.6, 500 + r.next() * 100, 700, 'sine', 0.2, 18), 0.05, 0.5, 1.5), 0.4),
+  'ghast.fireball': (r) => {
+    const n = SR * 0.8;
+    const b = env(lowpass(noise(n, r), 900), 0.01, 0.7, 2);
+    mixInto(b, env(tone(n, 180, 60, 'saw'), 0.01, 0.5, 2), 0.5);
+    return normalize(b, 0.8);
+  },
+  'pigman.say': (r) => normalize(lowpass(env(tone(SR * 0.6, 150 + r.next() * 30, 110, 'square', 0.08, 25), 0.03, 0.55, 1.5), 700), 0.7),
+  'pigman.hurt': (r) => normalize(lowpass(env(tone(SR * 0.35, 260 + r.next() * 40, 160, 'square', 0.1, 30), 0.01, 0.3, 2), 1000), 0.7),
+  'pigman.angry': (r) => normalize(lowpass(env(tone(SR * 0.7, 320 + r.next() * 40, 180, 'saw', 0.15, 35), 0.01, 0.65, 1.5), 1500), 0.8),
   thunder: (r) => {
     const n = SR * 3;
     const b = env(lowpass(noise(n, r), 250), 0.01, 2.8, 1.5);

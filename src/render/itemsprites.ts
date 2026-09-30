@@ -670,6 +670,44 @@ sprite('clock', [
   '.....gggggg.....',
 ], { g: hex('#a88410'), Y: hex('#f5cc27'), B: hex('#3a6ad1'), G: hex('#3a8a1a') }, '#4a3500');
 
+sprite('quartz', [
+  '', '', '', '',
+  '......wW........',
+  '.....wWWW.......',
+  '....wWWWWWw.....',
+  '...wWWWWWWWw....',
+  '....WWWWWWWw....',
+  '.....wWWWWw.....',
+  '......wWWw......',
+], { w: hex('#c8bfb2'), W: hex('#f0ebe4') }, '#6a6258');
+sprite('gold_nugget', [
+  '', '', '', '', '', '',
+  '......yY........',
+  '.....yYYy.......',
+  '....yYWYYy......',
+  '.....yYYy.......',
+  '......yy........',
+], { y: hex('#c29b10'), Y: hex('#f5cc27'), W: hex('#fffcb8') }, '#4a3500');
+sprite('fire_charge', [
+  '', '', '', '',
+  '......kkkk......',
+  '.....kRoYRk.....',
+  '....kRoYYoRk....',
+  '....koYWYYok....',
+  '....kRoYYoRk....',
+  '.....kRooRk.....',
+  '......kkkk......',
+], { k: hex('#2a1a0a'), R: hex('#8a2a0a'), o: hex('#e06010'), Y: hex('#ffb030'), W: hex('#fff0a0') }, '#1a0a00');
+sprite('ghast_tear', [
+  '', '', '', '',
+  '.......w........',
+  '......wWw.......',
+  '.....wWWWw......',
+  '.....WWWWW......',
+  '.....wWWWw......',
+  '......www.......',
+], { w: hex('#b8d8e0'), W: hex('#f0ffff') }, '#5a7880');
+
 export function getItemSprite(name: string): Img | null {
   const f = sprites[name];
   return f ? f() : null;

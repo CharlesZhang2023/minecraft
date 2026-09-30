@@ -326,9 +326,10 @@ export class LoadingScreen extends Screen {
     if (!this.ready || g.panorama) return;
     const p = g.loadProgress();
     this.shown = Math.max(this.shown, p);
-    if (p >= 0.99 && g.player && g.player.spawnY >= 0) {
+    if (p >= 0.99 && g.player && (g.player.spawnY >= 0 || g.dimension === 'nether') && !g.pendingArrival && !g.traveling) {
+      const first = this.title === 'Loading world';
       this.ui.close();
-      this.ui.chat.add(`§eWelcome! Press §fE§e for inventory, §fT§e to chat, §f/help§e for commands.`);
+      if (first) this.ui.chat.add(`§eWelcome! Press §fE§e for inventory, §fT§e to chat, §f/help§e for commands.`);
     }
   }
   override render(ctx: Ctx) {
@@ -453,9 +454,10 @@ export class DeathScreen extends Screen {
     const hardcore = !!this.game.meta?.hardcore;
     const respawn = new Button(this.ui, W / 2 - 100, H / 4 + 72, 200, 20, hardcore ? 'Spectate World' : 'Respawn', () => {
       const p = this.game.player!;
-      if (hardcore) { p.dead = false; p.health = 20; p.setGameMode(GameMode.Spectator); }
-      else p.respawn();
-      this.ui.close();
+      if (hardcore) { p.dead = false; p.health = 20; p.setGameMode(GameMode.Spectator); this.ui.close(); return; }
+      p.respawn();
+      if (this.game.dimension === 'nether') this.game.travel('overworld', true);
+      else this.ui.close();
     });
     const title = new Button(this.ui, W / 2 - 100, H / 4 + 96, 200, 20, 'Title Screen', async () => {
       this.ui.open(new LoadingScreen(this.ui, 'Saving world'));

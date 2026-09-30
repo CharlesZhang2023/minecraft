@@ -103,6 +103,10 @@ export const I = {
   COMPASS: item('compass', 'Compass', { maxStack: 1 }),
   CLOCK: item('clock', 'Clock', { maxStack: 1 }),
   ENDER_PEARL: item('ender_pearl', 'Ender Pearl', { maxStack: 16 }),
+  QUARTZ: item('quartz', 'Nether Quartz'),
+  GOLD_NUGGET: item('gold_nugget', 'Gold Nugget'),
+  FIRE_CHARGE: item('fire_charge', 'Fire Charge'),
+  GHAST_TEAR: item('ghast_tear', 'Ghast Tear'),
 };
 
 export const MATERIALS = [

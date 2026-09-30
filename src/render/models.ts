@@ -115,6 +115,18 @@ export function spiderModel(): ModelDef {
   };
 }
 
+export function ghastModel(): ModelDef {
+  const tentacles: ModelPart[] = [];
+  const r = new Random(1660);
+  for (let i = 0; i < 9; i++) {
+    const x = ((i % 3) - 1) * 5 + ((i / 3 | 0) % 2) * 1.5 - 0.75;
+    const z = ((i / 3 | 0) - 1) * 5;
+    const len = r.int(7) + 8;
+    tentacles.push(part('tentacle' + i, x, 15, z, [box(-1, 0, -1, 2, len, 2, 0, 0)]));
+  }
+  return { texW: 64, texH: 32, parts: [part('body', 0, 8, 0, [box(-8, -8, -8, 16, 16, 16, 0, 0)]), ...tentacles] };
+}
+
 // ------------------------------------------------------------------ skin painting
 type Face = 'top' | 'bottom' | 'right' | 'front' | 'left' | 'back';
 type Painter = (face: Face, x: number, y: number, fw: number, fh: number) => [number, number, number, number] | [number, number, number] | null;
@@ -321,6 +333,52 @@ export function chickenSkin(): Skin {
   s.paintBox(0, 9, 6, 8, 6, () => vary(r.int(5) === 0 ? wd : w, r, 0.03));
   s.paintBox(26, 0, 3, 5, 3, (f, x, y) => (y < 2 ? null : hx('#f0a020')));
   s.paintBox(24, 13, 1, 4, 6, () => vary(wd, r, 0.04));
+  return s;
+}
+
+export function ghastSkin(shooting: boolean): Skin {
+  const s = new Skin();
+  const r = new Random(11);
+  const w = hx('#f0f0f0'), g = hx('#d8d8d8'), dark = hx('#4a4a4a');
+  s.paintBox(0, 0, 16, 16, 16, (f, x, y) => {
+    if (f === 'front') {
+      // eyes & mouth (open and red-eyed when shooting)
+      if (shooting) {
+        if (y >= 5 && y <= 6 && ((x >= 3 && x <= 5) || (x >= 10 && x <= 12))) return y === 6 && (x === 4 || x === 11) ? hx('#ff4040') : dark;
+        if (y >= 9 && y <= 12 && x >= 6 && x <= 9) return y === 9 ? dark : hx('#2a2a2a');
+      } else {
+        if (y === 6 && ((x >= 3 && x <= 5) || (x >= 10 && x <= 12))) return dark;
+        if (y === 10 && x >= 6 && x <= 9) return dark;
+      }
+      if (y === 8 && (x === 4 || x === 11)) return hx('#c8c8c8');
+    }
+    return vary(r.int(9) === 0 ? g : w, r, 0.03);
+  });
+  s.paintBox(0, 0, 2, 16, 2, () => vary(g, r, 0.05));
+  return s;
+}
+
+export function pigmanSkin(): Skin {
+  const s = new Skin();
+  const r = new Random(12);
+  const pink = hx('#e89a8e'), pinkD = hx('#c8766a'), green = hx('#5a8a3a'), bone = hx('#d8d0c0'), brown = hx('#6b4a2a');
+  s.paintBox(0, 0, 8, 8, 8, (f, x, y) => {
+    if (f === 'front') {
+      if (y === 3 && (x === 1 || x === 2)) return [255, 255, 255];
+      if (y === 3 && (x === 5 || x === 6)) return hx('#8a1010');
+      if (y >= 5 && y <= 6 && x >= 2 && x <= 5) return y === 5 && (x === 3 || x === 4) ? hx('#8a4a4a') : hx('#f0b0a8');
+      if (x >= 5 && y >= 1 && y <= 7 && x <= 7) return (x + y) % 2 ? bone : green; // exposed skull
+    }
+    if (f === 'right' && y > 2) return (x + y) % 3 ? bone : green;
+    return vary(r.int(5) === 0 ? pinkD : pink, r, 0.05);
+  });
+  s.paintBox(16, 16, 8, 12, 4, (f, x, y) => {
+    if (y >= 9) return vary(brown, r, 0.08);
+    if ((f === 'front' || f === 'back') && x >= 4 && y >= 2 && y <= 7) return y % 2 ? bone : green;
+    return vary(pink, r, 0.05);
+  });
+  s.paintBox(40, 16, 4, 12, 4, (f, x, y) => (y > 6 && y % 2 === 0 ? bone : vary(pink, r, 0.05)));
+  s.paintBox(0, 16, 4, 12, 4, (f, x, y) => (y < 3 ? vary(brown, r, 0.08) : y > 8 && x < 2 ? bone : vary(pinkD, r, 0.05)));
   return s;
 }
 

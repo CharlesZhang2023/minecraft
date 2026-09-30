@@ -285,3 +285,40 @@ export class Snowball extends Entity {
     if (this.age > 400) this.removed = true;
   }
 }
+
+export class Fireball extends Entity {
+  typeName = 'Fireball';
+  persist = false;
+  ax = 0; ay = 0; az = 0;
+  constructor(world: World, public game: Game, public shooter: Entity | null, dx: number, dy: number, dz: number) {
+    super(world);
+    this.width = this.height = 1;
+    const l = Math.hypot(dx, dy, dz) || 1;
+    this.ax = (dx / l) * 0.1; this.ay = (dy / l) * 0.1; this.az = (dz / l) * 0.1;
+  }
+  override tick() {
+    if (this.age > 400) { this.removed = true; return; }
+    const nx = this.x + this.vx, ny = this.y + this.vy, nz = this.z + this.vz;
+    const hitBlock = BLOCKS[this.world.getId(Math.floor(nx), Math.floor(ny + 0.5), Math.floor(nz))].solid;
+    const hitEnt = this.game.interact!.projectileHitEntity(this as unknown as Snowball, nx, ny + 0.5, nz);
+    const p = this.game.player!;
+    const hitPlayer = this.shooter !== p && p.distanceTo({ x: nx, y: ny - 0.5, z: nz }) < 1.2 && !p.dead && !p.spectator;
+    if ((hitBlock || hitEnt || hitPlayer) && this.age > 1) {
+      if (hitPlayer) p.damage(6, 'explosion', this.shooter);
+      this.removed = true;
+      this.game.interact!.explode(this.x, this.y + 0.5, this.z, 1, true, this);
+      return;
+    }
+    this.x = nx; this.y = ny; this.z = nz;
+    this.vx += this.ax; this.vy += this.ay; this.vz += this.az;
+    this.vx *= 0.95; this.vy *= 0.95; this.vz *= 0.95;
+    this.game.particles?.smoke(this.x, this.y + 0.5, this.z);
+  }
+  /** Punching a fireball sends it back. */
+  deflect(dx: number, dy: number, dz: number) {
+    const l = Math.hypot(dx, dy, dz) || 1;
+    this.vx = (dx / l) * 1.2; this.vy = (dy / l) * 1.2; this.vz = (dz / l) * 1.2;
+    this.ax = (dx / l) * 0.1; this.ay = (dy / l) * 0.1; this.az = (dz / l) * 0.1;
+    this.shooter = this.game.player;
+  }
+}

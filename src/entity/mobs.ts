@@ -5,8 +5,8 @@ import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import { findPath, PathNode } from './path';
 import { B, BLOCKS, idOf, WOOL_COLORS } from '../world/blocks';
-import { I, ItemStack, stack, getItem } from '../game/items';
-import { Arrow, XpOrb } from './item';
+import { I, ItemStack, stack, getItem, TOOLS } from '../game/items';
+import { Arrow, XpOrb, Fireball } from './item';
 import { Random } from '../noise';
 import { raycastBlocks } from '../game/raycast';
 
@@ -667,6 +667,122 @@ export class Chicken extends Animal {
   override drops(burning: boolean): ItemStack[] {
     return [stack(I.FEATHER, rng.int(3)), stack(burning ? I.COOKED_CHICKEN : I.CHICKEN)].filter((s) => s.count > 0);
   }
+}
+
+// ------------------------------------------------------------------ nether
+export class ZombiePigman extends Monster {
+  typeName = 'Zombie Pigman';
+  override skin = 'pigman';
+  override sayName = 'pigman.say';
+  override hurtName = 'pigman.hurt';
+  override deathName = 'pigman.hurt';
+  override speedAttr = 0.23;
+  override chaseSpeed = 0.23 * 0.23 * 1.1;
+  override heldItem = 0;
+  override fireImmune = true;
+  override canBreathe = true;
+  anger = 0;
+  override holding = true;
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.width = 0.6; this.height = 1.95;
+    this.maxHealth = this.health = 20;
+    this.attackDamage = 5;
+    this.heldItem = goldSword();
+  }
+  override eyeHeight() { return 1.74; }
+  get armsPose() { return this.anger > 0 ? 'zombie' : undefined; }
+  override ai() {
+    if (this.anger > 0) {
+      this.anger--;
+      if (!this.target || this.target.dead) { const p = this.game.player; if (p && !p.creative && !p.dead && this.distanceTo(p) < 40) this.target = p; }
+      if (this.target) this.chase(this.target);
+      return;
+    }
+    this.target = null;
+    this.wander(0.03);
+  }
+  override onDamaged(attacker: Entity | null) {
+    if (!attacker) return;
+    const who = (attacker as unknown as { shooter?: Entity }).shooter ?? attacker;
+    if (!(who instanceof LivingEntity)) return;
+    // the whole group gets angry
+    for (const e of this.game.entities) if (e instanceof ZombiePigman && e.distanceTo(this) < 32) { e.anger = 400 + rng.int(400); e.target = who; }
+    this.game.audio.play('pigman.angry', this, 1, 1);
+  }
+  override drops(): ItemStack[] {
+    return [stack(I.ROTTEN_FLESH, rng.int(2)), stack(I.GOLD_NUGGET, rng.int(2))].filter((s) => s.count > 0);
+  }
+  override despawnCheck() {}
+}
+
+export class Ghast extends Mob {
+  typeName = 'Ghast';
+  override model = 'ghast';
+  override skin = 'ghast';
+  override hostile = true;
+  override sayName = 'ghast.moan';
+  override hurtName = 'ghast.scream';
+  override deathName = 'ghast.death';
+  override fireImmune = true;
+  override canBreathe = true;
+  override xp = 5;
+  shooting = false;
+  private attack = 0;
+  private course = { x: 0, y: 0, z: 0 };
+  private courseTimer = 0;
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.width = 4; this.height = 4;
+    this.maxHealth = this.health = 10;
+    this.soundPitch = 0.7;
+  }
+  override eyeHeight() { return 2.6; }
+  override gravity() { return 0; }
+  override isFlying() { return true; }
+  override ai() {
+    // wander through the air
+    const dx = this.course.x - this.x, dy = this.course.y - this.y, dz = this.course.z - this.z;
+    const d = Math.hypot(dx, dy, dz);
+    if (--this.courseTimer <= 0 || d < 1 || d > 60) {
+      this.courseTimer = rng.int(5) + 2;
+      if (d < 1 || d > 60 || rng.int(20) === 0) this.course = { x: this.x + (rng.next() * 2 - 1) * 16, y: this.y + (rng.next() * 2 - 1) * 16, z: this.z + (rng.next() * 2 - 1) * 16 };
+    } else {
+      this.vx += (dx / d) * 0.1 * 0.1; this.vy += (dy / d) * 0.1 * 0.1; this.vz += (dz / d) * 0.1 * 0.1;
+    }
+    const p = this.game.player;
+    const target = p && !p.dead && !p.creative && !p.spectator && this.distanceTo(p) < 64 ? p : null;
+    if (target) {
+      this.lookTarget = { x: target.x, y: target.y + target.eyeHeight(), z: target.z };
+      this.bodyYaw = this.yaw = (Math.atan2(target.z - this.z, target.x - this.x) * 180) / Math.PI - 90;
+      if (this.canSee(target)) {
+        this.attack++;
+        if (this.attack === 10) this.game.audio.play('ghast.charge', this, 3, 1);
+        if (this.attack === 20) {
+          const ex = this.x, ey = this.y + 2, ez = this.z;
+          const tx = target.x - ex, ty = target.y + target.height / 2 - ey, tz = target.z - ez;
+          const f = new Fireball(this.world, this.game, this, tx, ty, tz);
+          const l = Math.hypot(tx, ty, tz);
+          f.setPos(ex + (tx / l) * 4, ey - 0.5, ez + (tz / l) * 4);
+          this.game.addEntity(f);
+          this.game.audio.play('ghast.fireball', this, 3, 1);
+          this.attack = -40;
+        }
+      } else if (this.attack > 0) this.attack--;
+    } else if (this.attack > 0) this.attack--;
+    this.shooting = this.attack > 10;
+  }
+  override travel() {
+    this.move(this.vx, this.vy, this.vz);
+    this.vx *= 0.91; this.vy *= 0.91; this.vz *= 0.91;
+  }
+  override drops(): ItemStack[] {
+    return [stack(I.GHAST_TEAR, rng.int(2)), stack(I.GUNPOWDER, rng.int(3))].filter((s) => s.count > 0);
+  }
+}
+
+function goldSword(): number {
+  return TOOLS.golden_sword ?? 0;
 }
 
 export function woolRgb(color: number) {

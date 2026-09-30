@@ -414,6 +414,7 @@ export const ANIMATED: Record<string, { frames: number; speed: number }> = {
   lava_still: { frames: 20, speed: 3 },
   lava_flow: { frames: 16, speed: 2 },
   fire: { frames: 16, speed: 1 },
+  nether_portal: { frames: 32, speed: 1 },
 };
 function waterFrame(frame: number, total: number, flow: boolean): Img {
   const img = newImg();
@@ -477,6 +478,7 @@ export function animatedFrame(name: string, frame: number): Img {
     case 'lava_still': return lavaFrame(frame, a.frames, false);
     case 'lava_flow': return lavaFrame(frame, a.frames, true);
     case 'fire': return fireFrame(frame);
+    case 'nether_portal': return portalFrame(frame);
   }
   return getTexture(name);
 }
@@ -1072,6 +1074,66 @@ gens.bed_foot_end = () => {
     };
   }
 }
+
+// ---------------------------------------------------------------- nether
+gens.netherrack = (r) => {
+  const img = newImg();
+  paletteNoise(img, r, P('#5a1d1d', '#6b2222', '#6f2525', '#7a2a2a', '#843030', '#8f3a36'), { jitter: 0.75 });
+  for (let i = 0; i < 12; i++) { const x = r.int(S), y = r.int(S); set(img, x, y, hex('#4a1414')); set(img, (x + 1) % S, y, hex('#4a1414')); }
+  for (let i = 0; i < 8; i++) set(img, r.int(S), r.int(S), hex('#9e4a44'));
+  return img;
+};
+gens.soul_sand = (r) => {
+  const img = newImg();
+  paletteNoise(img, r, P('#3f2d22', '#4a3628', '#54402f', '#5c4636', '#664f3c'), { jitter: 0.7 });
+  // faint screaming faces
+  for (const [fx, fy] of [[2, 3], [9, 8], [4, 11]]) {
+    set(img, fx, fy, hex('#2a1c14')); set(img, fx + 2, fy, hex('#2a1c14'));
+    set(img, fx + 1, fy + 2, hex('#2a1c14')); set(img, fx + 1, fy + 3, hex('#2a1c14'));
+  }
+  return img;
+};
+gens.nether_bricks = (r) => brickPattern(r, 4, hex('#1a0c10'), P('#2c1419', '#361a1f', '#3c1c22'), hex('#241014'), hex('#4a2229'));
+gens.nether_quartz_ore = (r) => {
+  const img = gens.netherrack(new Random(55));
+  for (let i = 0; i < 6; i++) {
+    const x = 1 + r.int(13), y = 1 + r.int(13);
+    set(img, x, y, hex('#e8e0d8')); set(img, x + 1, y, hex('#d8cfc4')); if (r.bool()) set(img, x, y + 1, hex('#bfb3a5'));
+  }
+  return img;
+};
+gens.quartz_block_side = (r) => {
+  const img = newImg();
+  paletteNoise(img, r, P('#e3dcd2', '#e8e2d9', '#ece6de', '#f0ebe4'), { jitter: 0.5 });
+  return img;
+};
+gens.quartz_block_top = (r) => {
+  const img = gens.quartz_block_side(r);
+  for (let i = 0; i < S; i++) { set(img, i, 0, hex('#d4ccc0')); set(img, 0, i, hex('#d4ccc0')); set(img, i, 15, hex('#c8bfb2')); set(img, 15, i, hex('#c8bfb2')); }
+  return img;
+};
+gens.magma_block = (r) => {
+  const img = newImg();
+  paletteNoise(img, r, P('#5a1a0a', '#6b240c', '#7a2e10', '#8a3812'), { jitter: 0.6 });
+  const { edge } = voronoi(r, 7);
+  for (let i = 0; i < S * S; i++) if (edge[i] < 0.9) set(img, i % S, (i / S) | 0, edge[i] < 0.45 ? hex('#ffb030') : hex('#e0601a'));
+  return img;
+};
+function portalFrame(frame: number): Img {
+  const img = newImg();
+  const t = (frame / 32) * Math.PI * 2;
+  for (let y = 0; y < S; y++)
+    for (let x = 0; x < S; x++) {
+      const dx = x - 7.5, dy = y - 7.5;
+      const d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+      const v = Math.sin(a * 2 + d * 0.9 - t * 2) * 0.5 + Math.sin(x * 0.9 + y * 0.4 + t) * 0.25 + Math.cos(d * 1.3 + t * 3) * 0.25;
+      const l = 0.5 + v * 0.5;
+      const c = mix(hex('#4a0e8a'), hex('#b44aff'), l);
+      set(img, x, y, l > 0.85 ? mix(c, hex('#f0c0ff'), 0.5) : c, 190);
+    }
+  return img;
+}
+gens.nether_portal = () => portalFrame(0);
 
 // ---------------------------------------------------------------- particles
 for (let i = 0; i < 8; i++) {

@@ -48,7 +48,7 @@ export class World {
   frame = 0;
   readOnly = false;
 
-  constructor(public seed: number, public worldId: string) {
+  constructor(public seed: number, public worldId: string, public dimension: 'overworld' | 'nether' = 'overworld') {
     const n = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
     for (let i = 0; i < n; i++) {
       const w = new WorkerCtor();
@@ -96,11 +96,14 @@ export class World {
     if (!c || !c.ready) return B.BEDROCK;
     return c.blocks[(x & 15) | ((z & 15) << 4) | (y << 8)];
   }
+  get hasSky() {
+    return this.dimension !== 'nether';
+  }
   getLight(x: number, y: number, z: number): [number, number] {
-    if (y >= CHUNK_H) return [15, 0];
+    if (y >= CHUNK_H) return [this.hasSky ? 15 : 0, 0];
     if (y < 0) return [0, 0];
     const c = this.chunks.get(chunkKey(x >> 4, z >> 4));
-    if (!c || !c.light) return [15, 0];
+    if (!c || !c.light) return [this.hasSky ? 15 : 0, 0];
     const v = c.light[(x & 15) | ((z & 15) << 4) | (y << 8)];
     return [v >> 4, v & 15];
   }
@@ -272,7 +275,7 @@ export class World {
     }
     slot.busy = true;
     slot.job = { type: 'gen', chunk: c };
-    slot.w.postMessage({ type: 'gen', id: ++this.jobId, seed: this.seed, cx: c.cx, cz: c.cz });
+    slot.w.postMessage({ type: 'gen', id: ++this.jobId, seed: this.seed, cx: c.cx, cz: c.cz, dim: this.dimension });
   }
 
   private startMesh(slot: { w: Worker; busy: boolean; job: Job | null }, c: Chunk) {
@@ -289,7 +292,7 @@ export class World {
     c.urgent = false;
     slot.busy = true;
     slot.job = { type: 'mesh', chunk: c, version: c.version };
-    slot.w.postMessage({ type: 'mesh', id: ++this.jobId, cx: c.cx, cz: c.cz, chunks, biomes });
+    slot.w.postMessage({ type: 'mesh', id: ++this.jobId, cx: c.cx, cz: c.cz, chunks, biomes, sky: this.dimension !== 'nether' });
   }
 
   private acceptChunk(c: Chunk, blocks: Uint16Array, biomes: Uint8Array, tiles?: [number, TileEntity][]) {

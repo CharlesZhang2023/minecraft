@@ -6,7 +6,8 @@ import { Input } from './input';
 import { Audio, SOUND_FOR } from './audio';
 import { Options, loadOptions, saveOptions } from './options';
 import { Particles } from './particles';
-import { computeEnv } from './env';
+import { computeEnv, netherEnv } from './env';
+import { findPortal, buildPortal } from './portal';
 import { raycastBlocks, BlockHit } from './raycast';
 import { BLOCKS, B, idOf, metaOf, Render, CHUNK_H, TEXTURES, tex } from '../world/blocks';
 import { selectionShapes } from '../world/models';
@@ -17,7 +18,7 @@ import { UI } from '../ui/ui';
 import { Storage, WorldMeta } from './storage';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
-import { ItemEntity } from '../entity/item';
+import { ItemEntity, Fireball } from '../entity/item';
 import { BlockTicker } from './blockticks';
 import { Interaction } from './interact';
 import { Spawner } from '../entity/spawner';
@@ -82,6 +83,11 @@ export class Game {
   lastHeldId = -1;
   lastHeldSlot = -1;
   sleepFade = 0;
+  dimension: 'overworld' | 'nether' = 'overworld';
+  portalTime = 0;
+  portalCooldown = 0;
+  pendingArrival: { x: number; y: number; z: number; toSpawn: boolean } | null = null;
+  traveling = false;
   torchFlicker = 0;
   private torchFlickerDX = 0;
   titleYaw = 0;
@@ -125,14 +131,14 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ world lifecycle
-  async openWorld(meta: WorldMeta, panorama = false) {
-    await this.closeWorld(false);
-    this.panorama = panorama;
-    this.meta = meta;
-    const world = new World(meta.seed, meta.id);
+  private makeWorld(meta: WorldMeta, dim: 'overworld' | 'nether', panorama: boolean): World {
+    const world = new World(meta.seed, dim === 'nether' ? meta.id + '~nether' : meta.id, dim);
     world.readOnly = panorama;
     world.renderDistance = panorama ? Math.min(6, this.options.renderDistance) : this.options.renderDistance;
-    await world.init();
+    return world;
+  }
+
+  private attachWorld(world: World) {
     this.world = world;
     world.onMesh = (c, r) => this.renderer.uploadChunk(c, r);
     world.onUnload = (c) => this.renderer.freeChunk(c);
@@ -140,12 +146,36 @@ export class Game {
     this.ticker = new BlockTicker(this, world);
     world.onBlockChange = (x, y, z, old, v) => this.ticker!.onChange(x, y, z, old, v);
     world.onChunkLoaded = (c) => this.ticker!.onChunkLoaded(c);
+    this.dimension = world.dimension;
+  }
+
+  private loadEntities(list: unknown[] | undefined) {
+    this.entities = [];
+    if (list) for (const e of list as { type: string }[]) {
+      const ent = createEntity(e.type, this.world!, this);
+      if (ent) { (ent as unknown as { load(d: unknown): void }).load(e); this.entities.push(ent); }
+    }
+  }
+  private saveEntities() {
+    return this.entities.filter((e) => (e as unknown as { persist?: boolean }).persist && !e.removed).map((e) => (e as unknown as { toJSON(): unknown }).toJSON());
+  }
+
+  async openWorld(meta: WorldMeta, panorama = false) {
+    await this.closeWorld(false);
+    this.panorama = panorama;
+    this.meta = meta;
+    const dim = meta.dimension ?? 'overworld';
+    const world = this.makeWorld(meta, dim, panorama);
+    await world.init();
+    this.attachWorld(world);
     this.interact = new Interaction(this);
     this.spawner = new Spawner(this);
     this.weather = new Weather(this);
-    this.entities = [];
     this.time = meta.time ?? 0;
     this.ticks = 0;
+    this.portalTime = 0;
+    this.portalCooldown = 0;
+    this.pendingArrival = null;
     const p = new Player(world);
     this.player = p;
     p.difficulty = this.options.difficulty;
@@ -174,12 +204,63 @@ export class Game {
       p.spawnY = -1; // resolved once the chunk loads
       p.setPos(sx + 0.5, 200, sz + 0.5);
     }
-    if (meta.entities) for (const e of meta.entities as { type: string }[]) {
-      const ent = createEntity(e.type, world, this);
-      if (ent) { (ent as unknown as { load(d: unknown): void }).load(e); this.entities.push(ent); }
-    }
+    this.loadEntities(dim === 'nether' ? meta.netherEntities : meta.entities);
     this.doDaylightCycle = true;
     this.lastSave = performance.now();
+  }
+
+  /** Move the player to the other dimension through a portal (or back to spawn after death). */
+  async travel(to: 'overworld' | 'nether', toSpawn = false) {
+    if (!this.world || !this.player || !this.meta || this.traveling) return;
+    this.traveling = true;
+    const p = this.player, meta = this.meta;
+    const from = this.world;
+    const loading = new (await import('../ui/menus')).LoadingScreen(this.ui, to === 'nether' ? 'Entering the Nether' : 'Leaving the Nether');
+    loading.ready = true;
+    this.ui.open(loading);
+    // persist the dimension we're leaving
+    if (from.dimension === 'nether') meta.netherEntities = this.saveEntities();
+    else meta.entities = this.saveEntities();
+    await from.saveAll();
+    for (const c of from.chunks.values()) this.renderer.freeChunk(c);
+    from.destroy();
+    const world = this.makeWorld(meta, to, false);
+    await world.init();
+    this.attachWorld(world);
+    p.world = world;
+    this.loadEntities(to === 'nether' ? meta.netherEntities : meta.entities);
+    const scale = to === 'nether' ? 1 / 8 : 8;
+    let nx = p.x * scale, nz = p.z * scale;
+    if (toSpawn) { nx = p.spawnX + 0.5; nz = p.spawnZ + 0.5; }
+    p.setPos(nx, toSpawn ? p.spawnY : 70, nz);
+    p.vx = p.vy = p.vz = 0;
+    this.pendingArrival = { x: nx, y: p.y, z: nz, toSpawn };
+    meta.dimension = to;
+    this.portalTime = 0;
+    this.portalCooldown = 200;
+    this.traveling = false;
+  }
+
+  private resolveArrival() {
+    const a = this.pendingArrival!, w = this.world!, p = this.player!;
+    if (!w.chunkAt(Math.floor(a.x), Math.floor(a.z))) return false;
+    if (w.loadProgress(a.x, a.z, Math.min(3, w.renderDistance)) < 0.99) return false;
+    this.pendingArrival = null;
+    if (a.toSpawn) {
+      const y = w.topSolidY(Math.floor(a.x), Math.floor(a.z)) + 1;
+      p.setPos(a.x, Math.max(a.y, y), a.z);
+      return true;
+    }
+    const nether = w.dimension === 'nether';
+    const found = findPortal(w, a.x, a.z, nether ? 16 : 128);
+    if (found) {
+      p.setPos(found[0] + 0.5, found[1], found[2] + 0.5);
+    } else {
+      const [x, y, z] = buildPortal(w, Math.floor(a.x), nether ? 70 : Math.max(64, w.topSolidY(Math.floor(a.x), Math.floor(a.z)) + 1), Math.floor(a.z), nether ? 34 : 60, nether ? 100 : 180, (c) => this.interact!.setAll(c));
+      p.setPos(x, y, z);
+    }
+    this.audio.play('portalTravel', null, 0.6, 1);
+    return true;
   }
 
   /** Pick a spawn column on land near the origin using the worldgen noise directly. */
@@ -234,7 +315,9 @@ export class Game {
     this.meta.player = this.player?.toJSON();
     this.meta.gameMode = this.player?.gameMode ?? this.meta.gameMode;
     this.meta.difficulty = this.options.difficulty;
-    this.meta.entities = this.entities.filter((e) => (e as unknown as { persist?: boolean }).persist).map((e) => (e as unknown as { toJSON(): unknown }).toJSON());
+    this.meta.dimension = this.dimension;
+    if (this.dimension === 'nether') this.meta.netherEntities = this.saveEntities();
+    else this.meta.entities = this.saveEntities();
     try {
       await this.world.saveAll();
       await Storage.saveWorld(this.meta);
@@ -326,7 +409,12 @@ export class Game {
       }
       return;
     }
-    if (p.spawnY < 0 && !this.resolveSpawn()) {
+    if (this.pendingArrival) {
+      p.preTick();
+      this.resolveArrival();
+      return;
+    }
+    if (this.dimension === 'overworld' && p.spawnY < 0 && !this.resolveSpawn()) {
       p.preTick();
       return; // wait for spawn chunk
     }
@@ -335,7 +423,8 @@ export class Game {
       return; // don't simulate the player in unloaded chunks
     }
     if (this.doDaylightCycle) this.time++;
-    this.weather!.tick();
+    if (this.dimension === 'overworld') this.weather!.tick();
+    this.portalTick();
 
     // ---------- player input
     this.handleKeys();
@@ -394,7 +483,27 @@ export class Game {
       this.saveWorld();
     }
     this.ui.hud.tick();
-    this.audio.setRain(this.weather!.rainAt(p.x, p.y, p.z) && !p.isInsideOpaque() ? this.weather!.rain : 0);
+    this.audio.setRain(this.dimension === 'overworld' && this.weather!.rainAt(p.x, p.y, p.z) && !p.isInsideOpaque() ? this.weather!.rain : 0);
+  }
+
+  private portalTick() {
+    const p = this.player!, w = this.world!;
+    if (this.portalCooldown > 0) this.portalCooldown--;
+    const b = p.box;
+    let inPortal = false;
+    for (let x = Math.floor(b.x0); x <= Math.floor(b.x1) && !inPortal; x++)
+      for (let y = Math.floor(b.y0); y <= Math.floor(b.y1) && !inPortal; y++)
+        for (let z = Math.floor(b.z0); z <= Math.floor(b.z1) && !inPortal; z++) if (w.getId(x, y, z) === B.NETHER_PORTAL) inPortal = true;
+    if (inPortal && !p.dead) {
+      if (this.portalTime === 0 && this.portalCooldown === 0) this.audio.play('portalTrigger', null, 0.5, 0.8 + Math.random() * 0.4);
+      this.portalTime = Math.min(90, this.portalTime + 1);
+      if (this.portalCooldown === 0 && (this.portalTime >= 80 || (p.creative && this.portalTime >= 2))) {
+        this.travel(this.dimension === 'nether' ? 'overworld' : 'nether');
+      }
+    } else {
+      this.portalTime = Math.max(0, this.portalTime - 5);
+      if (!inPortal && this.portalCooldown > 0 && this.portalCooldown < 190) this.portalCooldown = 0;
+    }
   }
 
   private moveInput() {
@@ -465,7 +574,7 @@ export class Game {
     let best: Entity | null = null;
     let bestT = this.target ? this.target.t : Math.min(reach, 3.5);
     for (const e of this.entities) {
-      if (!(e instanceof LivingEntity) || e.dead) continue;
+      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball)) continue; }
       const b = e.box;
       const g = 0.1;
       const r = rayAABB(eye.x, eye.y, eye.z, d.x, d.y, d.z, { x0: b.x0 - g, y0: b.y0 - g, z0: b.z0 - g, x1: b.x1 + g, y1: b.y1 + g, z1: b.z1 + g }, bestT);
@@ -602,14 +711,15 @@ export class Game {
     const underwater = idOf(camBlock) === B.WATER && cam.y < Math.floor(cam.y) + 1 - ((metaOf(camBlock) & 7) + 1) / 9 + 0.12;
     const inLava = idOf(camBlock) === B.LAVA;
     const biome = this.biomeAt(Math.floor(p.x), Math.floor(p.z));
-    const rain = this.weather!.rain;
-    const env = computeEnv({
+    const nether = w.dimension === 'nether';
+    const rain = nether ? 0 : this.weather!.rain;
+    const env = nether ? netherEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : computeEnv({
       time: this.time, renderDistance: w.renderDistance, underwater, inLava, blind: 0, rain, thunder: this.weather!.thunder,
       cameraY: cam.y, gamma: this.options.gamma, clouds: this.options.clouds, skyTemp: biome.cold ? -0.5 : biome.name === 'Desert' ? 2 : 0.8,
       flicker: 1.5 + this.torchFlicker * 0.1, ticks: this.ticks + t,
     });
     r.beginFrame(env);
-    r.drawSky();
+    if (!nether) r.drawSky();
     r.drawChunks(w.chunks.values(), 'opaque');
     this.entityRenderer.render(this, t);
     this.drawSelection();
@@ -618,8 +728,10 @@ export class Game {
     this.particles!.build(pm, cam.x, cam.y, cam.z, t, yaw, pitch);
     r.drawDyn(pm, { blend: false, cull: false, alphaCut: 0.1 });
     r.drawChunks(w.chunks.values(), 'trans');
-    if (cam.y < 192 + 4 || true) r.drawClouds(192.33);
-    this.weather!.render(t);
+    if (!nether) {
+      r.drawClouds(192.33);
+      this.weather!.render(t);
+    }
     // first-person hand
     if (this.thirdPerson === 0 && !this.hideHud && !p.spectator && !this.panorama) this.entityRenderer.renderHand(this, t);
     // overlays
@@ -628,6 +740,10 @@ export class Game {
     else if (p.fireTicks > 0 && !p.creative) r.drawOverlay([1, 0.45, 0, 0.18]);
     if (camBlock && BLOCKS[idOf(camBlock)].opaque && !p.spectator && this.thirdPerson === 0) r.drawOverlay([0.05, 0.05, 0.05, 0.95]);
     if (this.sleepFade > 0) r.drawOverlay([0.02, 0.02, 0.06, Math.min(1, this.sleepFade)]);
+    if (this.portalTime > 0) {
+      const f = Math.min(1, (this.portalTime + t) / 80);
+      r.drawOverlay([0.45, 0.1, 0.8, f * 0.75 + Math.sin((this.ticks + t) * 0.3) * 0.05 * f]);
+    }
     if (this.ui.previewBox) this.entityRenderer.renderPreview(this, this.ui.previewBox, this.gui.scale);
     this.ui.render(ctx);
   }

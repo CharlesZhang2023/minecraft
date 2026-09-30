@@ -17,6 +17,8 @@ export interface WorldMeta {
   spawn?: [number, number, number];
   difficulty?: number;
   entities?: unknown[];
+  netherEntities?: unknown[];
+  dimension?: 'overworld' | 'nether';
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;

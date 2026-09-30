@@ -44,6 +44,9 @@ export interface EnvState {
   cloudOffset: number;
   moonPhase: number;
   rain: number;
+  ambient: number;
+  ambientCol: [number, number, number];
+  noSky?: boolean;
 }
 
 const MAX_QUADS = 1 << 18;
@@ -294,6 +297,8 @@ export class Renderer {
     gl.uniform3fv(p.u.u_skyLightCol, e.skyLightCol);
     gl.uniform1f(p.u.u_gamma, e.gamma);
     gl.uniform1f(p.u.u_flicker, e.flicker);
+    gl.uniform1f(p.u.u_ambient, e.ambient);
+    gl.uniform3fv(p.u.u_ambientCol, e.ambientCol);
     gl.uniform3fv(p.u.u_fogColor, e.fogColor);
     gl.uniform3fv(p.u.u_fogSky, e.skyColor);
     gl.uniform2f(p.u.u_fog, e.fogStart, e.fogEnd);
