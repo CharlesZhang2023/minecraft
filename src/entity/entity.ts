@@ -35,6 +35,8 @@ export class Entity {
     this.x = this.px = x;
     this.y = this.py = y;
     this.z = this.pz = z;
+    this.onGround = false;
+    this.fallDistance = 0;
   }
 
   get box(): AABB {

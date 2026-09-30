@@ -26,6 +26,7 @@ import { Weather } from './weather';
 import { createEntity } from '../entity/registry';
 import { rayAABB, clamp, mat4 } from '../math';
 import { getItemSprite, ITEM_SPRITE_NAMES } from '../render/itemsprites';
+import { getTexture } from '../render/textures';
 import { Random } from '../noise';
 import { BIOMES } from '../world/biomes';
 import { Commands } from './commands';
@@ -94,6 +95,7 @@ export class Game {
     // register item sprite textures so they can be used as particles / dropped items
     const extra = ITEM_SPRITE_NAMES.map((n) => ({ name: 'item/' + n, img: getItemSprite(n)! }));
     extra.push({ name: 'weather_rain', img: rainTexture() }, { name: 'weather_snow', img: snowTexture() });
+    extra.push({ name: 'grass_side_item', img: tintMasked(getTexture('grass_side'), 0x7cbd6b) });
     this.renderer.initAtlas(extra);
     this.gui = new Gui();
     this.input = new Input(uiCanvas);
@@ -733,3 +735,17 @@ export function boxFaces(m: import('../render/gl').DynMesh, a: number[], b: numb
 }
 
 export { stack, I, getItem, Render, CHUNK_H, mat4 };
+
+/** Copy of a texture with the tint-masked (alpha 254) pixels coloured. */
+function tintMasked(img: Uint8ClampedArray, col: number): Uint8ClampedArray {
+  const o = new Uint8ClampedArray(img);
+  for (let i = 0; i < o.length; i += 4) {
+    if (o[i + 3] > 0 && o[i + 3] < 255) {
+      o[i] = (o[i] * ((col >> 16) & 255)) / 255;
+      o[i + 1] = (o[i + 1] * ((col >> 8) & 255)) / 255;
+      o[i + 2] = (o[i + 2] * (col & 255)) / 255;
+      o[i + 3] = 255;
+    }
+  }
+  return o;
+}

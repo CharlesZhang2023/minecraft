@@ -80,7 +80,9 @@ export function computeEnv(i: EnvInput): EnvState {
   let fogStart = R * 0.75, fogEnd = R;
   let fogCol = fog;
   // below y ~ 32 the void colour darkens the fog
-  const voidCol: [number, number, number] = [fog[0] * 0.2, fog[1] * 0.2, fog[2] * 0.6];
+  // vanilla only shows the dark lower sky when the eye is below the horizon (sea level)
+  const vt = clamp((63 - i.cameraY) / 8, 0, 1);
+  const voidCol: [number, number, number] = [fog[0] * (1 - vt * 0.8), fog[1] * (1 - vt * 0.8), fog[2] * (1 - vt * 0.4)];
   if (i.underwater) {
     fogCol = [0.02 + 0.08 * bright, 0.08 + 0.2 * bright, 0.25 + 0.4 * bright];
     fogStart = -8;

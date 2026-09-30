@@ -21,6 +21,18 @@ for (const st of sc.steps) {
     }
   }
   if (st.keys) for (const k of st.keys) await page.keyboard.press(k);
+  if (st.clicks) {
+    for (const c of st.clicks) {
+      // c: { at: "js expr returning [x,y]" | [x,y], button?: 'left'|'right', shift?: bool }
+      const pos = typeof c.at === 'string' ? await page.evaluate(c.at) : c.at;
+      await page.mouse.move(pos[0], pos[1]);
+      if (c.shift) await page.keyboard.down('Shift');
+      await page.mouse.down({ button: c.button ?? 'left' });
+      await page.mouse.up({ button: c.button ?? 'left' });
+      if (c.shift) await page.keyboard.up('Shift');
+      await page.waitForTimeout(80);
+    }
+  }
   if (st.after) await page.waitForTimeout(st.after);
   if (st.shot) {
     await page.screenshot({ path: st.shot });

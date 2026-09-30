@@ -71,7 +71,7 @@ export class WorldGen {
     const rv = Math.abs(this.riverN.sample2(x / 480, z / 480));
     const rf = (1 - smoothstep(0.0, 0.045, rv)) * land * (1 - mount * 0.7);
     if (base > SEA_LEVEL - 4) base = lerp(base, SEA_LEVEL - 5, rf);
-    const amp = (2.5 + hilly * 4 + mount * 16) * (1 - rf * 0.9);
+    const amp = (2.5 + hilly * 4 + mount * 13) * (1 - rf * 0.9);
     return { base, amp, mount, river: rf, cont: c };
   }
 
@@ -88,8 +88,12 @@ export class WorldGen {
         for (let gy = 0; gy < GY; gy++) {
           const y = gy * 8;
           let d = p.base - y;
-          // only bother with 3D noise near the surface
-          if (Math.abs(d) < p.amp * 1.6 + 8) d += this.d3.sample3(wx / 56, y / 36, wz / 56) * p.amp * 1.6;
+          // only bother with 3D noise near the surface; weaker above the base height so
+          // overhangs form cliffs rather than floating islands
+          if (Math.abs(d) < p.amp * 1.6 + 8) {
+            const n = this.d3.sample3(wx / 56, y / 36, wz / 56) * p.amp * 1.6;
+            d += d < 0 ? n * Math.max(0.25, 1 + d / (p.amp * 2.5)) : n;
+          }
           if (y > 250) d = -100;
           g[(gx * GX + gz) * GY + gy] = d;
         }

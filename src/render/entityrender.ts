@@ -339,21 +339,19 @@ export class EntityRenderer {
     rotateX(m, m, armRot[0]);
     translate(m, m, -1 / 16, 7 / 16, 1 / 16);
     const it = getItem(id);
-    // back to a y-up frame
-    scale(m, m, -1, -1, 1);
     if (it.block !== undefined && !it.flatBlock && !it.sprite) {
-      translate(m, m, 0, 0.1, -0.1);
-      rotateX(m, m, 10 * DEG);
+      // LayerHeldItem (1.8) block transform, in model space, then flip back to y-up
+      translate(m, m, 0, 0.1875, -0.3125);
+      rotateX(m, m, 20 * DEG);
       rotateY(m, m, 45 * DEG);
-      scale(m, m, 0.375, 0.375, 0.375);
+      scale(m, m, -0.375, -0.375, 0.375);
     } else {
-      translate(m, m, 0, 0.05, -0.15);
-      rotateX(m, m, -90 * DEG);
-      rotateZ(m, m, 0);
+      // flat item: sprite plane along the arm's forward axis, grip in the fist, blade forward/up
+      scale(m, m, -1, -1, 1);
+      const s = 0.62;
+      translate(m, m, 0, 0.3 * s - 0.02, -0.3 * s);
       rotateY(m, m, 90 * DEG);
-      rotateX(m, m, 0);
-      scale(m, m, 0.55, 0.55, 0.55);
-      rotateZ(m, m, -45 * DEG);
+      scale(m, m, s, s, s);
     }
     const dm = this.handMesh;
     dm.reset();
@@ -372,6 +370,7 @@ export class EntityRenderer {
       const def = BLOCKS[it.block];
       const boxes = def.render === Render.Model ? modelBoxes(pack(it.block, it.block === B.CHEST ? 2 : 0)) : [{ x0: 0, y0: 0, z0: 0, x1: 16, y1: 16, z1: 16, tex: def.faces.slice(0, 6) }];
       if (def.faces.length > 6 && def.render === Render.Cube) boxes[0].tex[5] = def.faces[6];
+      if (it.block === B.GRASS) { const gs = TEXTURES.indexOf('grass_side_item'); if (gs >= 0) for (const f of [0, 1, 4, 5]) boxes[0].tex[f] = gs; }
       for (const b of boxes) {
         const a = [b.x0 / 16 - 0.5, b.y0 / 16 - 0.5, b.z0 / 16 - 0.5], c = [b.x1 / 16 - 0.5, b.y1 / 16 - 0.5, b.z1 / 16 - 0.5];
         const s = { x0: b.x0 / 16, y0: b.y0 / 16, z0: b.z0 / 16, x1: b.x1 / 16, y1: b.y1 / 16, z1: b.z1 / 16 };
@@ -385,7 +384,7 @@ export class EntityRenderer {
           [[[a[0], a[1], c[2]], [c[0], a[1], c[2]], [c[0], c[1], c[2]], [a[0], c[1], c[2]]], [[s.x0, 1 - s.y0], [s.x1, 1 - s.y0], [s.x1, 1 - s.y1], [s.x0, 1 - s.y1]]],
         ];
         F.forEach(([pts, uvs], f) => {
-          for (let k = 0; k < 4; k++) v.push(pts[k][0], pts[k][1], pts[k][2], uvs[k][0], uvs[k][1], b.tex[f], shades[f] + (f === 3 && (def.tint !== 'none') ? 10 : 0));
+          for (let k = 0; k < 4; k++) v.push(pts[k][0], pts[k][1], pts[k][2], uvs[k][0], uvs[k][1], b.tex[f], shades[f] + (def.tint !== 'none' && (it.block !== B.GRASS || f === 3) ? 10 : 0));
         });
       }
     } else {
@@ -620,9 +619,9 @@ export class EntityRenderer {
     }
     const isBlock = it.block !== undefined && !it.flatBlock && !it.sprite;
     if (isBlock) {
-      rotateY(m, m, 45 * DEG);
-      scale(m, m, 1.0, 1.0, 1.0);
       translate(m, m, 0, 0.1, 0);
+      rotateY(m, m, 45 * DEG);
+      scale(m, m, 0.4 / 0.4 * 0.42, 0.42, 0.42);
     } else {
       translate(m, m, 0, 4 / 16 * 1.7 * 0.5, 2 / 16 * 1.7 * 0.5);
       rotateY(m, m, -135 * DEG);

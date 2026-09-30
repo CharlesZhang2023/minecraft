@@ -24,10 +24,9 @@ export class Input {
       if (e.code === 'Tab' || e.code === 'F3' || e.code === 'F1' || e.code === 'F2' || e.code === 'F5' || e.code === 'Space' || (e.ctrlKey && e.code !== 'KeyV' && e.code !== 'KeyC')) e.preventDefault();
       if (e.code.startsWith('Arrow') || e.code === 'Slash' || e.code === 'Quote') e.preventDefault();
       const consumed = this.onKeyDown(e);
-      if (!consumed) {
-        if (!this.down.has(e.code)) this.pressedQ.push(e.code);
-        this.down.add(e.code);
-      }
+      if (!consumed && !this.down.has(e.code)) this.pressedQ.push(e.code);
+      // held state is always tracked (shift-clicking inside screens needs it)
+      this.down.add(e.code);
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) this.onChar(e.key);
     });
     window.addEventListener('keyup', (e) => {
