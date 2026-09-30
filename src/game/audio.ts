@@ -203,6 +203,13 @@ const GENS: Record<string, Gen> = {
   },
   'slime.jump': (r) => normalize(lowpass(env(grains(SR * 0.25, r, 6, 100, 900, 0.04), 0.005, 0.22, 2), 800), 0.7),
   'slime.squish': (r) => normalize(lowpass(env(grains(SR * 0.35, r, 10, 80, 700, 0.05), 0.005, 0.3, 1.5), 700), 0.7),
+  'wolf.say': (r) => {
+    const n = SR * 0.4;
+    const b = new Float32Array(n);
+    for (let k = 0; k < 2; k++) mixInto(b, env(tone(Math.floor(SR * 0.12), 500 + r.next() * 150, 350, 'saw', 0.05, 20), 0.005, 0.11, 2), 0.6, Math.floor(k * SR * 0.16));
+    return normalize(bandpass(b, 250, 2500), 0.6);
+  },
+  'wolf.hurt': (r) => normalize(bandpass(env(tone(SR * 0.3, 900 + r.next() * 100, 600, 'saw', 0.1, 25), 0.005, 0.28, 2), 300, 3000), 0.6),
   'bat.idle': (r) => {
     const n = SR * 0.25;
     const b = new Float32Array(n);

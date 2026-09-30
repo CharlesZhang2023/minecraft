@@ -33,13 +33,13 @@ export class EntityRenderer {
     const defs: Record<string, M.ModelDef> = {
       biped: M.bipedModel(), bipedThin: M.bipedModel(true), creeper: M.creeperModel(), pig: M.pigModel(), cow: M.cowModel(),
       sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(),
-      armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(), enderman: M.endermanModel(), slimeInner: M.slimeInnerModel(), slimeOuter: M.slimeOuterModel(), squid: M.squidModel(), bat: M.batModel(),
+      armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(), enderman: M.endermanModel(), slimeInner: M.slimeInnerModel(), slimeOuter: M.slimeOuterModel(), squid: M.squidModel(), bat: M.batModel(), wolf: M.wolfModel(),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
       cow: M.cowSkin(), sheep: M.sheepSkin(), wool: M.woolSkin(), chicken: M.chickenSkin(), spider: M.spiderSkin(),
-      ghast: M.ghastSkin(false), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(),
+      ghast: M.ghastSkin(false), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(), wolf: M.wolfSkin('wild'), wolfTame: M.wolfSkin('tame'), wolfAngry: M.wolfSkin('angry'),
     };
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
@@ -442,6 +442,32 @@ export class EntityRenderer {
         scale(sq, sq, -1, -1, 1);
         translate(sq, sq, 0, -1.501, 0);
         this.drawModel('squid', 'squid', sq, pose, light, overlay);
+        break;
+      }
+      case 'wolf': {
+        const sitting = !!anyE.sitting;
+        pose.head = [hp, netHead, 0];
+        const tail = (anyE.owner ? (0.55 - (20 - e.health) * 0.02) * Math.PI : Math.PI / 5) + (sitting ? 0 : c(ls * 0.6662) * 1.4 * lsa * 0.3);
+        pose.tail = [tail, 0, 0];
+        const offs: Record<string, [number, number, number]> = {};
+        if (sitting) {
+          pose.mane = [(Math.PI * 2) / 5, 0, 0];
+          pose.body = [Math.PI / 4, 0, 0];
+          offs.mane = [0, 2, -1]; offs.body = [0, 4, 0]; offs.tail = [0, 7, -2];
+          pose.leg1 = [(Math.PI * 3) / 2, 0, 0]; pose.leg2 = [(Math.PI * 3) / 2, 0, 0];
+          offs.leg1 = [0, 6.9, -2]; offs.leg2 = [0, 6.9, -2];
+          pose.leg3 = [5.811947, 0, 0]; pose.leg4 = [5.811947, 0, 0];
+          offs.leg3 = [0.01, 1, 0]; offs.leg4 = [-0.01, 1, 0];
+        } else {
+          pose.body = [Math.PI / 2, 0, 0];
+          pose.mane = [Math.PI / 2, 0, 0];
+          pose.leg1 = [c(ls * 0.6662) * 1.4 * lsa, 0, 0];
+          pose.leg2 = [c(ls * 0.6662 + Math.PI) * 1.4 * lsa, 0, 0];
+          pose.leg3 = [c(ls * 0.6662 + Math.PI) * 1.4 * lsa, 0, 0];
+          pose.leg4 = [c(ls * 0.6662) * 1.4 * lsa, 0, 0];
+        }
+        const sk = anyE.angry ? 'wolfAngry' : anyE.owner ? 'wolfTame' : 'wolf';
+        this.drawModel('wolf', sk, base, pose, light, overlay, undefined, 1, offs);
         break;
       }
       case 'bat': {

@@ -177,6 +177,22 @@ export function batModel(): ModelDef {
   };
 }
 
+export function wolfModel(): ModelDef {
+  return {
+    texW: 64, texH: 32,
+    parts: [
+      part('head', -1, 13.5, -7, [box(-3, -3, -2, 6, 6, 4, 0, 0), box(-3, -5, 0, 2, 2, 1, 16, 14), box(1, -5, 0, 2, 2, 1, 16, 14), box(-1.5, 0, -5, 3, 3, 4, 0, 10)]),
+      part('body', 0, 14, 2, [box(-4, -2, -3, 6, 9, 6, 18, 14)], { rx: Math.PI / 2 }),
+      part('mane', -1, 14, 2, [box(-4, -3, -3, 8, 6, 7, 21, 0)], { rx: Math.PI / 2 }),
+      part('leg1', -2.5, 16, 7, [box(0, 0, -1, 2, 8, 2, 0, 18)]),
+      part('leg2', 0.5, 16, 7, [box(0, 0, -1, 2, 8, 2, 0, 18)]),
+      part('leg3', -2.5, 16, -4, [box(0, 0, -1, 2, 8, 2, 0, 18)]),
+      part('leg4', 0.5, 16, -4, [box(0, 0, -1, 2, 8, 2, 0, 18)]),
+      part('tail', -1, 12, 8, [box(0, 0, -1, 2, 8, 2, 9, 18)]),
+    ],
+  };
+}
+
 export function ghastModel(): ModelDef {
   const tentacles: ModelPart[] = [];
   const r = new Random(1660);
@@ -482,6 +498,25 @@ export function batSkin(): Skin {
   s.paintBox(0, 16, 6, 12, 6, () => vary(fur, r, 0.08));
   s.paintBox(0, 34, 10, 6, 1, () => vary(dk, r, 0.08));
   s.paintBox(42, 0, 10, 16, 1, (f, x, y) => (y > 12 && x % 3 === 0 ? null : vary(dk, r, 0.06)));
+  return s;
+}
+
+export function wolfSkin(kind: 'wild' | 'tame' | 'angry'): Skin {
+  const s = new Skin();
+  const r = new Random(41);
+  const fur = hx('#d8d4cc'), furD = hx('#b8b2a8'), dk = hx('#8a847a');
+  const eye = kind === 'angry' ? hx('#e02020') : hx('#1a1a1a');
+  s.paintBox(0, 0, 6, 6, 4, (f, x, y) => {
+    if (f === 'front' && y === 2 && (x === 1 || x === 4)) return eye;
+    if (f === 'front' && y === 1 && (x === 1 || x === 4) && kind === 'angry') return hx('#5a4a40');
+    return vary(y > 3 ? furD : fur, r, 0.05);
+  });
+  s.paintBox(16, 14, 2, 2, 1, () => vary(dk, r, 0.05));
+  s.paintBox(0, 10, 3, 3, 4, (f, x, y) => (f === 'front' && y === 0 ? hx('#1a1a1a') : vary(furD, r, 0.05)));
+  s.paintBox(18, 14, 6, 9, 6, () => vary(r.int(4) ? fur : furD, r, 0.05));
+  s.paintBox(21, 0, 8, 6, 7, (f, x, y) => (kind === 'tame' && y >= 4 ? (y === 4 ? hx('#b02020') : hx('#d83030')) : vary(r.int(3) ? fur : furD, r, 0.05)));
+  s.paintBox(0, 18, 2, 8, 2, (f, x, y) => vary(y > 6 ? dk : fur, r, 0.05));
+  s.paintBox(9, 18, 2, 8, 2, (f, x, y) => vary(y > 5 ? furD : fur, r, 0.05));
   return s;
 }
 

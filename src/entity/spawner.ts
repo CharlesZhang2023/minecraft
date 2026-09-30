@@ -136,7 +136,8 @@ export class Spawner {
       const x0 = cx * 16 + this.rng.int(16), z0 = cz * 16 + this.rng.int(16);
       const biome = g.biomeAt(x0, z0);
       if (biome.id === BIOME.DESERT || biome.id === BIOME.OCEAN || biome.id === BIOME.BEACH || biome.id === BIOME.RIVER) continue;
-      const types = biome.cold ? ['sheep', 'sheep', 'pig', 'chicken'] : ['pig', 'cow', 'sheep', 'sheep', 'chicken', 'cow'];
+      const wolfy = biome.id === BIOME.TAIGA || biome.id === BIOME.SNOWY_TAIGA || biome.id === BIOME.FOREST;
+      const types = wolfy && this.rng.int(3) === 0 ? ['wolf'] : biome.cold ? ['sheep', 'sheep', 'pig', 'chicken'] : ['pig', 'cow', 'sheep', 'sheep', 'chicken', 'cow'];
       const type = types[this.rng.int(types.length)];
       const count = 2 + this.rng.int(3);
       for (let i = 0; i < count; i++) {

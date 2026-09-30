@@ -509,7 +509,7 @@ abstract class Animal extends Mob {
     this.wander(this.speedAttr * this.speedAttr);
   }
 
-  override onDamaged() {
+  override onDamaged(_attacker?: Entity | null) {
     this.panicTicks = 60;
     this.path = null;
   }
@@ -855,6 +855,103 @@ export class Slime extends Mob {
   }
   override extraJSON() { return { size: this.size }; }
   override loadExtra(d: Record<string, unknown>) { this.setSize((d.size as number) ?? 1); }
+}
+
+// ------------------------------------------------------------------ wolves
+export class Wolf extends Animal {
+  typeName = 'Wolf';
+  override model = 'wolf';
+  override skin = 'wolf';
+  override sayName = 'wolf.say';
+  override hurtName = 'wolf.hurt';
+  override deathName = 'wolf.hurt';
+  override temptItems = [I.BONE];
+  owner = false;
+  sitting = false;
+  angry = false;
+  override xp = 1 + rng.int(3);
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.width = 0.6; this.height = 0.85;
+    this.maxHealth = this.health = 8;
+    this.speedAttr = 0.3;
+  }
+  override eyeHeight() { return 0.68; }
+  override ai() {
+    const p = this.game.player;
+    if (this.target && (this.target.dead || this.target.removed)) { this.target = null; this.angry = false; }
+    if (this.target) {
+      this.sitting = false;
+      this.lookTarget = { x: this.target.x, y: this.target.y + this.target.eyeHeight(), z: this.target.z };
+      if (--this.pathTimer <= 0) { this.pathTimer = 10; this.setPathTo(this.target.x, this.target.y, this.target.z, 0.3 * 0.3 * 1.2); }
+      if (!this.path) this.moveToward(this.target.x, this.target.z, 0.3 * 0.3 * 1.2);
+      const d = this.distanceTo(this.target);
+      if (d < 1.4 && this.attackCooldown <= 0) {
+        this.attackCooldown = 20;
+        this.swing();
+        this.target.damage(this.owner ? 4 : 2, 'mob', this);
+        if (this.onGround) this.vy = 0.3;
+      }
+      return;
+    }
+    if (this.owner && p) {
+      if (this.sitting) { this.path = null; this.forward = 0; if (rng.int(100) === 0) this.lookTarget = { x: p.x, y: p.y + 1.6, z: p.z }; return; }
+      // defend the owner
+      if (p.lastAttacker && p.lastAttacker !== this && p.hurtTime > 0 && p.lastAttacker instanceof LivingEntity && !(p.lastAttacker as unknown as { dead: boolean }).dead) this.target = p.lastAttacker as LivingEntity;
+      const d = this.distanceTo(p);
+      if (d > 24 && p.onGround) { this.setPos(p.x + rng.next() * 2 - 1, p.y, p.z + rng.next() * 2 - 1); this.path = null; return; }
+      if (d > 6) {
+        if (--this.pathTimer <= 0) { this.pathTimer = 10; this.setPathTo(p.x, p.y, p.z, 0.3 * 0.3 * 1.1); }
+        return;
+      }
+      if (d < 3) this.path = null;
+      if (rng.int(60) === 0) { this.lookTarget = { x: p.x, y: p.y + 1.6, z: p.z }; this.lookTimer = 40; }
+      this.wander(0.05, 400);
+      return;
+    }
+    super.ai();
+  }
+  override onDamaged(attacker: Entity | null) {
+    this.sitting = false;
+    const who = (attacker as unknown as { shooter?: Entity })?.shooter ?? attacker;
+    if (who instanceof LivingEntity && !(this.owner && who === this.game.player)) {
+      this.target = who;
+      this.angry = !this.owner;
+      if (!this.owner) for (const e of this.game.entities) if (e instanceof Wolf && !e.owner && e !== this && e.distanceTo(this) < 16) { e.target = who; e.angry = true; }
+    }
+  }
+  override interact(game: Game, held: ItemStack | null): boolean {
+    if (this.owner) {
+      const food = held ? getItem(held.id).food : undefined;
+      if (held && food && [I.BEEF, I.COOKED_BEEF, I.PORKCHOP, I.COOKED_PORKCHOP, I.CHICKEN, I.COOKED_CHICKEN, I.ROTTEN_FLESH, I.MUTTON, I.COOKED_MUTTON].includes(held.id) && this.health < this.maxHealth) {
+        this.heal(food.hunger);
+        game.interact!.consume(1);
+        return true;
+      }
+      this.sitting = !this.sitting;
+      this.path = null;
+      this.target = null;
+      return true;
+    }
+    if (held && held.id === I.BONE && !this.angry) {
+      game.interact!.consume(1);
+      if (rng.int(3) === 0) {
+        this.owner = true;
+        this.sitting = true;
+        this.maxHealth = this.health = 20;
+        for (let i = 0; i < 7; i++) game.particles?.heart(this.x + rng.next() - 0.5, this.y + 0.8, this.z + rng.next() - 0.5);
+        game.audio.play('wolf.say', this, 1, 1.3);
+      } else for (let i = 0; i < 7; i++) game.particles?.smoke(this.x + rng.next() - 0.5, this.y + 0.8, this.z + rng.next() - 0.5);
+      return true;
+    }
+    return false;
+  }
+  override despawnCheck() {}
+  override extraJSON() { return { owner: this.owner, sitting: this.sitting }; }
+  override loadExtra(d: Record<string, unknown>) {
+    this.owner = !!d.owner; this.sitting = !!d.sitting;
+    if (this.owner) this.maxHealth = 20;
+  }
 }
 
 // ------------------------------------------------------------------ ambient: squid & bat
