@@ -186,6 +186,23 @@ const GENS: Record<string, Gen> = {
     mixInto(b, env(tone(n, 440, 110, 'sine', 0.05, 5), 0.3, 2.6, 1.2), 0.6);
     return normalize(b, 0.7);
   },
+  'enderman.idle': (r) => normalize(bandpass(env(tone(SR * 0.8, 120 + r.next() * 40, 90, 'saw', 0.3, 13), 0.1, 0.65, 1.5), 80, 900), 0.6),
+  'enderman.hurt': (r) => normalize(bandpass(env(tone(SR * 0.5, 300 + r.next() * 100, 150, 'saw', 0.3, 30), 0.01, 0.45, 2), 100, 2500), 0.7),
+  'enderman.death': (r) => normalize(bandpass(env(tone(SR * 1.5, 250, 60, 'saw', 0.3, 20), 0.02, 1.4, 1.5), 80, 2000), 0.7),
+  'enderman.stare': (r) => {
+    const n = SR * 1.2;
+    const b = env(tone(n, 600 + r.next() * 100, 900, 'saw', 0.25, 45), 0.05, 1.1, 1.2);
+    mixInto(b, env(highpass(noise(n, r), 2000), 0.05, 1.1, 1.2), 0.3);
+    return normalize(b, 0.6);
+  },
+  'enderman.teleport': (r) => {
+    const n = SR * 0.5;
+    const b = env(tone(n, 1400 + r.next() * 200, 250, 'sine', 0.05, 30), 0.005, 0.45, 1.5);
+    mixInto(b, env(bandpass(noise(n, r), 400, 3000), 0.005, 0.3, 2), 0.4);
+    return normalize(b, 0.6);
+  },
+  'slime.jump': (r) => normalize(lowpass(env(grains(SR * 0.25, r, 6, 100, 900, 0.04), 0.005, 0.22, 2), 800), 0.7),
+  'slime.squish': (r) => normalize(lowpass(env(grains(SR * 0.35, r, 10, 80, 700, 0.05), 0.005, 0.3, 1.5), 700), 0.7),
   'villager.idle': (r) => {
     const n = SR * 0.45;
     const b = env(tone(n, 180 + r.next() * 40, 140 + r.next() * 60, 'saw', 0.06, 9), 0.03, 0.4, 1.5);

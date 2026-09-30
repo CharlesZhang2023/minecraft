@@ -128,6 +128,35 @@ export function villagerModel(): ModelDef {
   };
 }
 
+export function endermanModel(): ModelDef {
+  return {
+    texW: 64, texH: 32,
+    parts: [
+      part('head', 0, -14, 0, [box(-4, -8, -4, 8, 8, 8, 0, 0)]),
+      part('jaw', 0, -14, 0, [box(-4, -8, -4, 8, 8, 8, 0, 16, { inflate: -0.5 })]),
+      part('body', 0, -14, 0, [box(-4, 0, -2, 8, 12, 4, 32, 16)]),
+      part('rightArm', -5, -12, 0, [box(-1, -2, -1, 2, 30, 2, 56, 0)]),
+      part('leftArm', 5, -12, 0, [box(-1, -2, -1, 2, 30, 2, 56, 0, { mirror: true })]),
+      part('rightLeg', -2, -5, 0, [box(-1, 0, -1, 2, 30, 2, 56, 0)]),
+      part('leftLeg', 2, -5, 0, [box(-1, 0, -1, 2, 30, 2, 56, 0, { mirror: true })]),
+    ],
+  };
+}
+export function slimeInnerModel(): ModelDef {
+  return {
+    texW: 64, texH: 32,
+    parts: [part('cube', 0, 0, 0, [
+      box(-3, 17, -3, 6, 6, 6, 0, 16),
+      box(-3.25, 18, -3.5, 2, 2, 2, 32, 0),
+      box(1.25, 18, -3.5, 2, 2, 2, 32, 4),
+      box(0, 21, -3.5, 1, 1, 1, 32, 8),
+    ])],
+  };
+}
+export function slimeOuterModel(): ModelDef {
+  return { texW: 64, texH: 32, parts: [part('cube', 0, 0, 0, [box(-4, 16, -4, 8, 8, 8, 0, 0)])] };
+}
+
 export function ghastModel(): ModelDef {
   const tentacles: ModelPart[] = [];
   const r = new Random(1660);
@@ -384,6 +413,31 @@ export function villagerSkin(prof: string): Skin {
   s.paintBox(44, 22, 4, 8, 4, (f, x, y) => (y > 5 ? vary(skin, r, 0.03) : vary(R, r, 0.04)));
   s.paintBox(40, 38, 8, 4, 4, () => vary(R, r, 0.04));
   s.paintBox(0, 22, 4, 12, 4, (f, x, y) => (y > 9 ? hx('#3a2a1a') : vary(RD, r, 0.04)));
+  return s;
+}
+
+export function endermanSkin(): Skin {
+  const s = new Skin();
+  const r = new Random(21);
+  const k = hx('#161616'), k2 = hx('#0e0e0e');
+  s.paintBox(0, 0, 8, 8, 8, (f, x, y) => {
+    if (f === 'front' && y === 4 && (x <= 2 || x >= 5)) return x === 1 || x === 6 ? hx('#f0a0ff') : hx('#cc00fa');
+    return vary(r.int(3) ? k : k2, r, 0.05);
+  });
+  s.paintBox(0, 16, 8, 8, 8, (f, x, y) => (y > 5 ? vary(k, r, 0.05) : null));
+  s.paintBox(32, 16, 8, 12, 4, () => vary(r.int(3) ? k : k2, r, 0.05));
+  s.paintBox(56, 0, 2, 30, 2, () => vary(r.int(3) ? k : k2, r, 0.05));
+  return s;
+}
+export function slimeSkin(): Skin {
+  const s = new Skin();
+  const r = new Random(22);
+  const g = hx('#6fbe5a'), g2 = hx('#5ea84c'), inner = hx('#4c9a3a');
+  s.paintBox(0, 0, 8, 8, 8, (f, x, y) => { const v = vary(r.int(4) ? g : g2, r, 0.06); return [v[0], v[1], v[2], 150]; });
+  s.paintBox(0, 16, 6, 6, 6, () => vary(inner, r, 0.08));
+  s.paintBox(32, 0, 2, 2, 2, () => hx('#1a3a14'));
+  s.paintBox(32, 4, 2, 2, 2, () => hx('#1a3a14'));
+  s.paintBox(32, 8, 1, 1, 1, () => hx('#1a3a14'));
   return s;
 }
 

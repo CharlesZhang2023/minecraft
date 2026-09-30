@@ -76,7 +76,13 @@ export class Spawner {
     const dist = Math.hypot(x + 0.5 - p.x, y - p.y, z + 0.5 - p.z);
     if (dist < 24) return;
     const r = this.rng.int(100);
-    const type = r < 30 ? 'zombie' : r < 55 ? 'skeleton' : r < 78 ? 'creeper' : 'spider';
+    let type = r < 28 ? 'zombie' : r < 50 ? 'skeleton' : r < 70 ? 'creeper' : r < 88 ? 'spider' : r < 95 ? 'enderman' : 'slime';
+    // slimes only in "slime chunks" deep underground or in swamps
+    if (type === 'slime') {
+      const slimeChunk = ((Math.imul(x >> 4, 0x4c1906) + Math.imul(z >> 4, 0x5ac0db) + (g.meta?.seed ?? 0)) >>> 0) % 10 === 0;
+      if (!((slimeChunk && y < 40) || g.biomeAt(x, z).name === 'Swamp')) type = 'zombie';
+    }
+    if (type === 'enderman' && (!this.spawnable(x, y + 2, z, 1))) return;
     if (type === 'spider' && !this.spawnable(x + 1, y, z, 1)) return;
     const m = g.interact!.spawnMob(type, x + 0.5, y, z + 0.5);
     if (m) (m as Mob).yaw = this.rng.next() * 360;

@@ -33,13 +33,13 @@ export class EntityRenderer {
     const defs: Record<string, M.ModelDef> = {
       biped: M.bipedModel(), bipedThin: M.bipedModel(true), creeper: M.creeperModel(), pig: M.pigModel(), cow: M.cowModel(),
       sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(),
-      armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(),
+      armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(), enderman: M.endermanModel(), slimeInner: M.slimeInnerModel(), slimeOuter: M.slimeOuterModel(),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
       cow: M.cowSkin(), sheep: M.sheepSkin(), wool: M.woolSkin(), chicken: M.chickenSkin(), spider: M.spiderSkin(),
-      ghast: M.ghastSkin(false), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(),
+      ghast: M.ghastSkin(false), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(),
     };
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
@@ -234,6 +234,7 @@ export class EntityRenderer {
   }
 
   private drawLiving(game: Game, e: LivingEntity, x: number, y: number, z: number, t: number, sky: number, blk: number) {
+    const gl = this.r.gl;
     const anyE = e as unknown as Record<string, unknown>;
     const model = (anyE.model as string) ?? 'biped';
     const skin = model === 'villager' ? 'villager_' + (anyE.profession as string) : (anyE.skin as string) ?? 'steve';
@@ -378,6 +379,53 @@ export class EntityRenderer {
         scale(g4, g4, -4.5, -4.5, 4.5);
         translate(g4, g4, 0, -1.501, 0);
         this.drawModel('ghast', (anyE.shooting as boolean) ? 'ghastShoot' : 'ghast', g4, pose, [15, 15], overlay);
+        break;
+      }
+      case 'enderman': {
+        const carrying = (anyE.carried as number) || 0;
+        const angry = !!anyE.target;
+        pose.head = [hp, netHead, 0];
+        pose.jaw = [hp, netHead, 0];
+        let ra = c(ls * 0.6662 + Math.PI) * 2 * lsa * 0.5 * 0.5, la = c(ls * 0.6662) * 2 * lsa * 0.5 * 0.5;
+        ra = Math.max(-0.4, Math.min(0.4, ra)); la = Math.max(-0.4, Math.min(0.4, la));
+        if (carrying) { ra = la = -0.5; }
+        pose.rightArm = [ra, 0, carrying ? -0.05 : 0.05];
+        pose.leftArm = [la, 0, carrying ? 0.05 : -0.05];
+        pose.rightLeg = [Math.max(-0.4, Math.min(0.4, c(ls * 0.6662) * 1.4 * lsa * 0.5)), 0, 0];
+        pose.leftLeg = [Math.max(-0.4, Math.min(0.4, c(ls * 0.6662 + Math.PI) * 1.4 * lsa * 0.5)), 0, 0];
+        const offs: Record<string, [number, number, number]> = angry ? { head: [0, -5, 0] } : {};
+        this.drawModel('enderman', 'enderman', base, pose, light, overlay, new Set(['jaw']), 1, offs);
+        if (angry) this.drawModel('enderman', 'enderman', base, pose, light, overlay, new Set(['head', 'body', 'rightArm', 'leftArm', 'rightLeg', 'leftLeg']));
+        if (carrying) {
+          const m = mat4();
+          translate(m, base, 0, (-14 + 6.75) / 16, -5 / 16);
+          rotateX(m, m, 20 * DEG);
+          rotateY(m, m, 45 * DEG);
+          scale(m, m, -0.5, -0.5, 0.5);
+          const dm = this.handMesh;
+          dm.reset();
+          this.appendItem(dm, carrying, m, light[0], light[1]);
+          this.r.drawDyn(dm, { cull: false, viewProj: this.currentVP });
+        }
+        break;
+      }
+      case 'slime': {
+        const size = (anyE.size as number) ?? 1;
+        const sq = ((anyE.pSquish as number) ?? 0) + (((anyE.squish as number) ?? 0) - ((anyE.pSquish as number) ?? 0)) * t;
+        const f = 1 / (sq / (size * 0.5 + 1) + 1);
+        const sb = mat4();
+        identity(sb);
+        translate(sb, sb, x, y, z);
+        rotateY(sb, sb, (180 - bodyYaw) * DEG);
+        if (deathRoll) rotateZ(sb, sb, deathRoll * DEG);
+        scale(sb, sb, size * f, size / f, size * f);
+        scale(sb, sb, -1, -1, 1);
+        translate(sb, sb, 0, -1.501, 0);
+        this.drawModel('slimeInner', 'slime', sb, pose, light, overlay);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        this.drawModel('slimeOuter', 'slime', sb, pose, light, overlay, undefined, 1);
+        gl.disable(gl.BLEND);
         break;
       }
       case 'villager': {

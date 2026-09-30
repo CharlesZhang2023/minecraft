@@ -5,7 +5,7 @@ import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import { findPath, PathNode } from './path';
 import { B, BLOCKS, idOf, WOOL_COLORS } from '../world/blocks';
-import { I, ItemStack, stack, getItem, TOOLS } from '../game/items';
+import { I, I2, ItemStack, stack, getItem, TOOLS } from '../game/items';
 import { Arrow, XpOrb, Fireball } from './item';
 import { Random } from '../noise';
 import { raycastBlocks } from '../game/raycast';
@@ -671,6 +671,190 @@ export class Chicken extends Animal {
   override drops(burning: boolean): ItemStack[] {
     return [stack(I.FEATHER, rng.int(3)), stack(burning ? I.COOKED_CHICKEN : I.CHICKEN)].filter((s) => s.count > 0);
   }
+}
+
+// ------------------------------------------------------------------ enderman & slime
+const CARRYABLE = [B.GRASS, B.DIRT, B.SAND, B.GRAVEL, B.DANDELION, B.POPPY, B.PUMPKIN, B.MELON, B.CLAY, B.CACTUS, B.RED_MUSHROOM, B.BROWN_MUSHROOM];
+
+export class Enderman extends Monster {
+  typeName = 'Enderman';
+  override model = 'enderman';
+  override skin = 'enderman';
+  override sayName = 'enderman.idle';
+  override hurtName = 'enderman.hurt';
+  override deathName = 'enderman.death';
+  override speedAttr = 0.3;
+  override chaseSpeed = 0.3 * 0.3;
+  override canBreathe = true;
+  carried = 0;
+  private stareTicks = 0;
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.width = 0.6; this.height = 2.9;
+    this.maxHealth = this.health = 40;
+    this.attackDamage = 7;
+  }
+  override eyeHeight() { return 2.55; }
+  /** Is the player looking at our head? */
+  private stared(): boolean {
+    const p = this.game.player;
+    if (!p || p.dead || p.creative || p.spectator) return false;
+    const held = p.inventory.armor[0];
+    if (held && held.id === B.PUMPKIN) return false;
+    const eye = this.game.eyePos(1);
+    const d = this.game.lookVec(p.yaw, p.pitch);
+    const tx = this.x - eye.x, ty = this.y + this.eyeHeight() - eye.y, tz = this.z - eye.z;
+    const dist = Math.hypot(tx, ty, tz);
+    if (dist > 64) return false;
+    const dot = (tx * d.x + ty * d.y + tz * d.z) / dist;
+    return dot > 1 - 0.025 / dist && this.canSee(p);
+  }
+  override ai() {
+    const p = this.game.player;
+    if (!this.target && this.stared()) {
+      if (++this.stareTicks > 5) { this.target = p; this.game.audio.play('enderman.stare', this, 1.5, 1); }
+    } else this.stareTicks = 0;
+    if (this.target) {
+      if (this.target.dead || (this.target as { creative?: boolean }).creative || this.distanceTo(this.target) > 64) this.target = null;
+      else {
+        this.chase(this.target);
+        if (this.distanceTo(this.target) > 16 && rng.int(30) === 0) this.teleportTowards(this.target);
+      }
+    } else this.wander(0.04, 150);
+    // water hurts: teleport away
+    if (this.inWater || (this.game.weather?.rainAt(this.x, this.y + 2, this.z) && this.game.dimension === 'overworld')) {
+      if (this.age % 10 === 0) { this.damage(1, 'drown'); this.teleportRandom(); }
+    }
+    // block griefing
+    if (rng.int(this.carried ? 2000 : 20) === 0) {
+      const x = Math.floor(this.x + rng.int(5) - 2), y = Math.floor(this.y + rng.int(3)), z = Math.floor(this.z + rng.int(5) - 2);
+      const w = this.world;
+      if (!this.carried) {
+        const id = w.getId(x, y, z);
+        if (CARRYABLE.includes(id)) { this.carried = id; w.set(x, y, z, B.AIR); }
+      } else if (w.getId(x, y, z) === B.AIR && BLOCKS[w.getId(x, y - 1, z)].opaque) {
+        w.set(x, y, z, this.carried);
+        this.carried = 0;
+      }
+    }
+    if (rng.int(200) === 0 && !this.target) this.teleportRandom();
+  }
+  override damage(amount: number, source: DamageSource, attacker?: Entity | null): boolean {
+    if (source === 'arrow') { this.teleportRandom(); return false; }
+    const r = super.damage(amount, source, attacker);
+    if (r && attacker instanceof LivingEntity) this.target = attacker;
+    if (r && !this.dead && rng.int(3) === 0) this.teleportRandom();
+    return r;
+  }
+  teleportRandom() {
+    this.teleportTo(this.x + (rng.next() - 0.5) * 64, this.y + rng.int(64) - 32, this.z + (rng.next() - 0.5) * 64);
+  }
+  teleportTowards(e: Entity) {
+    const dx = this.x - e.x, dz = this.z - e.z, l = Math.hypot(dx, dz) || 1;
+    this.teleportTo(this.x + (rng.next() - 0.5) * 8 - (dx / l) * 16, this.y + rng.int(16) - 8, this.z + (rng.next() - 0.5) * 8 - (dz / l) * 16);
+  }
+  teleportTo(tx: number, ty: number, tz: number): boolean {
+    const w = this.world;
+    const x = Math.floor(tx), z = Math.floor(tz);
+    if (!w.chunkAt(x, z)) return false;
+    let y = Math.floor(ty);
+    while (y > 1 && !BLOCKS[w.getId(x, y - 1, z)].solid) y--;
+    for (let k = 0; k < 3; k++) { const id = w.getId(x, y + k, z); if (BLOCKS[id].solid || BLOCKS[id].fluid) return false; }
+    if (!BLOCKS[w.getId(x, y - 1, z)].solid) return false;
+    const ox = this.x, oy = this.y, oz = this.z;
+    for (let i = 0; i < 32; i++) this.game.particles?.spell(ox + (rng.next() - 0.5), oy + rng.next() * 2.9, oz + (rng.next() - 0.5), 0xcc00fa);
+    this.setPos(x + 0.5, y, z + 0.5);
+    this.path = null;
+    this.game.audio.play('enderman.teleport', { x: ox, y: oy, z: oz }, 1, 1);
+    this.game.audio.play('enderman.teleport', this, 1, 1);
+    return true;
+  }
+  override tick() {
+    super.tick();
+    if (!this.dead && this.age % 3 === 0) this.game.particles?.spell(this.x + (rng.next() - 0.5) * 0.6, this.y + rng.next() * 2.9, this.z + (rng.next() - 0.5) * 0.6, 0xa030d0);
+  }
+  override drops(): ItemStack[] {
+    const out = rng.int(2) ? [stack(I.ENDER_PEARL)] : [];
+    if (this.carried) out.push(stack(this.carried));
+    return out;
+  }
+  override extraJSON() { return { carried: this.carried }; }
+  override loadExtra(d: Record<string, unknown>) { this.carried = (d.carried as number) ?? 0; }
+}
+
+export class Slime extends Mob {
+  typeName = 'Slime';
+  override model = 'slime';
+  override skin = 'slime';
+  override hostile = true;
+  override hurtName = 'slime.squish';
+  override deathName = 'slime.squish';
+  override canBreathe = false;
+  size = 1;
+  squish = 0;
+  pSquish = 0;
+  private jumpDelay = 20;
+  private wasOnGround = false;
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.setSize([1, 2, 4][rng.int(3)]);
+  }
+  setSize(s: number) {
+    this.size = s;
+    this.width = this.height = 0.51 * s;
+    this.maxHealth = this.health = s * s;
+    this.xp = s;
+  }
+  override eyeHeight() { return 0.625 * this.height; }
+  override preTick() { super.preTick(); this.pSquish = this.squish; }
+  override ai() {
+    const p = this.game.player;
+    const target = p && !p.dead && !p.creative && !p.spectator && this.distanceTo(p) < 16 ? p : null;
+    if (target) this.yaw = this.bodyYaw = this.headYaw = (Math.atan2(target.z - this.z, target.x - this.x) * 180) / Math.PI - 90;
+    else if (rng.int(80) === 0) this.yaw = rng.next() * 360;
+    if (this.onGround && --this.jumpDelay <= 0) {
+      this.jumpDelay = rng.int(20) + 10;
+      if (target) this.jumpDelay = Math.floor(this.jumpDelay / 3);
+      this.jumping = true;
+      this.forward = 1;
+      this.aiSpeed = 0.2 + this.size * 0.03;
+      this.game.audio.play('slime.jump', this, 0.4 * this.size, ((rng.next() - rng.next()) * 0.2 + 1) / 0.8);
+    } else if (!this.onGround) {
+      this.forward = 1;
+      this.aiSpeed = 0.2 + this.size * 0.03;
+    }
+    if (target && this.size > 1 && this.distanceTo(target) < 0.6 * this.size + 0.8 && this.attackCooldown <= 0 && this.canSee(target)) {
+      this.attackCooldown = 20;
+      target.damage(this.size, 'mob', this);
+    }
+  }
+  override airSpeed() { return 0.02 * (1 + this.size * 0.3); }
+  override tick() {
+    super.tick();
+    if (this.onGround && !this.wasOnGround) {
+      this.squish = -0.5;
+      for (let i = 0; i < this.size * 8; i++) this.game.particles?.add({ x: this.x + (rng.next() - 0.5) * this.width, y: this.y + 0.1, z: this.z + (rng.next() - 0.5) * this.width, vy: 0.1, vx: (rng.next() - 0.5) * 0.2, vz: (rng.next() - 0.5) * 0.2, layer: this.game.interact!.spriteLayer('slime_ball'), u0: 0.3, v0: 0.3, u1: 0.5, v1: 0.5, size: 0.06, life: 12 });
+    } else if (!this.onGround && this.wasOnGround) this.squish = 1;
+    this.squish *= 0.6;
+    this.wasOnGround = this.onGround;
+  }
+  override die(source: DamageSource, attacker: Entity | null) {
+    super.die(source, attacker);
+    if (this.size > 1) {
+      const n = 2 + rng.int(3);
+      for (let i = 0; i < n; i++) {
+        const c = new Slime(this.world, this.game);
+        c.setSize(this.size / 2);
+        c.setPos(this.x + ((i % 2) - 0.5) * this.size / 4, this.y + 0.5, this.z + (((i / 2) | 0) - 0.5) * this.size / 4);
+        this.game.addEntity(c);
+      }
+    }
+  }
+  override drops(): ItemStack[] {
+    return this.size === 1 ? [stack(I2.SLIME_BALL, rng.int(3))].filter((s) => s.count > 0) : [];
+  }
+  override extraJSON() { return { size: this.size }; }
+  override loadExtra(d: Record<string, unknown>) { this.setSize((d.size as number) ?? 1); }
 }
 
 // ------------------------------------------------------------------ villagers
