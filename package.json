@@ -1,0 +1,17 @@
+{
+  "name": "minecraft-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "playwright": "1.57",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}

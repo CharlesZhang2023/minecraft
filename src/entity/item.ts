@@ -1,0 +1,287 @@
+import { Entity } from './entity';
+import type { World } from '../world/world';
+import type { Game } from '../game/game';
+import { ItemStack, sameItem, getItem } from '../game/items';
+import { BLOCKS, B } from '../world/blocks';
+
+export class ItemEntity extends Entity {
+  typeName = 'Item';
+  pickupDelay = 10;
+  bobOffset = Math.random() * Math.PI * 2;
+  persist = true;
+  lifespan = 6000;
+  constructor(world: World, public game: Game, public item: ItemStack) {
+    super(world);
+    this.width = 0.25;
+    this.height = 0.25;
+  }
+
+  override tick() {
+    if (this.pickupDelay > 0 && this.pickupDelay < 32767) this.pickupDelay--;
+    this.updateFluidState();
+    if (this.inWater) {
+      // float to the surface
+      this.vy += this.vy < 0.06 ? 0.005 : 0;
+      this.vx *= 0.99; this.vz *= 0.99;
+    } else this.vy -= 0.04;
+    if (this.inLava) {
+      this.vy = 0.2;
+      this.vx = (Math.random() - 0.5) * 0.2;
+      this.vz = (Math.random() - 0.5) * 0.2;
+      this.game.audio.play('fizz', this, 0.4, 2);
+      this.removed = true;
+      return;
+    }
+    // push out of blocks
+    if (this.isInsideOpaque()) this.vy = 0.1;
+    this.move(this.vx, this.vy, this.vz);
+    let f = 0.98;
+    if (this.onGround) {
+      const below = this.world.getId(Math.floor(this.x), Math.floor(this.y - 1), Math.floor(this.z));
+      f = (below ? BLOCKS[below].slipperiness : 0.6) * 0.98;
+    }
+    this.vx *= f;
+    this.vy *= 0.98;
+    this.vz *= f;
+    if (this.onGround) this.vy *= -0.5;
+    if (this.age >= this.lifespan) this.removed = true;
+    // merge with neighbours every few ticks
+    if (this.age % 25 === 0) {
+      for (const e of this.game.entities) {
+        if (e === this || !(e instanceof ItemEntity) || e.removed) continue;
+        if (!sameItem(e.item, this.item)) continue;
+        if (Math.abs(e.x - this.x) > 0.5 || Math.abs(e.y - this.y) > 0.25 || Math.abs(e.z - this.z) > 0.5) continue;
+        const max = getItem(this.item.id).maxStack;
+        if (e.item.count + this.item.count > max) continue;
+        e.item.count += this.item.count;
+        e.pickupDelay = Math.max(e.pickupDelay, this.pickupDelay);
+        e.age = Math.min(e.age, this.age);
+        this.removed = true;
+        return;
+      }
+    }
+    this.tryPickup();
+  }
+
+  tryPickup() {
+    const p = this.game.player;
+    if (!p || p.dead || this.pickupDelay > 0 || p.spectator) return;
+    const pb = p.box;
+    const b = this.box;
+    if (b.x1 < pb.x0 - 1 || b.x0 > pb.x1 + 1 || b.y1 < pb.y0 - 0.5 || b.y0 > pb.y1 + 0.5 || b.z1 < pb.z0 - 1 || b.z0 > pb.z1 + 1) return;
+    const before = this.item.count;
+    const left = p.inventory.add(this.item);
+    if (left < before) {
+      this.game.audio.play('pop', this, 0.2, ((Math.random() - Math.random()) * 0.7 + 1) * 2);
+      this.game.ui.hud.pickupAnim(this.item.id);
+      this.game.entityRenderer.pickup(this, p);
+    }
+    if (left <= 0) this.removed = true;
+    else this.item.count = left;
+  }
+
+  toJSON() {
+    return { type: 'item', x: this.x, y: this.y, z: this.z, item: this.item, age: this.age };
+  }
+  load(d: { x: number; y: number; z: number; item: ItemStack; age: number }) {
+    this.setPos(d.x, d.y, d.z);
+    this.item = d.item;
+    this.age = d.age ?? 0;
+    this.pickupDelay = 0;
+  }
+}
+
+export class XpOrb extends Entity {
+  typeName = 'Experience Orb';
+  value: number;
+  persist = false;
+  constructor(world: World, public game: Game, value: number) {
+    super(world);
+    this.value = value;
+    this.width = this.height = 0.5;
+    this.vx = (Math.random() * 0.2 - 0.1) * 2;
+    this.vy = Math.random() * 0.2 * 2;
+    this.vz = (Math.random() * 0.2 - 0.1) * 2;
+  }
+  override tick() {
+    this.vy -= 0.03;
+    const p = this.game.player;
+    if (p && !p.dead && !p.spectator) {
+      const dx = p.x - this.x, dy = p.y + p.eyeHeight() / 2 - this.y, dz = p.z - this.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) / 8;
+      if (d < 1) {
+        const f = (1 - d) * (1 - d);
+        this.vx += (dx / d / 8) * f * 0.1;
+        this.vy += (dy / d / 8) * f * 0.1;
+        this.vz += (dz / d / 8) * f * 0.1;
+      }
+      if (this.age > 10 && Math.abs(dx) < 1 && Math.abs(dy) < 1.3 && Math.abs(dz) < 1) {
+        const lvl = p.xpLevel;
+        p.addXp(this.value);
+        this.game.audio.play('orb', this, 0.1, 0.5 * ((Math.random() - Math.random()) * 0.7 + 1.8));
+        if (p.xpLevel > lvl && p.xpLevel % 5 === 0) this.game.audio.play('levelup', null, 0.75, 1);
+        this.removed = true;
+      }
+    }
+    this.move(this.vx, this.vy, this.vz);
+    const f = this.onGround ? 0.588 : 0.98;
+    this.vx *= f; this.vy *= 0.98; this.vz *= f;
+    if (this.onGround) this.vy *= -0.9;
+    if (this.age > 6000) this.removed = true;
+  }
+}
+
+export class FallingBlock extends Entity {
+  typeName = 'Falling Block';
+  persist = false;
+  constructor(world: World, public game: Game, public block: number) {
+    super(world);
+    this.width = this.height = 0.98;
+  }
+  override tick() {
+    this.vy -= 0.04;
+    this.move(this.vx, this.vy, this.vz);
+    this.vx *= 0.98; this.vy *= 0.98; this.vz *= 0.98;
+    if (this.onGround) {
+      const x = Math.floor(this.x), y = Math.floor(this.y + 0.01), z = Math.floor(this.z);
+      const cur = this.world.getId(x, y, z);
+      if (BLOCKS[cur].replaceable) {
+        this.world.set(x, y, z, this.block);
+      } else {
+        this.game.dropItem(this.x, this.y + 0.5, this.z, { id: this.block, count: 1 });
+      }
+      this.removed = true;
+    } else if (this.age > 600 || this.y < -10) {
+      this.removed = true;
+    }
+  }
+}
+
+export class PrimedTnt extends Entity {
+  typeName = 'Primed TNT';
+  fuse = 80;
+  persist = false;
+  constructor(world: World, public game: Game) {
+    super(world);
+    this.width = this.height = 0.98;
+    const a = Math.random() * Math.PI * 2;
+    this.vx = -Math.sin(a) * 0.02;
+    this.vy = 0.2;
+    this.vz = -Math.cos(a) * 0.02;
+  }
+  override tick() {
+    this.vy -= 0.04;
+    this.move(this.vx, this.vy, this.vz);
+    this.vx *= 0.98; this.vy *= 0.98; this.vz *= 0.98;
+    if (this.onGround) { this.vx *= 0.7; this.vz *= 0.7; this.vy *= -0.5; }
+    this.game.particles?.smoke(this.x, this.y + 1.1, this.z);
+    if (--this.fuse <= 0) {
+      this.removed = true;
+      this.game.interact!.explode(this.x, this.y + 0.49, this.z, 4, false, this);
+    }
+  }
+}
+
+export class Arrow extends Entity {
+  typeName = 'Arrow';
+  inGround = false;
+  groundTicks = 0;
+  damageBase = 2;
+  persist = false;
+  pickup = true;
+  shake = 0;
+  constructor(world: World, public game: Game, public shooter: Entity | null) {
+    super(world);
+    this.width = this.height = 0.5;
+  }
+  shoot(dx: number, dy: number, dz: number, speed: number, spread: number) {
+    const l = Math.hypot(dx, dy, dz);
+    dx = dx / l + (Math.random() - 0.5) * 0.015 * spread;
+    dy = dy / l + (Math.random() - 0.5) * 0.015 * spread;
+    dz = dz / l + (Math.random() - 0.5) * 0.015 * spread;
+    this.vx = dx * speed; this.vy = dy * speed; this.vz = dz * speed;
+    this.yaw = (Math.atan2(dx, dz) * 180) / Math.PI;
+    this.pitch = (Math.atan2(dy, Math.hypot(dx, dz)) * 180) / Math.PI;
+    this.pyaw = this.yaw;
+    this.ppitch = this.pitch;
+  }
+  override tick() {
+    if (this.shake > 0) this.shake--;
+    if (this.inGround) {
+      this.groundTicks++;
+      if (this.groundTicks > 1200) this.removed = true;
+      // falls if the block is removed
+      const id = this.world.getId(Math.floor(this.x), Math.floor(this.y), Math.floor(this.z));
+      if (!BLOCKS[id].solid) { this.inGround = false; this.vx = this.vy = this.vz = 0; }
+      const p = this.game.player;
+      if (p && this.pickup && this.shooter === p && p.distanceTo(this) < 1.5 && !p.dead) {
+        if (p.inventory.add({ id: this.game.interact!.arrowId, count: 1 }) === 0) {
+          this.game.audio.play('pop', this, 0.2, 2);
+          this.removed = true;
+        }
+      }
+      return;
+    }
+    // hit test entities along the path
+    const steps = 4;
+    for (let s = 0; s < steps; s++) {
+      const nx = this.x + this.vx / steps, ny = this.y + this.vy / steps, nz = this.z + this.vz / steps;
+      const hitEnt = this.game.interact!.arrowHitEntity(this, nx, ny, nz);
+      if (hitEnt) return;
+      const bx = Math.floor(nx), by = Math.floor(ny), bz = Math.floor(nz);
+      const id = this.world.getId(bx, by, bz);
+      if (BLOCKS[id].solid && BLOCKS[id].render === 1) {
+        this.inGround = true;
+        this.x = nx; this.y = ny; this.z = nz;
+        this.shake = 7;
+        this.game.audio.play('arrowHit', this, 1, 1.2 / (Math.random() * 0.2 + 0.9));
+        if (id === B.TNT) {
+          this.world.set(bx, by, bz, 0);
+          this.game.interact!.primeTnt(bx, by, bz);
+        }
+        return;
+      }
+      this.x = nx; this.y = ny; this.z = nz;
+    }
+    const sp = Math.hypot(this.vx, this.vz);
+    this.yaw = (Math.atan2(this.vx, this.vz) * 180) / Math.PI;
+    this.pitch = (Math.atan2(this.vy, sp) * 180) / Math.PI;
+    let drag = 0.99;
+    this.updateFluidState();
+    if (this.inWater) { drag = 0.8; this.game.particles?.bubble(this.x, this.y, this.z); }
+    this.vx *= drag; this.vy *= drag; this.vz *= drag;
+    this.vy -= 0.05;
+    if (this.age > 1200) this.removed = true;
+  }
+}
+
+export class Snowball extends Entity {
+  typeName = 'Snowball';
+  persist = false;
+  constructor(world: World, public game: Game, public shooter: Entity | null, public kind: 'snowball' | 'egg' | 'ender_pearl' = 'snowball') {
+    super(world);
+    this.width = this.height = 0.25;
+  }
+  override tick() {
+    const nx = this.x + this.vx, ny = this.y + this.vy, nz = this.z + this.vz;
+    const ent = this.game.interact!.projectileHitEntity(this, nx, ny, nz);
+    const id = this.world.getId(Math.floor(nx), Math.floor(ny), Math.floor(nz));
+    if (ent || BLOCKS[id].solid) {
+      for (let i = 0; i < 8; i++) this.game.particles?.add({ x: this.x, y: this.y, z: this.z, vx: (Math.random() - 0.5) * 0.15, vy: Math.random() * 0.15, vz: (Math.random() - 0.5) * 0.15, layer: this.game.interact!.spriteLayer(this.kind), u0: 0.3, v0: 0.3, u1: 0.55, v1: 0.55, size: 0.06, life: 10 });
+      if (this.kind === 'egg' && Math.random() < 0.125) this.game.interact!.spawnMob('chicken', this.x, this.y, this.z, true);
+      if (this.kind === 'ender_pearl' && this.shooter === this.game.player) {
+        const p = this.game.player!;
+        p.setPos(this.x, this.y, this.z);
+        p.damage(5, 'fall');
+      }
+      this.removed = true;
+      return;
+    }
+    this.x = nx; this.y = ny; this.z = nz;
+    this.updateFluidState();
+    const drag = this.inWater ? 0.8 : 0.99;
+    this.vx *= drag; this.vy *= drag; this.vz *= drag;
+    this.vy -= 0.03;
+    if (this.age > 400) this.removed = true;
+  }
+}

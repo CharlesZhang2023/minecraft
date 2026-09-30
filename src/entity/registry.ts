@@ -1,0 +1,16 @@
+import type { World } from '../world/world';
+import type { Game } from '../game/game';
+import type { Entity } from './entity';
+import { Zombie, Skeleton, Creeper, Spider, Pig, Cow, Sheep, Chicken } from './mobs';
+import { ItemEntity } from './item';
+
+type Ctor = new (w: World, g: Game) => Entity;
+export const MOB_TYPES: Record<string, Ctor> = {
+  zombie: Zombie, skeleton: Skeleton, creeper: Creeper, spider: Spider, pig: Pig, cow: Cow, sheep: Sheep, chicken: Chicken,
+};
+
+export function createEntity(type: string, world: World, game: Game): Entity | null {
+  if (type === 'item') return new ItemEntity(world, game, { id: 1, count: 1 });
+  const C = MOB_TYPES[type];
+  return C ? new C(world, game) : null;
+}

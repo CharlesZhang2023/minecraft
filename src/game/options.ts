@@ -1,0 +1,51 @@
+export interface Options {
+  fov: number;
+  renderDistance: number;
+  sensitivity: number;
+  guiScale: number; // 0 = auto
+  viewBobbing: boolean;
+  clouds: boolean;
+  volume: number;
+  music: number;
+  gamma: number;
+  invertY: boolean;
+  difficulty: number;
+  showFps: boolean;
+  particles: number; // 0 all, 1 decreased, 2 minimal
+  fancyLeaves: boolean;
+}
+
+export const DEFAULT_OPTIONS: Options = {
+  fov: 70,
+  renderDistance: 8,
+  sensitivity: 0.5,
+  guiScale: 0,
+  viewBobbing: true,
+  clouds: true,
+  volume: 1,
+  music: 0.5,
+  gamma: 0.5,
+  invertY: false,
+  difficulty: 2,
+  showFps: false,
+  particles: 0,
+  fancyLeaves: true,
+};
+
+export function loadOptions(): Options {
+  try {
+    const s = localStorage.getItem('webcraft.options');
+    if (s) return { ...DEFAULT_OPTIONS, ...JSON.parse(s) };
+  } catch {
+    /* storage unavailable */
+  }
+  return { ...DEFAULT_OPTIONS };
+}
+
+export function saveOptions(o: Options) {
+  try {
+    localStorage.setItem('webcraft.options', JSON.stringify(o));
+  } catch {
+    /* ignore */
+  }
+}
