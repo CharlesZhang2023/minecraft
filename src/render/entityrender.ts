@@ -12,6 +12,7 @@ import { modelBoxes } from '../world/models';
 import { DynMesh } from './gl';
 import { getTexture } from './textures';
 import { Player } from '../game/player';
+import { Boat } from '../entity/boat';
 
 interface PartGPU { vao: WebGLVertexArrayObject; count: number; def: M.ModelPart }
 interface ModelGPU { parts: Map<string, PartGPU> }
@@ -32,6 +33,7 @@ export class EntityRenderer {
     const defs: Record<string, M.ModelDef> = {
       biped: M.bipedModel(), bipedThin: M.bipedModel(true), creeper: M.creeperModel(), pig: M.pigModel(), cow: M.cowModel(),
       sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(),
+      armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
@@ -40,6 +42,7 @@ export class EntityRenderer {
       ghast: M.ghastSkin(false), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(),
     };
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
+    for (const m of M.ARMOR_MATERIALS) for (const l of [1, 2] as const) { const sk = M.armorSkin(m, l); this.skins.set(`armor_${m}_${l}`, r.makeTexture(sk.data, sk.w)); }
     this.handMesh = new DynMesh(gl);
     gl.bindVertexArray(this.handMesh.vao);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.indexBuffer);
@@ -168,6 +171,7 @@ export class EntityRenderer {
       else if (e instanceof XpOrb) this.billboard(dyn, x, y + 0.25, z, 0.25, TEXTURES.indexOf('particle_spell'), 0x9ffc3a, 15, 15);
       else if (e instanceof Snowball) this.billboard(dyn, x, y + 0.125, z, 0.25, TEXTURES.indexOf('item/' + e.kind), 0xffffff, sky, blk);
       else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
+      else if (e instanceof Boat) this.drawBoat(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof LivingEntity) this.drawLiving(game, e, x, y, z, t, sky, blk);
     }
     // item pickup animations
@@ -294,6 +298,12 @@ export class EntityRenderer {
         pose.rightLeg = [c(ls * 0.6662) * 1.4 * lsa, 0, 0];
         pose.leftLeg = [c(ls * 0.6662 + Math.PI) * 1.4 * lsa, 0, 0];
         pose.body = [sneak ? 0.5 : 0, 0, 0];
+        if ((e as unknown as { riding?: unknown }).riding) {
+          pose.rightArm[0] -= Math.PI / 5;
+          pose.leftArm[0] -= Math.PI / 5;
+          pose.rightLeg = [-Math.PI * 2 / 5, Math.PI / 10, 0];
+          pose.leftLeg = [-Math.PI * 2 / 5, -Math.PI / 10, 0];
+        }
         const offs: Record<string, [number, number, number]> | undefined = sneak ? { rightLeg: [0, -3, 4], leftLeg: [0, -3, 4], head: [0, 1, 0], hat: [0, 1, 0] } : undefined;
         const skipHat = new Set(['hat']);
         this.drawModel(model, skin, base, pose, light, overlay, skipHat, 1, offs);
@@ -301,6 +311,7 @@ export class EntityRenderer {
         const held = anyE.heldItem as number | undefined;
         if (held) this.drawHeldThirdPerson(held, base, pose.rightArm, light, offs?.rightArm);
         if (e instanceof Player) {
+          this.drawArmor(e.inventory.armor, base, pose, light, overlay, offs);
           const it = e.inventory.held();
           if (it) this.drawHeldThirdPerson(it.id, base, pose.rightArm, light);
         }
@@ -382,6 +393,21 @@ export class EntityRenderer {
         this.drawModel('spider', 'spider', base, pose, light, overlay);
         break;
       }
+    }
+  }
+
+  /** Armor layers over a biped pose. */
+  private drawArmor(armor: ({ id: number } | null)[], base: Mat4, pose: Record<string, [number, number, number]>, light: [number, number], overlay: [number, number, number, number], offs?: Record<string, [number, number, number]>) {
+    const all = ['head', 'hat', 'body', 'rightArm', 'leftArm', 'rightLeg', 'leftLeg'];
+    const parts: [number, number, string[]][] = [[0, 1, ['head']], [1, 1, ['body', 'rightArm', 'leftArm']], [2, 2, ['body', 'rightLeg', 'leftLeg']], [3, 1, ['rightLeg', 'leftLeg']]];
+    for (const [slot, layer, show] of parts) {
+      const a = armor[slot];
+      if (!a) continue;
+      const name = getItem(a.id).name;
+      const mat = name.split('_')[0];
+      const skin = `armor_${mat}_${layer}`;
+      if (!this.skins.has(skin)) continue;
+      this.drawModel(layer === 1 ? 'armor1' : 'armor2', skin, base, pose, light, overlay, new Set(all.filter((p) => !show.includes(p))), 1, offs);
     }
   }
 
@@ -529,6 +555,42 @@ export class EntityRenderer {
     mesh.v(x - rx + ux, y + uy, z - rz + uz, 0, 0, layer, col, 1, sky, blk);
   }
 
+  private drawBoat(mesh: DynMesh, e: Boat, x: number, y: number, z: number, t: number, sky: number, blk: number) {
+    const yaw = e.pyaw + (e.yaw - e.pyaw) * t;
+    const m = mat4();
+    identity(m);
+    translate(m, m, x, y, z);
+    rotateY(m, m, (-yaw * Math.PI) / 180);
+    if (e.hurtTime > 0) rotateZ(m, m, Math.sin(e.hurtTime - t) * (e.hurtTime - t) * 0.02 * e.hurtDir);
+    const layer = BLOCKS[B.OAK_PLANKS].faces[0];
+    // hull: floor + four walls (in blocks, boat 1.5 long along z, 1 wide)
+    const parts: number[][] = [
+      [-0.5, 0.0, -0.75, 0.5, 0.1875, 0.75],
+      [-0.5, 0.1875, -0.8125, 0.5, 0.5, -0.6875],
+      [-0.5, 0.1875, 0.6875, 0.5, 0.5, 0.8125],
+      [-0.5625, 0.1875, -0.75, -0.4375, 0.5, 0.75],
+      [0.4375, 0.1875, -0.75, 0.5625, 0.5, 0.75],
+    ];
+    const shade = [0.6, 0.6, 0.5, 1, 0.8, 0.8];
+    for (const [x0, y0, z0, x1, y1, z1] of parts) {
+      const P = (px: number, py: number, pz: number) => [m[0] * px + m[4] * py + m[8] * pz + m[12], m[1] * px + m[5] * py + m[9] * pz + m[13], m[2] * px + m[6] * py + m[10] * pz + m[14]];
+      const faces: [number[][], number][] = [
+        [[P(x0, y0, z0), P(x0, y0, z1), P(x0, y1, z1), P(x0, y1, z0)], 0],
+        [[P(x1, y0, z1), P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1)], 1],
+        [[P(x0, y0, z0), P(x1, y0, z0), P(x1, y0, z1), P(x0, y0, z1)], 2],
+        [[P(x0, y1, z0), P(x0, y1, z1), P(x1, y1, z1), P(x1, y1, z0)], 3],
+        [[P(x1, y0, z0), P(x0, y0, z0), P(x0, y1, z0), P(x1, y1, z0)], 4],
+        [[P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], 5],
+      ];
+      for (const [pts, f] of faces) {
+        const c = Math.round(shade[f] * 255);
+        const col = (c << 16) | (c << 8) | c;
+        const uv = [[0, 1], [1, 1], [1, 0], [0, 0]];
+        for (let k = 0; k < 4; k++) mesh.v(pts[k][0], pts[k][1], pts[k][2], uv[k][0], uv[k][1] * 0.5, layer, col, 1, sky, blk);
+      }
+    }
+  }
+
   private drawArrow(mesh: DynMesh, e: Arrow, x: number, y: number, z: number, t: number, sky: number, blk: number) {
     const yaw = e.pyaw + (e.yaw - e.pyaw) * t, pitch = e.ppitch + (e.pitch - e.ppitch) * t;
     const m = mat4();
@@ -574,6 +636,7 @@ export class EntityRenderer {
     const saved = this.r.env;
     this.r.env = { ...saved, fogStart: 1e5, fogEnd: 1e5 + 1, sunBright: 1, gamma: 0.5 };
     this.drawModel('biped', 'steve', base, pose, [15, 15], [0, 0, 0, 0], new Set(['hat']));
+    this.drawArmor(p.inventory.armor, base, pose, [15, 15], [0, 0, 0, 0]);
     const it = p.inventory.held();
     if (it) this.drawHeldThirdPerson(it.id, base, pose.rightArm, [15, 15]);
     this.r.env = saved;

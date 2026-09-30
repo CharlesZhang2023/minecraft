@@ -156,6 +156,14 @@ for (const m of ARMOR_MATS)
     ARMOR[name] = item(name, `${m.display} ${s.display}`, { maxStack: 1, durability: s.mul * m.dur, armor: { slot: i as 0 | 1 | 2 | 3, points: m.pts[i] } });
   });
 
+// Items added after the original set are registered here so earlier ids stay stable.
+export const I2 = {
+  BOAT: item('oak_boat', 'Oak Boat', { maxStack: 1, fuel: 400 }),
+  SLIME_BALL: item('slime_ball', 'Slimeball'),
+  ENDER_EYE: item('ender_eye', 'Eye of Ender'),
+  BLAZE_POWDER: item('blaze_powder', 'Blaze Powder'),
+};
+
 export function itemByName(name: string): ItemDef | undefined {
   return byName.get(name);
 }

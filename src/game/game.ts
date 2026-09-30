@@ -19,6 +19,7 @@ import { Storage, WorldMeta } from './storage';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { ItemEntity, Fireball } from '../entity/item';
+import { Boat } from '../entity/boat';
 import { BlockTicker } from './blockticks';
 import { Interaction } from './interact';
 import { Spawner } from '../entity/spawner';
@@ -31,6 +32,7 @@ import { getTexture } from '../render/textures';
 import { Random } from '../noise';
 import { BIOMES } from '../world/biomes';
 import { Commands } from './commands';
+import { Achievements } from './achievements';
 import { tickFurnaces } from './furnace';
 import { rainTexture, snowTexture } from './weather';
 
@@ -54,6 +56,7 @@ export class Game {
   spawner: Spawner | null = null;
   weather: Weather | null = null;
   commands: Commands;
+  achievements: Achievements;
   entityRenderer: EntityRenderer;
   time = 0;
   ticks = 0;
@@ -108,6 +111,7 @@ export class Game {
     this.input = new Input(uiCanvas);
     this.entityRenderer = new EntityRenderer(this.renderer);
     this.commands = new Commands(this);
+    this.achievements = new Achievements(this);
     this.ui = new UI(this);
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -205,6 +209,7 @@ export class Game {
       p.setPos(sx + 0.5, 200, sz + 0.5);
     }
     this.loadEntities(dim === 'nether' ? meta.netherEntities : meta.entities);
+    this.achievements.load(meta.achievements);
     this.doDaylightCycle = true;
     this.lastSave = performance.now();
   }
@@ -236,6 +241,7 @@ export class Game {
     p.vx = p.vy = p.vz = 0;
     this.pendingArrival = { x: nx, y: p.y, z: nz, toSpawn };
     meta.dimension = to;
+    if (to === 'nether' && !toSpawn) this.achievements.unlock('portal');
     this.portalTime = 0;
     this.portalCooldown = 200;
     this.traveling = false;
@@ -316,6 +322,7 @@ export class Game {
     this.meta.gameMode = this.player?.gameMode ?? this.meta.gameMode;
     this.meta.difficulty = this.options.difficulty;
     this.meta.dimension = this.dimension;
+    this.meta.achievements = this.achievements.toJSON();
     if (this.dimension === 'nether') this.meta.netherEntities = this.saveEntities();
     else this.meta.entities = this.saveEntities();
     try {
@@ -432,6 +439,7 @@ export class Game {
     if (!this.ui.screen || !this.ui.screen.pausesGame) {
       const inp = this.ui.screen ? { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false } : this.moveInput();
       p.applyInput(inp);
+      if (p.riding && inp.sneak) p.riding.dismount();
     }
     p.tick();
     this.pFovMod = this.fovMod;
@@ -574,7 +582,8 @@ export class Game {
     let best: Entity | null = null;
     let bestT = this.target ? this.target.t : Math.min(reach, 3.5);
     for (const e of this.entities) {
-      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball)) continue; }
+      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat)) continue; }
+      if (e === this.player?.riding) continue;
       const b = e.box;
       const g = 0.1;
       const r = rayAABB(eye.x, eye.y, eye.z, d.x, d.y, d.z, { x0: b.x0 - g, y0: b.y0 - g, z0: b.z0 - g, x1: b.x1 + g, y1: b.y1 + g, z1: b.z1 + g }, bestT);

@@ -72,6 +72,7 @@ export class ItemEntity extends Entity {
     const before = this.item.count;
     const left = p.inventory.add(this.item);
     if (left < before) {
+      this.game.achievements.onPickup(this.item.id);
       this.game.audio.play('pop', this, 0.2, ((Math.random() - Math.random()) * 0.7 + 1) * 2);
       this.game.ui.hud.pickupAnim(this.item.id);
       this.game.entityRenderer.pickup(this, p);

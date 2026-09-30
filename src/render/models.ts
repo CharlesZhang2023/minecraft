@@ -400,3 +400,38 @@ export function spiderSkin(): Skin {
   s.paintBox(18, 0, 16, 2, 2, () => vary(r.int(3) ? darker : hairy, r, 0.06));
   return s;
 }
+
+// ------------------------------------------------------------------ armor
+const ARMOR_COLORS: Record<string, [string, string, string]> = {
+  leather: ['#a0663a', '#c78452', '#6b4222'],
+  iron: ['#c8c8c8', '#ececec', '#8a8a8a'],
+  golden: ['#e8c030', '#fff080', '#a8820c'],
+  diamond: ['#3ad6c8', '#a8fff4', '#1a8a84'],
+};
+/** layer 1: helmet, chestplate, boots; layer 2: leggings */
+export function armorSkin(mat: string, layer: 1 | 2): Skin {
+  const s = new Skin();
+  const r = new Random(mat.length * 31 + layer);
+  const [b, l, d] = ARMOR_COLORS[mat].map(hx);
+  const c = (x: number, y: number, fw: number, fh: number) => {
+    if (y === 0 || x === 0) return vary(l, r, 0.03);
+    if (y === fh - 1 || x === fw - 1) return vary(d, r, 0.03);
+    return vary(b, r, mat === 'leather' ? 0.08 : 0.04);
+  };
+  if (layer === 1) {
+    s.paintBox(0, 0, 8, 8, 8, (f, x, y, fw, fh) => {
+      if (f === 'bottom') return null;
+      if (f === 'front') return y < 2 || x === 0 || x === 7 || (y === 2 && (x === 1 || x === 6)) ? c(x, y, fw, fh) : null;
+      if (f === 'right' || f === 'left') return y < 6 ? c(x, y, fw, fh) : null;
+      return c(x, y, fw, fh);
+    });
+    s.paintBox(16, 16, 8, 12, 4, (f, x, y, fw, fh) => (f === 'top' && x > 1 && x < 6 ? null : y < 11 || f === 'top' ? c(x, y, fw, fh) : null));
+    s.paintBox(40, 16, 4, 12, 4, (f, x, y, fw, fh) => (f === 'bottom' ? null : y < 5 || f === 'top' ? c(x, y, fw, fh) : null));
+    s.paintBox(0, 16, 4, 12, 4, (f, x, y, fw, fh) => (f === 'top' ? null : y >= 8 || f === 'bottom' ? c(x, y - 8, fw, 4) : null));
+  } else {
+    s.paintBox(16, 16, 8, 12, 4, (f, x, y, fw, fh) => (f === 'top' ? null : y >= 7 || f === 'bottom' ? c(x, y - 7, fw, fh - 7) : null));
+    s.paintBox(0, 16, 4, 12, 4, (f, x, y, fw, fh) => (f === 'bottom' ? null : y < 9 || f === 'top' ? c(x, y, fw, 9) : null));
+  }
+  return s;
+}
+export const ARMOR_MATERIALS = Object.keys(ARMOR_COLORS);

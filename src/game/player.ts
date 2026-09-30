@@ -47,6 +47,7 @@ export class Player extends LivingEntity {
   lastHurtDirection = 0;
   portalCooldown = 0;
   score = 0;
+  riding: { dismount(): void; yaw: number; x: number; y: number; z: number } | null = null;
 
   constructor(world: World) {
     super(world);
@@ -93,6 +94,21 @@ export class Player extends LivingEntity {
   }
 
   override tick() {
+    if (this.riding) {
+      this.pEyeOffset = this.eyeOffset;
+      this.eyeOffset = 1.62;
+      this.pDistWalked = this.distWalked;
+      this.pCameraYaw = this.cameraYaw;
+      this.cameraYaw *= 0.5;
+      this.prevHealth = this.health;
+      this.armor = this.inventory.armorPoints();
+      this.environment();
+      this.updateSwing();
+      if (this.hurtTime > 0) this.hurtTime--;
+      if (this.invulnerable > 0) this.invulnerable--;
+      if (!this.canFly) this.foodTick();
+      return;
+    }
     this.pEyeOffset = this.eyeOffset;
     const targetEye = this.sneaking ? 1.27 + 0.27 : 1.62;
     this.eyeOffset += (targetEye - this.eyeOffset) * 0.5;

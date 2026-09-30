@@ -708,6 +708,43 @@ sprite('ghast_tear', [
   '......www.......',
 ], { w: hex('#b8d8e0'), W: hex('#f0ffff') }, '#5a7880');
 
+sprite('oak_boat', [
+  '', '', '', '', '', '', '',
+  '.w............w.',
+  '.wW..........Ww.',
+  '.wWwwwwwwwwwwWw.',
+  '..wWWWWWWWWWWw..',
+  '...wwwwwwwwww...',
+], { w: hex('#6b5130'), W: hex('#a2824e') }, '#2e2010');
+sprite('slime_ball', [
+  '', '', '', '', '',
+  '......gggg......',
+  '.....gGGLGg.....',
+  '....gGGGGLGg....',
+  '....gGGGGGGg....',
+  '....gGGGGGGg....',
+  '.....gGGGGg.....',
+  '......gggg......',
+], { g: hex('#4a9a2a'), G: hex('#7ad04a'), L: hex('#c8ffa8') }, '#1a4a0a');
+sprite('ender_eye', [
+  '', '', '', '', '',
+  '......gggg......',
+  '.....gGyyGg.....',
+  '....gGyKKyGg....',
+  '....gGyKKyGg....',
+  '.....gGyyGg.....',
+  '......gggg......',
+], { g: hex('#0b3a33'), G: hex('#2a8a6a'), y: hex('#c8d850'), K: hex('#101010') }, '#021410');
+sprite('blaze_powder', [
+  '', '', '', '', '', '', '',
+  '.......y........',
+  '.....yYy.y......',
+  '....yYYYYy.y....',
+  '..y.YYOYYYy.....',
+  '...yYYYYYYYy....',
+  '..yYYYYYYYYYy...',
+], { y: hex('#c88a10'), Y: hex('#ffc830'), O: hex('#fff0a0') }, '#5a3a00');
+
 export function getItemSprite(name: string): Img | null {
   const f = sprites[name];
   return f ? f() : null;

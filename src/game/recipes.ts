@@ -1,6 +1,6 @@
 // Crafting & smelting recipes.
 import { B, WOOL_COLORS } from '../world/blocks';
-import { I, TOOLS, ARMOR, ItemStack, stack, getItem } from './items';
+import { I, I2, TOOLS, ARMOR, ItemStack, stack, getItem } from './items';
 
 interface Shaped { pattern: string[]; key: Record<string, number | number[]>; out: ItemStack }
 interface Shapeless { ingredients: (number | number[])[]; out: ItemStack }
@@ -83,6 +83,7 @@ S(['# #', ' # '], { '#': I.IRON_INGOT }, I.BUCKET);
 L([I.IRON_INGOT, I.FLINT], I.FLINT_AND_STEEL);
 S([' #', '# '], { '#': I.IRON_INGOT }, I.SHEARS);
 S(['# #', ' # '], { '#': PLANKS }, I.BOWL, 4);
+S(['# #', '###'], { '#': PLANKS }, I2.BOAT);
 S([' # ', '#R#', ' # '], { '#': I.IRON_INGOT, R: I.REDSTONE }, I.COMPASS);
 S([' # ', '#R#', ' # '], { '#': I.GOLD_INGOT, R: I.REDSTONE }, I.CLOCK);
 S(['###', 'XXX'], { '#': [WOOL_COLORS[0], ...WOOL_COLORS], X: PLANKS }, I.RED_BED);

@@ -19,6 +19,7 @@ export interface WorldMeta {
   entities?: unknown[];
   netherEntities?: unknown[];
   dimension?: 'overworld' | 'nether';
+  achievements?: string[];
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;

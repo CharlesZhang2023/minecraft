@@ -89,6 +89,7 @@ export class UI {
   openChest(x: number, y: number, z: number) { this.open(new Containers.ChestScreen(this, x, y, z)); }
   openInventory() {
     const p = this.game.player!;
+    this.game.achievements.unlock('openInventory');
     this.open(p.creative ? new Containers.CreativeScreen(this) : new Containers.InventoryScreen(this));
   }
   openDeath(msg: string) { this.open(new Menus.DeathScreen(this, msg)); }
@@ -142,6 +143,7 @@ export class UI {
     if (this.screen) {
       this.screen.render(ctx, mx, my);
     }
+    if (g.world && !g.panorama) g.achievements.render(ctx);
   }
 
   /** Draw an item icon with count / durability overlays at GUI position. */

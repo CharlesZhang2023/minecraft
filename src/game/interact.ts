@@ -2,11 +2,12 @@
 import type { Game } from './game';
 import { B, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE } from '../world/blocks';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, stack, ItemDef } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, stack, ItemDef } from './items';
 import { BlockHit, raycastBlocks } from './raycast';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { PrimedTnt, Arrow, Snowball, XpOrb, ItemEntity, FallingBlock, Fireball } from '../entity/item';
+import { Boat } from '../entity/boat';
 import { createEntity } from '../entity/registry';
 import { aabbIntersects } from '../math';
 import { Random } from '../noise';
@@ -461,11 +462,27 @@ export class Interaction {
           w.set(hit.x, hit.y, hit.z, B.AIR);
           g.audio.play(idOf(v) === B.WATER ? 'splash' : 'fizz', hit, 0.4, 1);
           const filled = stack(idOf(v) === B.WATER ? I.WATER_BUCKET : I.LAVA_BUCKET);
+          if (idOf(v) === B.LAVA) g.achievements.unlock('onFire');
           if (p.creative) { p.inventory.add(filled); return; }
           if (held.count === 1) p.inventory.setHeld(filled);
           else { held.count--; if (p.inventory.add(filled) > 0) g.dropItem(p.x, p.y + 1, p.z, filled); }
           p.swing();
         }
+      }
+      return;
+    }
+    if (held.id === I2.BOAT) {
+      const eye = g.eyePos(1);
+      const d = g.lookVec(p.yaw, p.pitch);
+      const hit = raycastBlocks(w, eye.x, eye.y, eye.z, d.x, d.y, d.z, g.reach(), true);
+      if (hit && hit.face === 3) {
+        const b = new Boat(w, g);
+        const onWater = w.getId(hit.x, hit.y, hit.z) === B.WATER;
+        b.setPos(hit.hx, hit.y + (onWater ? 0.9 : 1), hit.hz);
+        b.yaw = b.pyaw = p.yaw;
+        g.addEntity(b);
+        this.consume(1);
+        p.swing();
       }
       return;
     }
@@ -662,6 +679,10 @@ export class Interaction {
       e.deflect(d.x, d.y, d.z);
       return;
     }
+    if (e instanceof Boat) {
+      e.attacked(p.creative);
+      return;
+    }
     if (p.spectator || !(e instanceof LivingEntity)) return;
     const held = p.inventory.held();
     const item = held ? getItem(held.id) : undefined;
@@ -770,7 +791,9 @@ export class Interaction {
       ex /= dl; ey /= dl; ez /= dl;
       const exposure = this.exposure(x, y, z, e);
       const impact = (1 - d) * exposure;
-      if (e instanceof LivingEntity) e.damage(Math.floor(((impact * impact + impact) / 2) * 7 * r2 + 1), 'explosion', source instanceof LivingEntity ? source : null);
+      const shooter = (source as unknown as { shooter?: Entity } | null)?.shooter;
+      const attacker = source instanceof LivingEntity ? source : shooter instanceof LivingEntity ? shooter : null;
+      if (e instanceof LivingEntity && e !== attacker) e.damage(Math.floor(((impact * impact + impact) / 2) * 7 * r2 + 1), 'explosion', attacker);
       if (e instanceof ItemEntity && impact > 0.3) { e.removed = true; continue; }
       e.vx += ex * impact; e.vy += ey * impact; e.vz += ez * impact;
     }

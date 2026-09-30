@@ -17,7 +17,7 @@ export class Chat {
   render(ctx: Ctx, open: boolean) {
     const gui = this.ui.gui;
     const now = performance.now();
-    const baseY = gui.h - 48;
+    const baseY = gui.h - 57;
     const max = open ? 20 : 10;
     let n = 0;
     for (let i = this.scroll; i < this.lines.length && n < max; i++) {

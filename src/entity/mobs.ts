@@ -193,6 +193,10 @@ export abstract class Mob extends LivingEntity {
     this.deathTime = 0;
     if (this.deathName) this.game.audio.play(this.deathName, this, 1, (this.baby ? 1.5 : 1) * this.soundPitch);
     const byPlayer = attacker === this.game.player || (attacker as unknown as { shooter?: Entity })?.shooter === this.game.player;
+    if (byPlayer) {
+      const p = this.game.player!;
+      this.game.achievements.onKill(this.typeName, source === 'arrow' ? this.distanceTo(p) : undefined, source === 'explosion');
+    }
     if (!this.baby) {
       for (const s of this.drops(this.fireTicks > 0)) this.game.dropItem(this.x, this.y + 0.5, this.z, s);
       if (byPlayer && this.xp > 0) {

@@ -16,7 +16,7 @@ interface Slot {
   output?: boolean;
   group: string;
   limit?: number;
-  onTake?(): void;
+  onTake?(taken: ItemStack): void;
   infinite?: boolean; // creative palette
   big?: boolean; // large result slot
 }
@@ -190,7 +190,7 @@ export abstract class ContainerScreen extends Screen {
       if (this.cursor) this.cursor.count += cur.count;
       else this.cursor = cloneStack(cur);
       s.set(null);
-      s.onTake?.();
+      s.onTake?.(cur);
       return;
     }
     const limit = (st: ItemStack) => Math.min(getItem(st.id).maxStack, s.limit ?? 64);
@@ -262,7 +262,7 @@ export abstract class ContainerScreen extends Screen {
         if (!r) break;
         if (!this.tryInsert(r, ['hotbar', 'main'], true)) break;
         s.set(null);
-        s.onTake?.();
+        s.onTake?.(r);
         this.changed();
       }
       return;
@@ -335,7 +335,7 @@ export abstract class ContainerScreen extends Screen {
       } else if (n >= 0 && n < 9 && s.get()) {
         const it = s.get()!;
         this.inv.main[n] = s.infinite ? { ...it, count: getItem(it.id).maxStack } : it;
-        if (!s.infinite) { s.set(null); s.onTake?.(); }
+        if (!s.infinite) { s.set(null); s.onTake?.(it); }
         this.changed();
       }
       return true;
@@ -346,7 +346,7 @@ export abstract class ContainerScreen extends Screen {
       const n = all ? st.count : 1;
       this.game.interact!.throwStack({ ...st, count: n });
       st.count -= n;
-      if (st.count <= 0) { s.set(null); s.onTake?.(); }
+      if (st.count <= 0) { s.set(null); s.onTake?.(st); }
       this.changed();
       return true;
     }
@@ -413,7 +413,7 @@ function addGridSlots(scr: ContainerScreen, g: CraftGrid, x0: number, y0: number
       const i = r * g.size + c;
       scr.slots.push({ x: x0 + c * 18, y: y0 + r * 18, get: () => g.items[i], set: (s) => { g.items[i] = s; }, group: 'craft' });
     }
-  scr.slots.push({ x: big ? rx - 4 : rx, y: big ? ry - 4 : ry, get: () => g.result, set: (s) => { g.result = s; }, output: true, big, group: 'result', onTake: () => g.consume() });
+  scr.slots.push({ x: big ? rx - 4 : rx, y: big ? ry - 4 : ry, get: () => g.result, set: (s) => { g.result = s; }, output: true, big, group: 'result', onTake: (t) => { scr.game.achievements.onCraft(t.id); g.consume(); } });
 }
 
 function arrow(ctx: Ctx, x: number, y: number, progress = 0, len = 22) {
@@ -506,7 +506,7 @@ export class FurnaceScreen extends ContainerScreen {
     const sl = t.slots;
     this.slots.push({ x: 56, y: 17, get: () => sl[0], set: (s) => (sl[0] = s), group: 'input' });
     this.slots.push({ x: 56, y: 53, get: () => sl[1], set: (s) => (sl[1] = s), group: 'fuel', canPlace: (s) => !!getItem(s.id).fuel });
-    this.slots.push({ x: 112, y: 31, get: () => sl[2], set: (s) => (sl[2] = s), group: 'out', output: true, big: true, onTake: () => this.takeXp() });
+    this.slots.push({ x: 112, y: 31, get: () => sl[2], set: (s) => (sl[2] = s), group: 'out', output: true, big: true, onTake: (t) => { this.game.achievements.onSmelt(t.id); this.takeXp(); } });
     this.addPlayerSlots();
   }
   takeXp() {
