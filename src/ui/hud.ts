@@ -1,3 +1,4 @@
+import { drawEffectsHud } from './effects';
 // In-game HUD: hotbar, health/food/armor/air, XP bar, crosshair, item names, debug overlay.
 import type { UI } from './ui';
 import type { Ctx } from './gui';
@@ -29,7 +30,7 @@ export class Hud {
     if (p.inventory.selected !== this.lastSelected || (held?.id ?? -1) !== this.lastHeldId) {
       this.lastSelected = p.inventory.selected;
       this.lastHeldId = held?.id ?? -1;
-      this.itemName = held ? getItem(held.id).display : '';
+      this.itemName = held ? held.name ?? getItem(held.id).display : '';
       this.itemNameTimer = held ? 40 : 0;
     } else if (this.itemNameTimer > 0) this.itemNameTimer--;
     if (this.actionTimer > 0) this.actionTimer--;
@@ -120,15 +121,24 @@ export class Hud {
           if (dh >= 2) ctx.drawImage(gui.sprites.heartFlash, x, y);
           else if (dh === 1) ctx.drawImage(gui.sprites.heartFlash, 0, 0, 5, 9, x, y, 5, 9);
         }
-        const heart = hardcore ? gui.sprites.heartHardcore : gui.sprites.heart;
+        const heart = p.effects.has('poison') ? gui.sprites.heartPoison : hardcore ? gui.sprites.heartHardcore : gui.sprites.heart;
         if (hp >= 2) ctx.drawImage(heart, x, y);
         else if (hp >= 1) ctx.drawImage(heart, 0, 0, 5, 9, x, y, 5, 9);
       }
+      // absorption (golden) hearts on the row above
+      const abs = Math.ceil(p.absorption);
+      for (let i = 0; i < Math.ceil(abs / 2); i++) {
+        const x = hx + (i % 10) * 8, y = heartsY - 10 - Math.floor(i / 10) * 10;
+        ctx.drawImage(gui.sprites.heartEmpty, x, y);
+        if (abs - i * 2 >= 2) ctx.drawImage(gui.sprites.heartAbsorb, x, y);
+        else ctx.drawImage(gui.sprites.heartAbsorb, 0, 0, 5, 9, x, y, 5, 9);
+      }
+      const rowUp = abs > 0 ? 10 * Math.ceil(abs / 20) : 0;
       // armor
       const armor = p.inventory.armorPoints();
       if (armor > 0) {
         for (let i = 0; i < 10; i++) {
-          const x = hx + i * 8, y = heartsY - 10;
+          const x = hx + i * 8, y = heartsY - 10 - rowUp;
           const a = armor - i * 2;
           ctx.drawImage(a >= 2 ? gui.sprites.armor : a === 1 ? gui.sprites.armorHalf : gui.sprites.armorEmpty, x, y);
         }
@@ -140,8 +150,9 @@ export class Hud {
         if (p.saturation <= 0 && this.ticks % (p.food * 3 + 1) === 0) y += ((i * 13 + this.ticks) % 3) - 1;
         ctx.drawImage(gui.sprites.foodEmpty, x, y);
         const f = p.food - i * 2;
-        if (f >= 2) ctx.drawImage(gui.sprites.food, x, y);
-        else if (f === 1) ctx.drawImage(gui.sprites.foodHalf, x, y);
+        const hungry = p.effects.has('hunger');
+        if (f >= 2) ctx.drawImage(hungry ? gui.sprites.foodHunger : gui.sprites.food, x, y);
+        else if (f === 1) ctx.drawImage(hungry ? gui.sprites.foodHunger : gui.sprites.foodHalf, 0, 0, hungry ? 5 : 9, 9, x, y, hungry ? 5 : 9, 9);
       }
       // air
       const eyeId = g.world!.getId(Math.floor(p.x), Math.floor(p.y + p.eyeHeight()), Math.floor(p.z));
@@ -166,6 +177,7 @@ export class Hud {
       gui.textCenter(ctx, this.actionText, cx, H - 72 + (survival ? 0 : 14), '#FFFFFF');
       ctx.globalAlpha = 1;
     }
+    if (!this.ui.screen && !g.hideHud) drawEffectsHud(ctx, this.ui);
     this.renderChatAndText(ctx);
   }
 

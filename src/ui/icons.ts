@@ -105,7 +105,7 @@ export class IconCache {
       if (isStairs(id)) meta = 3; // face the viewer's right
       if (id === B.CHEST) meta = 2;
       boxes = modelBoxes(pack(id, meta));
-      if (id === B.OAK_FENCE) boxes = [
+      if (id === B.OAK_FENCE || id === B.NETHER_BRICK_FENCE) boxes = [
         { x0: 2, y0: 0, z0: 6, x1: 6, y1: 16, z1: 10, tex: def.faces.slice(0, 6) },
         { x0: 10, y0: 0, z0: 6, x1: 14, y1: 16, z1: 10, tex: def.faces.slice(0, 6) },
         { x0: 6, y0: 12, z0: 7, x1: 10, y1: 15, z1: 9, tex: def.faces.slice(0, 6) },

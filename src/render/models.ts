@@ -205,6 +205,12 @@ export function ghastModel(): ModelDef {
   return { texW: 64, texH: 32, parts: [part('body', 0, 8, 0, [box(-8, -8, -8, 16, 16, 16, 0, 0)]), ...tentacles] };
 }
 
+export function blazeModel(): ModelDef {
+  const rods: ModelPart[] = [];
+  for (let i = 0; i < 12; i++) rods.push(part('rod' + i, 0, 0, 0, [box(0, 0, 0, 2, 8, 2, 0, 16)]));
+  return { texW: 64, texH: 32, parts: [part('head', 0, 0, 0, [box(-4, -4, -4, 8, 8, 8, 0, 0)]), ...rods] };
+}
+
 // ------------------------------------------------------------------ skin painting
 type Face = 'top' | 'bottom' | 'right' | 'front' | 'left' | 'back';
 type Painter = (face: Face, x: number, y: number, fw: number, fh: number) => [number, number, number, number] | [number, number, number] | null;
@@ -539,6 +545,23 @@ export function ghastSkin(shooting: boolean): Skin {
     return vary(r.int(9) === 0 ? g : w, r, 0.03);
   });
   s.paintBox(0, 0, 2, 16, 2, () => vary(g, r, 0.05));
+  return s;
+}
+
+export function blazeSkin(): Skin {
+  const s = new Skin();
+  const r = new Random(31);
+  const y1 = hx('#f8c828'), y2 = hx('#f0a018'), y3 = hx('#fff070'), dark = hx('#6a3a08');
+  s.paintBox(0, 0, 8, 8, 8, (f, x, y) => {
+    if (f === 'front') {
+      if (y === 3 && (x === 1 || x === 2 || x === 5 || x === 6)) return x === 2 || x === 5 ? hx('#1a1a1a') : dark;
+      if (y === 4 && (x === 1 || x === 2 || x === 5 || x === 6)) return hx('#3a2a08');
+      if (y === 6 && x >= 2 && x <= 5) return dark;
+    }
+    const k = r.int(10);
+    return vary(k < 2 ? y3 : k < 6 ? y1 : y2, r, 0.05);
+  });
+  s.paintBox(0, 16, 2, 8, 2, (_f, _x, y) => vary(y % 3 === 0 ? y2 : y1, r, 0.06));
   return s;
 }
 

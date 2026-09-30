@@ -1,6 +1,8 @@
 import type { Game } from './game';
 import { GameMode } from './player';
-import { ITEMS, itemByName, stack, getItem } from './items';
+import { ITEMS, itemByName, stack, getItem, I3 } from './items';
+import { EFFECTS } from './potiondata';
+import { ENCH_BY_ID } from './enchant';
 import { MOB_TYPES } from '../entity/registry';
 import { blockByName, pack } from '../world/blocks';
 import { LivingEntity } from '../entity/living';
@@ -18,7 +20,7 @@ export class Commands {
     try {
       switch (cmd) {
         case 'help':
-          out.push('§eAvailable commands:', '/gamemode <survival|creative|adventure|spectator>', '/time <set|add> <day|night|noon|midnight|value>', '/weather <clear|rain|thunder>', '/tp <x> <y> <z>', '/give <item> [count]', '/summon <mob> [x y z]', '/kill', '/difficulty <peaceful|easy|normal|hard>', '/seed', '/spawnpoint', '/setblock <x> <y> <z> <block>', '/clear', '/xp <amount>', '/gamerule doDaylightCycle <true|false>', '/effect heal');
+          out.push('§eAvailable commands:', '/gamemode <survival|creative|adventure|spectator>', '/time <set|add> <day|night|noon|midnight|value>', '/weather <clear|rain|thunder>', '/tp <x> <y> <z>', '/give <item> [count]', '/summon <mob> [x y z]', '/kill', '/difficulty <peaceful|easy|normal|hard>', '/seed', '/spawnpoint', '/setblock <x> <y> <z> <block>', '/clear', '/xp <amount>', '/gamerule doDaylightCycle <true|false>', '/effect <effect|clear> [seconds] [amplifier]', '/enchant <enchantment> [level]', '/heal');
           break;
         case 'gamemode':
         case 'gm': {
@@ -142,7 +144,29 @@ export class Commands {
           if (args[0] === 'doDaylightCycle') { g.doDaylightCycle = args[1] !== 'false'; out.push(`Gamerule doDaylightCycle is now set to: ${g.doDaylightCycle}`); }
           else throw new Error('Unknown gamerule');
           break;
-        case 'effect':
+        case 'effect': {
+          // /effect <effect|clear> [seconds] [amplifier]
+          const name = (args[0] ?? '').replace(/^minecraft:/, '');
+          if (name === 'clear') { p.clearEffects(); out.push('Took all effects from Player'); break; }
+          if (!EFFECTS[name]) throw new Error(`Unknown effect: ${name}. Try: ${Object.keys(EFFECTS).join(', ')}`);
+          const secs = args[1] ? parseInt(args[1]) : 30, amp = args[2] ? parseInt(args[2]) : 0;
+          if (secs <= 0) { p.removeEffect(name); out.push(`Took ${EFFECTS[name].name} from Player`); break; }
+          p.addEffect(name, secs * 20, Math.max(0, Math.min(9, amp)));
+          out.push(`Given ${EFFECTS[name].name} (ID ${EFFECTS[name].icon + 1}) * ${amp} to Player for ${secs} seconds`);
+          break;
+        }
+        case 'enchant': {
+          // /enchant <enchantment> [level]
+          const held = p.inventory.held();
+          const e = ENCH_BY_ID.get((args[0] ?? '').replace(/^minecraft:/, ''));
+          if (!held) throw new Error('Player is not holding an item');
+          if (!e) throw new Error(`Unknown enchantment. Try: ${[...ENCH_BY_ID.keys()].join(', ')}`);
+          const lvl = Math.max(1, Math.min(e.max, parseInt(args[1] ?? '1') || 1));
+          if (!e.applies(held) && held.id !== I3.ENCHANTED_BOOK) throw new Error(`${e.name} cannot be applied to this item`);
+          held.ench = { ...(held.ench ?? {}), [e.id]: lvl };
+          out.push('Enchanting succeeded');
+          break;
+        }
         case 'heal':
           p.health = p.maxHealth; p.food = 20; p.saturation = 20; p.fireTicks = 0;
           out.push('Healed Player');

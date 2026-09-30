@@ -1,8 +1,11 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
 import type { Game } from './game';
-import { B, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE } from '../world/blocks';
+import { B, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater } from '../world/blocks';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, I2, stack, ItemDef } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, I3, stack, ItemDef, POTION_ITEMS } from './items';
+import { ThrownPotion } from '../entity/potion';
+import { POTION_BY_KEY } from './potiondata';
+import { newBrewingTile } from './brewing';
 import { BlockHit, raycastBlocks } from './raycast';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
@@ -90,7 +93,7 @@ export class Interaction {
     const eff = level(held, 'efficiency');
     if (eff > 0 && speed > 1) speed += eff * eff + 1;
     const eyeId = this.world.getId(Math.floor(p.x), Math.floor(p.y + p.eyeHeight()), Math.floor(p.z));
-    if (eyeId === B.WATER) speed /= 5;
+    if (eyeId === B.WATER && !level(p.inventory.armor[0], 'aqua_affinity')) speed /= 5;
     if (!p.onGround && !p.flying) speed /= 5;
     return canHarvest ? speed / def.hardness / 30 : speed / def.hardness / 100;
   }
@@ -151,15 +154,16 @@ export class Interaction {
     g.playBlockSound(id, x, y, z, 'break');
     this.removeBlockAndPartner(x, y, z, v);
     if (!p.creative) {
-      const drops = blockDrops(id, metaOf(v), tool, this.rng);
-      const fortune = level(held, 'fortune');
+      const silk = level(held, 'silk_touch') > 0;
+      const drops = blockDrops(id, metaOf(v), tool, this.rng, silk);
+      const fortune = silk ? 0 : level(held, 'fortune');
       if (fortune && [B.COAL_ORE, B.DIAMOND_ORE, B.EMERALD_ORE, B.LAPIS_ORE, B.REDSTONE_ORE, B.NETHER_QUARTZ_ORE].includes(id))
         for (const d of drops) d.count *= Math.max(0, this.rng.int(fortune + 2) - 1) + 1;
       for (const d of drops) g.dropItem(x + 0.5, y + 0.5, z + 0.5, d);
       this.dropTileContents(x, y, z, v);
       // xp from ores
       const xp = id === B.COAL_ORE ? this.rng.int(3) : id === B.DIAMOND_ORE || id === B.EMERALD_ORE ? 3 + this.rng.int(5) : id === B.LAPIS_ORE ? 2 + this.rng.int(4) : id === B.REDSTONE_ORE ? 1 + this.rng.int(5) : 0;
-      if (xp && drops.length) this.spawnXp(x + 0.5, y + 0.5, z + 0.5, xp);
+      if (xp && drops.length && !silk) this.spawnXp(x + 0.5, y + 0.5, z + 0.5, xp);
       if (tool?.durability && BLOCKS[id].hardness > 0) this.damageHeld(tool.tool?.type === 'sword' ? 2 : 1);
       p.exhaust(0.005);
       // ice leaves water behind
@@ -191,6 +195,16 @@ export class Interaction {
     if (id === B.OAK_DOOR) {
       const oy = meta & 8 ? y - 1 : y + 1;
       if (w.getId(x, oy, z) === B.OAK_DOOR) changes.push([x, oy, z, B.AIR]);
+    } else if (isPiston(id) && meta & 8) {
+      const [dx, dy, dz] = FACING6[meta & 7];
+      if (w.getId(x + dx, y + dy, z + dz) === B.PISTON_HEAD) changes.push([x + dx, y + dy, z + dz, B.AIR]);
+    } else if (id === B.PISTON_HEAD) {
+      const [dx, dy, dz] = FACING6[meta & 7];
+      const bv = w.get(x - dx, y - dy, z - dz);
+      if (isPiston(idOf(bv)) && metaOf(bv) & 8) {
+        changes.push([x - dx, y - dy, z - dz, B.AIR]);
+        if (!this.player.creative) this.game.dropItem(x - dx + 0.5, y - dy + 0.5, z - dz + 0.5, stack(idOf(bv)));
+      }
     } else if (id === B.BED) {
       const [dx, dz] = HORIZ[meta & 3];
       const ox = meta & 8 ? x - dx : x + dx, oz = meta & 8 ? z - dz : z + dz;
@@ -265,7 +279,7 @@ export class Interaction {
     if (!t) return;
     const v = this.world.get(t.x, t.y, t.z);
     let id = idOf(v);
-    const map: Record<number, number> = { [B.REDSTONE_WIRE]: I.REDSTONE, [B.UNLIT_REDSTONE_TORCH]: B.REDSTONE_TORCH, [B.LIT_REDSTONE_LAMP]: B.REDSTONE_LAMP, [B.WHEAT]: I.WHEAT_SEEDS, [B.OAK_DOOR]: I.OAK_DOOR, [B.BED]: I.RED_BED, [B.SUGAR_CANE]: I.SUGAR_CANE, [B.LIT_FURNACE]: B.FURNACE, [B.FARMLAND]: B.DIRT, [B.DOUBLE_STONE_SLAB]: B.DOUBLE_STONE_SLAB };
+    const map: Record<number, number> = { [B.REDSTONE_WIRE]: I.REDSTONE, [B.UNLIT_REDSTONE_TORCH]: B.REDSTONE_TORCH, [B.LIT_REDSTONE_LAMP]: B.REDSTONE_LAMP, [B.WHEAT]: I.WHEAT_SEEDS, [B.OAK_DOOR]: I.OAK_DOOR, [B.BED]: I.RED_BED, [B.SUGAR_CANE]: I.SUGAR_CANE, [B.LIT_FURNACE]: B.FURNACE, [B.FARMLAND]: B.DIRT, [B.DOUBLE_STONE_SLAB]: B.DOUBLE_STONE_SLAB, [B.REPEATER]: I3.REPEATER, [B.POWERED_REPEATER]: I3.REPEATER, [B.COMPARATOR]: I3.COMPARATOR, [B.BREWING_STAND]: I3.BREWING_STAND, [B.NETHER_WART]: I3.NETHER_WART, [B.CARROTS]: I3.CARROT, [B.POTATOES]: I3.POTATO, [B.PISTON_HEAD]: B.PISTON };
     id = map[id] ?? id;
     const inv = p.inventory;
     for (let i = 0; i < 9; i++) if (inv.main[i]?.id === id) { inv.selected = i; return; }
@@ -322,6 +336,11 @@ export class Interaction {
       case B.LEVER: g.redstone.toggleLever(t.x, t.y, t.z); return true;
       case B.STONE_BUTTON: g.redstone.pressButton(t.x, t.y, t.z); return true;
       case B.FURNACE: case B.LIT_FURNACE: g.ui.openFurnace(t.x, t.y, t.z); return true;
+      case B.HOPPER: g.ui.openHopper(t.x, t.y, t.z); return true;
+      case B.DISPENSER: case B.DROPPER: g.ui.openDispenser(t.x, t.y, t.z, id === B.DROPPER); return true;
+      case B.BREWING_STAND: g.ui.openBrewing(t.x, t.y, t.z); return true;
+      case B.ANVIL: g.ui.openAnvil(t.x, t.y, t.z); return true;
+      case B.REPEATER: case B.POWERED_REPEATER: case B.COMPARATOR: g.redstone.useDiode(t.x, t.y, t.z); return true;
       case B.CHEST: {
         if (OPAQUE[w.getId(t.x, t.y + 1, t.z)]) return true;
         g.ui.openChest(t.x, t.y, t.z);
@@ -383,6 +402,23 @@ export class Interaction {
       }
       return false;
     }
+    if (item.egg) {
+      if (id === B.SPAWNER) {
+        const tile = (w.getTile(t.x, t.y, t.z) as { type: string; mob: string; delay: number } | undefined) ?? { type: 'spawner', mob: item.egg, delay: 200 };
+        tile.mob = item.egg;
+        w.setTile(t.x, t.y, t.z, tile as never);
+        this.consume(1);
+        return true;
+      }
+      const up = t.face === 3 && (id === B.OAK_FENCE || id === B.NETHER_BRICK_FENCE) ? 0.5 : 0;
+      const m = this.spawnMob(item.egg, ax + 0.5, ay + up, az + 0.5);
+      if (m) {
+        m.yaw = this.rng.next() * 360;
+        if (held.name) (m as unknown as { customName: string }).customName = held.name;
+        this.consume(1);
+      }
+      return true;
+    }
     switch (held.id) {
       case I.BONE_MEAL:
         if (g.ticker!.fertilize(t.x, t.y, t.z)) {
@@ -437,6 +473,32 @@ export class Interaction {
     const g = this.game, p = this.player, w = this.world;
     if (item.food) {
       if (p.food < 20 || held.id === I.GOLDEN_APPLE || p.creative) { this.eating = 1; }
+      return;
+    }
+    if (item.drink) { this.eating = 1; return; }
+    if (item.splash) {
+      const e = new ThrownPotion(w, g, p, { ...held, count: 1 });
+      const eye = g.eyePos(1);
+      const d = g.lookVec(p.yaw, p.pitch - 20);
+      e.setPos(eye.x + d.x * 0.3, eye.y - 0.1, eye.z + d.z * 0.3);
+      e.vx = d.x * 0.5 + p.vx; e.vy = d.y * 0.5; e.vz = d.z * 0.5 + p.vz;
+      g.addEntity(e);
+      g.audio.play('bow', p, 0.5, 0.4 / (Math.random() * 0.4 + 0.8));
+      this.consume(1);
+      p.swing();
+      return;
+    }
+    if (held.id === I3.GLASS_BOTTLE) {
+      const eye = g.eyePos(1);
+      const d = g.lookVec(p.yaw, p.pitch);
+      const hit = raycastBlocks(w, eye.x, eye.y, eye.z, d.x, d.y, d.z, g.reach(), true);
+      if (hit && w.getId(hit.x, hit.y, hit.z) === B.WATER) {
+        const filled = stack(POTION_ITEMS.water);
+        g.audio.play('swim', hit, 0.6, 1.2);
+        if (held.count === 1 && !p.creative) p.inventory.setHeld(filled);
+        else { if (!p.creative) held.count--; if (p.inventory.add(filled) > 0) g.dropItem(p.x, p.y + 1, p.z, filled); }
+        p.swing();
+      }
       return;
     }
     if (item.armor) {
@@ -513,7 +575,7 @@ export class Interaction {
       }
       return;
     }
-    if (held.id === I.MILK_BUCKET) { p.fireTicks = 0; if (!p.creative) p.inventory.setHeld(stack(I.BUCKET)); return; }
+
     if (item.block === B.LILY_PAD) {
       const eye = g.eyePos(1);
       const d = g.lookVec(p.yaw, p.pitch);
@@ -530,9 +592,18 @@ export class Interaction {
     const g = this.game, p = this.player;
     const held = p.inventory.held();
     const item = held ? getItem(held.id) : undefined;
-    if (!held || !item?.food) { this.eating = 0; return; }
+    if (!held || !(item?.food || item?.drink)) { this.eating = 0; return; }
     this.eating++;
     p.eatingTicks = this.eating;
+    if (item.drink) {
+      if (this.eating % 4 === 0 && this.eating > 7) g.audio.play('drink', p, 0.5, this.rng.next() * 0.1 + 0.9);
+      if (this.eating >= 32) {
+        this.finishDrinking(held, item);
+        this.eating = 0;
+        p.eatingTicks = 0;
+      }
+      return;
+    }
     if (this.eating % 4 === 0 && this.eating > 7) {
       g.audio.play('eat', p, 0.5 + 0.5 * this.rng.int(2), (this.rng.next() - this.rng.next()) * 0.2 + 1);
       const eye = g.eyePos(1);
@@ -542,16 +613,35 @@ export class Interaction {
       const last = g.particles!.list;
       for (let i = last.length - 5; i < last.length; i++) if (i >= 0) { last[i].u1 = last[i].u0 + 0.25; last[i].v1 = last[i].v0 + 0.25; }
     }
-    if (this.eating >= 32) {
+    if (this.eating >= 32 && item.food) {
       p.eat(item.food.hunger, item.food.saturation);
       g.audio.play('burp', p, 0.5, this.rng.next() * 0.1 + 0.9);
-      if (held.id === I.GOLDEN_APPLE) { p.heal(4); }
+      if (held.id === I.GOLDEN_APPLE) { p.addEffect('regeneration', 100, 1); p.addEffect('absorption', 2400, 0); }
+      if (held.id === I.ROTTEN_FLESH && this.rng.next() < 0.8) p.addEffect('hunger', 600, 0);
+      if (held.id === I.CHICKEN && this.rng.next() < 0.3) p.addEffect('hunger', 600, 0);
+      if (held.id === I.SPIDER_EYE) p.addEffect('poison', 100, 0);
+      if (held.id === I3.PUFFERFISH) { p.addEffect('poison', 1200, 3); p.addEffect('hunger', 300, 2); }
       if (!p.creative) {
         if (item.food.stew) p.inventory.setHeld(stack(I.BOWL));
         else this.consume(1);
       }
       this.eating = 0;
       p.eatingTicks = 0;
+    }
+  }
+
+  private finishDrinking(held: ItemStack, item: ItemDef) {
+    const p = this.player;
+    if (held.id === I.MILK_BUCKET) {
+      p.clearEffects();
+      if (!p.creative) p.inventory.setHeld(stack(I.BUCKET));
+      return;
+    }
+    const type = POTION_BY_KEY.get(item.potion ?? 'water');
+    for (const [id, dur, amp] of type?.effects ?? []) p.addEffect(id, dur, amp);
+    if (!p.creative) {
+      if (held.count > 1) { held.count--; if (p.inventory.add(stack(I3.GLASS_BOTTLE)) > 0) this.game.dropItem(p.x, p.y + 1, p.z, stack(I3.GLASS_BOTTLE)); }
+      else p.inventory.setHeld(stack(I3.GLASS_BOTTLE));
     }
   }
 
@@ -600,6 +690,17 @@ export class Interaction {
     if (s.count <= 0) p.inventory.setHeld(null);
   }
 
+  /** Vanilla getFacingFromEntity: FACING6 pointing from the block toward the placer. */
+  private facingFromEntity(x: number, y: number, z: number): number {
+    const p = this.player;
+    if (Math.abs(p.x - (x + 0.5)) < 2 && Math.abs(p.z - (z + 0.5)) < 2) {
+      const eye = p.y + p.eyeHeight();
+      if (eye - y > 2) return 1;
+      if (y - eye > 0) return 0;
+    }
+    return [3, 4, 2, 5][this.playerFacing()];
+  }
+
   private playerFacing(): number {
     const mc = Math.floor((this.player.yaw * 4) / 360 + 0.5) & 3; // 0 south, 1 west, 2 north, 3 east
     return (mc + 2) & 3; // -> 0 north, 1 east, 2 south, 3 west
@@ -646,6 +747,11 @@ export class Interaction {
       if (!g.ticker!.canStay(x, y, z, pack(blockId, meta))) return false;
     } else if (blockId === B.LILY_PAD) return false;
     else if (blockId === B.WHEAT || blockId === B.PUMPKIN_STEM) meta = 0;
+    else if (isRepeater(blockId) || blockId === B.COMPARATOR) meta = facing;
+    else if (blockId === B.ANVIL) meta = (facing + 1) & 3;
+    else if (isPiston(blockId) || blockId === B.DISPENSER || blockId === B.DROPPER) meta = this.facingFromEntity(x, y, z);
+    else if (blockId === B.OBSERVER) meta = this.facingFromEntity(x, y, z) ^ 1;
+    else if (blockId === B.HOPPER) { meta = FACE_TO_FACING6[face] ^ 1; if (meta === 1) meta = 0; }
     const v = pack(blockId, meta);
     if (blockId === B.OAK_DOOR) {
       if (!BLOCKS[w.getId(x, y + 1, z)].replaceable || !BLOCKS[w.getId(x, y - 1, z)].solid) return false;
@@ -683,6 +789,12 @@ export class Interaction {
     const id = idOf(v);
     if (id === B.CHEST) w.setTile(x, y, z, { type: 'chest', items: new Array(27).fill(null) });
     if (id === B.FURNACE) w.setTile(x, y, z, { type: 'furnace', slots: [null, null, null], burn: 0, burnMax: 0, cook: 0 });
+    if (id === B.HOPPER) w.setTile(x, y, z, { type: 'hopper', items: [null, null, null, null, null], cooldown: 0 });
+    if (id === B.DISPENSER || id === B.DROPPER) w.setTile(x, y, z, { type: id === B.DISPENSER ? 'dispenser' : 'dropper', items: new Array(9).fill(null) });
+    if (id === B.BREWING_STAND) w.setTile(x, y, z, newBrewingTile() as never);
+    if (id === B.COMPARATOR) { w.setTile(x, y, z, { type: 'comparator', out: 0 }); g.ticker!.schedule(x, y, z, 2); }
+    if (id === B.ANVIL) g.ticker!.schedule(x, y, z, 2);
+    if (isPiston(id) || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER) g.redstone.update(x, y, z);
     if (id === B.SAND || id === B.GRAVEL) g.ticker!.schedule(x, y, z, 2);
     g.playBlockSound(soundBlock, x, y, z, 'place');
     this.consume(1);
@@ -719,7 +831,13 @@ export class Interaction {
     if (p.spectator || !(e instanceof LivingEntity)) return;
     const held = p.inventory.held();
     const item = held ? getItem(held.id) : undefined;
-    let dmg = (item?.attack ?? 1) + level(held, 'sharpness') * 1.25;
+    let dmg = (item?.attack ?? 1) + level(held, 'sharpness') * 1.25 + p.attackBonus();
+    if (e.undead) dmg += level(held, 'smite') * 2.5;
+    if (e.arthropod) {
+      const bane = level(held, 'bane_of_arthropods');
+      if (bane) { dmg += bane * 2.5; e.addEffect('slowness', 20 + this.rng.int(10 * bane), 3); }
+    }
+    dmg = Math.max(0, dmg);
     const crit = p.fallDistance > 0 && !p.onGround && !p.onLadder && !p.inWater && p.vy < 0;
     if (crit) dmg *= 1.5;
     const hit = e.damage(dmg, 'player', p);

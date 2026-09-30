@@ -1196,6 +1196,226 @@ gens.enchanting_table_side = (r) => {
 };
 gens.redstone_block = metalBlock(['#6a0a04', '#a8140a', '#b81c10', '#d02818', '#ff5040']);
 
+// ---------------------------------------------------------------- redstone devices
+const RS_ON = hex('#ff2a18'), RS_ON2 = hex('#c01008'), RS_OFF = hex('#6a0a04'), RS_OFF2 = hex('#4a0602');
+function diodeTop(kind: 'repeater' | 'comparator', on: boolean): Gen {
+  return () => {
+    const img = gens.smooth_stone(new Random(21));
+    const a = on ? RS_ON : RS_OFF, b = on ? RS_ON2 : RS_OFF2;
+    if (kind === 'repeater') {
+      for (let y = 2; y < 15; y++) { set(img, 7, y, a); set(img, 8, y, b); }
+      // arrow head toward the output (north / top)
+      for (const [x, y] of [[6, 4], [9, 4], [5, 5], [10, 5]]) set(img, x, y, b);
+    } else {
+      for (let y = 3; y < 13; y++) { set(img, 7, y, y < 5 ? RS_OFF : a); set(img, 8, y, y < 5 ? RS_OFF2 : b); }
+      for (let x = 4; x < 12; x++) { set(img, x, 12, a); set(img, x, 13, b); }
+      for (const [x, y] of [[4, 11], [11, 11]]) set(img, x, y, a);
+    }
+    return img;
+  };
+}
+gens.repeater = diodeTop('repeater', false);
+gens.repeater_on = diodeTop('repeater', true);
+gens.comparator = diodeTop('comparator', false);
+gens.comparator_on = diodeTop('comparator', true);
+
+const IRON_DARK = P('#3a3a3a', '#424242', '#4a4a4a', '#525252');
+gens.hopper_outside = (r) => {
+  const img = newImg();
+  paletteNoise(img, r, IRON_DARK, { jitter: 0.5 });
+  for (let i = 0; i < S; i++) { set(img, i, 0, hex('#5e5e5e')); set(img, 0, i, hex('#5a5a5a')); set(img, i, 15, hex('#262626')); set(img, 15, i, hex('#2a2a2a')); }
+  return img;
+};
+gens.hopper_top = (r) => {
+  const img = gens.hopper_outside(r);
+  for (let y = 2; y < 14; y++) for (let x = 2; x < 14; x++) set(img, x, y, (x + y) % 5 ? hex('#1e1e1e') : hex('#262626'));
+  return img;
+};
+gens.hopper_inside = (r) => { const img = newImg(); paletteNoise(img, r, P('#1c1c1c', '#222222', '#282828'), { jitter: 0.5 }); return img; };
+
+function dispenserFace(kind: 'dispenser' | 'dropper', vertical: boolean): Gen {
+  return () => {
+    const img = vertical ? gens.furnace_top(new Random(12)) : gens.furnace_side(new Random(11));
+    const hole = hex('#1a1a1a'), rim = hex('#4a4a4a'), lip = hex('#9a9a9a');
+    if (kind === 'dispenser') {
+      const rows = vertical ? ['.rrrrrr.', 'rkkkkkkr', 'rkkkkkkr', 'rkkkkkkr', 'rkkkkkkr', 'rkkkkkkr', 'rkkkkkkr', '.llllll.'] : ['..rrrr..', '.rkkkkr.', 'rkkkkkkr', 'rkkkkkkr', 'rkkkkkkr', '.rkkkkr.', '..llll..'];
+      art(img, rows, { r: rim, k: hole, l: lip }, 4, vertical ? 4 : 5);
+      if (!vertical) for (let x = 1; x < 15; x++) set(img, x, 2, hex('#555555'));
+    } else {
+      art(img, ['rrrr', 'rkkr', 'rkkr', 'llll'], { r: rim, k: hole, l: lip }, 6, vertical ? 6 : 7);
+      if (!vertical) for (let x = 1; x < 15; x++) set(img, x, 2, hex('#555555'));
+    }
+    return img;
+  };
+}
+gens.dispenser_front = dispenserFace('dispenser', false);
+gens.dispenser_front_vertical = dispenserFace('dispenser', true);
+gens.dropper_front = dispenserFace('dropper', false);
+gens.dropper_front_vertical = dispenserFace('dropper', true);
+
+// pistons
+function pistonHeadFace(sticky: boolean): Gen {
+  return () => {
+    const img = gens.oak_planks(new Random(5));
+    const iron = hex('#9a9a9a'), ironD = hex('#6a6a6a');
+    for (let i = 0; i < S; i++) { set(img, i, 0, iron); set(img, 0, i, iron); set(img, i, 15, ironD); set(img, 15, i, ironD); }
+    for (let i = 5; i < 11; i++) { set(img, i, 5, ironD); set(img, i, 10, ironD); set(img, 5, i, ironD); set(img, 10, i, ironD); }
+    for (let y = 6; y < 10; y++) for (let x = 6; x < 10; x++) set(img, x, y, iron);
+    if (sticky) {
+      const r = new Random(77);
+      for (let y = 1; y < 15; y++) for (let x = 1; x < 15; x++) if (Math.hypot(x - 7.5, y - 7.5) < 6.2 + r.next() * 0.8) set(img, x, y, r.int(4) ? hex('#6fb85a') : hex('#8ad872'));
+    }
+    return img;
+  };
+}
+gens.piston_top = pistonHeadFace(false);
+gens.piston_top_sticky = pistonHeadFace(true);
+gens.piston_side = (r) => {
+  const img = gens.cobblestone(new Random(9));
+  const planks = gens.oak_planks(new Random(5));
+  for (let y = 0; y < 4; y++) for (let x = 0; x < S; x++) { const i = (y * S + x) * 4; set(img, x, y, [planks[i], planks[i + 1], planks[i + 2]]); }
+  for (let x = 0; x < S; x++) { set(img, x, 4, hex('#2a2a2a')); set(img, x, 0, hex('#b08a58')); }
+  // iron band down the middle
+  for (let y = 5; y < S; y++) { set(img, 6, y, hex('#8a8a8a')); set(img, 7, y, hex('#b0b0b0')); set(img, 8, y, hex('#9a9a9a')); set(img, 9, y, hex('#6a6a6a')); }
+  void r;
+  return img;
+};
+gens.piston_bottom = () => {
+  const img = gens.cobblestone(new Random(13));
+  for (let y = 5; y < 11; y++) for (let x = 5; x < 11; x++) set(img, x, y, y === 5 || x === 5 ? hex('#b0b0b0') : y === 10 || x === 10 ? hex('#5a5a5a') : hex('#8a8a8a'));
+  return img;
+};
+gens.piston_inner = () => {
+  const img = gens.cobblestone(new Random(14));
+  for (let y = 3; y < 13; y++) for (let x = 3; x < 13; x++) set(img, x, y, hex('#2a2a2a'));
+  for (let y = 6; y < 10; y++) for (let x = 6; x < 10; x++) set(img, x, y, (x + y) % 2 ? hex('#8a8a8a') : hex('#a0a0a0'));
+  return img;
+};
+
+// observer
+const OBS = P('#5c5c5c', '#626262', '#686868', '#6e6e6e');
+function observerBase(r: Random): Img {
+  const img = newImg();
+  paletteNoise(img, r, OBS, { jitter: 0.5 });
+  for (let i = 0; i < S; i++) { set(img, i, 0, hex('#7e7e7e')); set(img, 0, i, hex('#7a7a7a')); set(img, i, 15, hex('#3a3a3a')); set(img, 15, i, hex('#404040')); }
+  return img;
+}
+gens.observer_front = (r) => {
+  const img = observerBase(r);
+  art(img, ['kkkkkkkkkk', 'kddkkkkddk', 'kdWkkkkdWk', 'kddkkkkddk', 'kkkkkkkkkk'], { k: hex('#1e1e1e'), d: hex('#3a3a3a'), W: hex('#c8c8c8') }, 3, 5);
+  for (let x = 3; x < 13; x++) set(img, x, 11, hex('#2a2a2a'));
+  return img;
+};
+gens.observer_back = (r) => {
+  const img = observerBase(r);
+  art(img, ['kkkk', 'kddk', 'kddk', 'kkkk'], { k: hex('#2a2a2a'), d: hex('#4a0a04') }, 6, 6);
+  return img;
+};
+gens.observer_back_on = (r) => {
+  const img = observerBase(r);
+  art(img, ['kkkk', 'kRRk', 'kRRk', 'kkkk'], { k: hex('#2a2a2a'), R: hex('#ff3020') }, 6, 6);
+  return img;
+};
+gens.observer_side = (r) => {
+  const img = observerBase(r);
+  // arrow pointing up (toward the output)
+  for (let y = 3; y < 13; y++) { set(img, 7, y, hex('#3a3a3a')); set(img, 8, y, hex('#2e2e2e')); }
+  for (const [x, y] of [[6, 4], [9, 4], [5, 5], [10, 5]]) set(img, x, y, hex('#3a3a3a'));
+  return img;
+};
+gens.observer_top = (r) => {
+  const img = observerBase(r);
+  for (let x = 2; x < 14; x++) { set(img, x, 4, hex('#3a3a3a')); set(img, x, 11, hex('#3a3a3a')); }
+  for (let y = 4; y < 12; y++) { set(img, 7, y, hex('#6a0a04')); set(img, 8, y, hex('#4a0602')); }
+  return img;
+};
+
+// slime block
+gens.slime_block = (r) => {
+  const img = newImg();
+  for (let y = 0; y < S; y++)
+    for (let x = 0; x < S; x++) {
+      const edge = x === 0 || y === 0 || x === 15 || y === 15;
+      const inner = x >= 3 && x <= 12 && y >= 3 && y <= 12;
+      const innerEdge = inner && (x === 3 || y === 3 || x === 12 || y === 12);
+      const c = edge ? hex('#4f9a3f') : innerEdge ? hex('#5aa64a') : inner ? (r.int(5) ? hex('#78c865') : hex('#8ad872')) : r.int(6) ? hex('#6fbf5c') : hex('#86d470');
+      set(img, x, y, c, edge ? 220 : innerEdge ? 210 : inner ? 190 : 150);
+    }
+  return img;
+};
+
+// brewing
+gens.brewing_stand = () => {
+  const img = newImg();
+  // central rod (columns 7-8)
+  for (let y = 2; y < 16; y++) { set(img, 7, y, hex('#6a5a3a')); set(img, 8, y, hex('#4a3e28')); }
+  set(img, 7, 1, hex('#e8d060')); set(img, 8, 1, hex('#c8a830'));
+  // left half: bottle hanging from the arm
+  art(img, [
+    '.aaaaaa',
+    '...g...',
+    '..gGg..',
+    '.gGWGg.',
+    'gGWGGGg',
+    'gGGGGGg',
+    'gGGGGGg',
+    '.gGGGg.',
+    '..ggg..',
+  ], { a: hex('#6a5a3a'), g: hex('#cfd8e0'), G: hex('#8aa4e8'), W: hex('#ffffff') }, 0, 5);
+  // right half: empty arm
+  art(img, ['aaaaaaa', 'a......'], { a: hex('#6a5a3a') }, 9, 5);
+  return img;
+};
+gens.brewing_stand_base = (r) => { const img = newImg(); paletteNoise(img, r, P('#6a6a6a', '#747474', '#7e7e7e'), { jitter: 0.6 }); return img; };
+
+// crops
+function cropStages(name: string, n: number, leaf: string[], top: string | null) {
+  for (let st = 0; st < n; st++) gens[`${name}_stage${st}`] = (r) => {
+    const img = newImg();
+    const h = 4 + Math.round((st / (n - 1)) * 7);
+    for (let k = 0; k < 5; k++) {
+      let x = 2 + k * 3;
+      for (let y = 15; y > 15 - h + r.int(2); y--) {
+        set(img, x, y, hex(leaf[r.int(leaf.length)]));
+        if (y < 13 && r.next() < 0.3) { set(img, x + 1, y, hex(leaf[0])); }
+        if (r.next() < 0.2) x = Math.max(0, Math.min(15, x + (r.bool() ? 1 : -1)));
+      }
+    }
+    if (top && st === n - 1) for (let k = 0; k < 4; k++) { const x = 2 + k * 4, y = 13 + (k & 1); set(img, x, y, hex(top)); set(img, x + 1, y, hex(top)); set(img, x, y + 1, hex(top)); }
+    return img;
+  };
+}
+cropStages('carrots', 4, ['#3e8c1c', '#52a52a', '#2e6c14'], '#f08a1a');
+cropStages('potatoes', 4, ['#3a8a24', '#4ea02e', '#2c6a18'], '#c8a64a');
+for (let st = 0; st < 3; st++) gens['nether_wart_stage' + st] = (r) => {
+  const img = newImg();
+  const h = [5, 8, 12][st];
+  for (let k = 0; k < 4; k++) {
+    const x = 2 + k * 4;
+    for (let y = 15; y > 15 - h; y--) set(img, x + (y % 3 === 0 ? 1 : 0), y, hex(r.int(2) ? '#7a1418' : '#9a2024'));
+    if (st > 0) { set(img, x - 1, 16 - h, hex('#c83036')); set(img, x + 1, 16 - h, hex('#c83036')); set(img, x, 15 - h, hex('#e04a4a')); }
+  }
+  return img;
+};
+
+// anvil
+gens.anvil = (r) => { const img = newImg(); paletteNoise(img, r, P('#3e3e3e', '#444444', '#4a4a4a', '#505050'), { jitter: 0.4 }); return img; };
+function anvilTop(cracks: number): Gen {
+  return (r) => {
+    const img = newImg();
+    paletteNoise(img, r, P('#4a4a4a', '#505050', '#585858'), { jitter: 0.4 });
+    for (let y = 0; y < S; y++) { set(img, 3, y, hex('#2e2e2e')); set(img, 12, y, hex('#2e2e2e')); }
+    for (let c = 0; c < cracks * 3; c++) {
+      let x = 4 + r.int(8), y = r.int(16);
+      for (let k = 0; k < 5; k++) { set(img, x, y, hex('#262626')); x += r.int(3) - 1; y += 1; if (x < 4 || x > 11 || y > 15) break; }
+    }
+    return img;
+  };
+}
+gens.anvil_top = anvilTop(0);
+gens.chipped_anvil_top = anvilTop(1);
+gens.damaged_anvil_top = anvilTop(3);
+
 // ---------------------------------------------------------------- particles
 for (let i = 0; i < 8; i++) {
   gens['particle_smoke_' + i] = () => {

@@ -23,7 +23,7 @@ export enum Render {
 
 export type Tool = 'pickaxe' | 'axe' | 'shovel' | 'hoe' | 'sword' | 'shears' | null;
 export type Tint = 'none' | 'grass' | 'foliage' | 'spruce' | 'birch';
-export type Sound = 'stone' | 'wood' | 'grass' | 'gravel' | 'sand' | 'glass' | 'cloth' | 'snow' | 'metal' | 'none';
+export type Sound = 'stone' | 'wood' | 'grass' | 'gravel' | 'sand' | 'glass' | 'cloth' | 'snow' | 'metal' | 'slime' | 'none';
 
 // Texture registry: stable indices so workers and the main thread agree.
 export const TEXTURES: string[] = [];
@@ -268,6 +268,26 @@ export const B = {
   LIT_REDSTONE_LAMP: reg('lit_redstone_lamp', 'Redstone Lamp', { tex: 'redstone_lamp_on', hardness: 0.3, sound: 'glass', light: 15, item: false, drop: 'redstone_lamp' }),
   REDSTONE_BLOCK: reg('redstone_block', 'Block of Redstone', { hardness: 5, tool: 'pickaxe', harvestLevel: 0, sound: 'metal' }),
   ENCHANTING_TABLE: reg('enchanting_table', 'Enchanting Table', { render: Render.Model, top: 'enchanting_table_top', bottom: 'obsidian', side: 'enchanting_table_side', hardness: 5, tool: 'pickaxe', harvestLevel: 0, opaque: false, lightOpacity: 0, light: 7, blastResistance: 6000 }),
+  // redstone devices, brewing, anvils (appended: ids must stay stable)
+  REPEATER: reg('repeater', 'Redstone Repeater', { render: Render.Model, tex: 'repeater', side: 'smooth_stone', solid: true, opaque: false, lightOpacity: 0, hardness: 0, sound: 'stone', needsSupport: true, item: false, drop: 'repeater' }),
+  POWERED_REPEATER: reg('powered_repeater', 'Redstone Repeater', { render: Render.Model, tex: 'repeater_on', side: 'smooth_stone', solid: true, opaque: false, lightOpacity: 0, hardness: 0, sound: 'stone', needsSupport: true, item: false, drop: 'repeater' }),
+  COMPARATOR: reg('comparator', 'Redstone Comparator', { render: Render.Model, tex: 'comparator', side: 'smooth_stone', solid: true, opaque: false, lightOpacity: 0, hardness: 0, sound: 'stone', needsSupport: true, item: false, drop: 'comparator' }),
+  HOPPER: reg('hopper', 'Hopper', { render: Render.Model, tex: 'hopper_outside', top: 'hopper_top', hardness: 3, tool: 'pickaxe', harvestLevel: 0, sound: 'metal', opaque: false, lightOpacity: 0, blastResistance: 24 }),
+  DISPENSER: reg('dispenser', 'Dispenser', { ...stone, hardness: 3.5, top: 'furnace_top', side: 'furnace_side', front: 'dispenser_front', blastResistance: 17.5 }),
+  DROPPER: reg('dropper', 'Dropper', { ...stone, hardness: 3.5, top: 'furnace_top', side: 'furnace_side', front: 'dropper_front', blastResistance: 17.5 }),
+  PISTON: reg('piston', 'Piston', { render: Render.Model, top: 'piston_top', bottom: 'piston_bottom', side: 'piston_side', hardness: 0.5, sound: 'stone', opaque: false, lightOpacity: 0, tool: 'pickaxe' }),
+  STICKY_PISTON: reg('sticky_piston', 'Sticky Piston', { render: Render.Model, top: 'piston_top_sticky', bottom: 'piston_bottom', side: 'piston_side', hardness: 0.5, sound: 'stone', opaque: false, lightOpacity: 0, tool: 'pickaxe' }),
+  PISTON_HEAD: reg('piston_head', 'Piston Head', { render: Render.Model, top: 'piston_top', bottom: 'piston_top', side: 'piston_side', hardness: 0.5, sound: 'stone', opaque: false, lightOpacity: 0, item: false, drop: null, tool: 'pickaxe' }),
+  MOVING_PISTON: reg('moving_piston', 'Moving Piston', { render: Render.None, solid: false, opaque: false, lightOpacity: 0, hardness: -1, item: false, drop: null, selectable: false, sound: 'none' }),
+  OBSERVER: reg('observer', 'Observer', { ...stone, hardness: 3, top: 'observer_top', side: 'observer_side', front: 'observer_front', blastResistance: 15 }),
+  SLIME_BLOCK: reg('slime_block', 'Slime Block', { render: Render.Model, tex: 'slime_block', hardness: 0, sound: 'slime', opaque: false, translucent: true, lightOpacity: 1, slipperiness: 0.8, solid: true }),
+  BREWING_STAND: reg('brewing_stand', 'Brewing Stand', { render: Render.Model, tex: 'brewing_stand', bottom: 'brewing_stand_base', hardness: 0.5, tool: 'pickaxe', harvestLevel: 0, sound: 'metal', opaque: false, lightOpacity: 0, light: 1, item: false, drop: 'brewing_stand' }),
+  NETHER_WART: reg('nether_wart', 'Nether Wart', { render: Render.Crops, tex: 'nether_wart_stage2', solid: false, hardness: 0, sound: 'grass', needsSupport: true, drop: null, item: false }),
+  CARROTS: reg('carrots', 'Carrots', { render: Render.Crops, tex: 'carrots_stage3', solid: false, hardness: 0, sound: 'grass', needsSupport: true, drop: null, item: false }),
+  POTATOES: reg('potatoes', 'Potatoes', { render: Render.Crops, tex: 'potatoes_stage3', solid: false, hardness: 0, sound: 'grass', needsSupport: true, drop: null, item: false }),
+  ANVIL: reg('anvil', 'Anvil', { render: Render.Model, tex: 'anvil', top: 'anvil_top', hardness: 5, tool: 'pickaxe', harvestLevel: 0, gravity: true, sound: 'metal', blastResistance: 6000, opaque: false, lightOpacity: 0 }),
+  NETHER_BRICK_FENCE: reg('nether_brick_fence', 'Nether Brick Fence', { ...stone, hardness: 2, render: Render.Model, tex: 'nether_bricks', opaque: false, lightOpacity: 0 }),
+  NETHER_BRICK_STAIRS: reg('nether_brick_stairs', 'Nether Brick Stairs', { ...stone, hardness: 2, render: Render.Model, tex: 'nether_bricks', opaque: false, lightOpacity: 15 }),
 } as const;
 
 export const BLOCK_COUNT = BLOCKS.length;
@@ -292,7 +312,8 @@ export const WOOL_COLORS = [
 ];
 
 export const isStairs = (id: number) =>
-  id === B.OAK_STAIRS || id === B.COBBLESTONE_STAIRS || id === B.SPRUCE_STAIRS || id === B.BIRCH_STAIRS || id === B.STONE_BRICK_STAIRS || id === B.BRICK_STAIRS;
+  id === B.OAK_STAIRS || id === B.COBBLESTONE_STAIRS || id === B.SPRUCE_STAIRS || id === B.BIRCH_STAIRS || id === B.STONE_BRICK_STAIRS || id === B.BRICK_STAIRS || id === B.NETHER_BRICK_STAIRS;
+export const isFence = (id: number) => id === B.OAK_FENCE || id === B.NETHER_BRICK_FENCE;
 export const isSlab = (id: number) => id === B.STONE_SLAB || id === B.OAK_SLAB || id === B.COBBLESTONE_SLAB;
 export const isLeaves = (id: number) => id === B.OAK_LEAVES || id === B.SPRUCE_LEAVES || id === B.BIRCH_LEAVES;
 export const isLog = (id: number) => id === B.OAK_LOG || id === B.SPRUCE_LOG || id === B.BIRCH_LOG;
@@ -337,10 +358,50 @@ export const T = {
   glassPaneTop: tex('glass_pane_top'),
   saplingOak: tex('oak_sapling'),
   sugarCane: tex('sugar_cane'),
+  netherWart: [0, 1, 2].map((i) => tex('nether_wart_stage' + i)),
+  carrots: [0, 1, 2, 3].map((i) => tex('carrots_stage' + i)),
+  potatoes: [0, 1, 2, 3].map((i) => tex('potatoes_stage' + i)),
+  smoothStone: tex('smooth_stone'),
+  repeaterTorchOn: tex('redstone_torch'),
+  repeaterTorchOff: tex('redstone_torch_off'),
+  comparatorOn: tex('comparator_on'),
+  hopperInside: tex('hopper_inside'),
+  dispenserFrontV: tex('dispenser_front_vertical'),
+  dropperFrontV: tex('dropper_front_vertical'),
+  furnaceTop: tex('furnace_top'),
+  pistonInner: tex('piston_inner'),
+  pistonTop: tex('piston_top'),
+  pistonTopSticky: tex('piston_top_sticky'),
+  pistonSide: tex('piston_side'),
+  observerBack: tex('observer_back'),
+  observerBackOn: tex('observer_back_on'),
+  brewingStandBase: tex('brewing_stand_base'),
+  anvilTopChipped: tex('chipped_anvil_top'),
+  anvilTopDamaged: tex('damaged_anvil_top'),
+  netherBricks: tex('nether_bricks'),
+  bedrock: tex('bedrock'),
 };
 // Wool texture names are the same as the block names already.
 
 export const isRedstoneTorch = (id: number) => id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH;
+export const isRepeater = (id: number) => id === B.REPEATER || id === B.POWERED_REPEATER;
+export const isDiode = (id: number) => isRepeater(id) || id === B.COMPARATOR;
+export const isPiston = (id: number) => id === B.PISTON || id === B.STICKY_PISTON;
 export const isRedstoneComponent = (id: number) =>
   id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || isRedstoneTorch(id) ||
-  id === B.REDSTONE_LAMP || id === B.LIT_REDSTONE_LAMP || id === B.REDSTONE_BLOCK || id === B.OAK_DOOR || id === B.TNT;
+  id === B.REDSTONE_LAMP || id === B.LIT_REDSTONE_LAMP || id === B.REDSTONE_BLOCK || id === B.OAK_DOOR || id === B.TNT ||
+  isDiode(id) || isPiston(id) || id === B.OBSERVER || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER;
+
+/** 6-way facing (vanilla order): 0 down, 1 up, 2 north, 3 south, 4 west, 5 east. */
+export const FACING6: ReadonlyArray<readonly [number, number, number]> = [[0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]];
+/** FACING6 index -> FACE_DIRS face index */
+export const FACING6_TO_FACE = [2, 3, 4, 5, 0, 1];
+export const FACE_TO_FACING6 = [4, 5, 0, 1, 2, 3];
+export const isFacing6Cube = (id: number) => id === B.DISPENSER || id === B.DROPPER || id === B.OBSERVER;
+/** Crop texture for a crop block and growth meta. */
+export function cropTexture(id: number, meta: number): number {
+  if (id === B.NETHER_WART) return T.netherWart[meta >= 3 ? 2 : meta >= 1 ? 1 : 0];
+  if (id === B.CARROTS) return T.carrots[[0, 0, 1, 1, 2, 2, 2, 3][Math.min(7, meta)]];
+  if (id === B.POTATOES) return T.potatoes[[0, 0, 1, 1, 2, 2, 2, 3][Math.min(7, meta)]];
+  return T.wheat[Math.min(7, meta)];
+}

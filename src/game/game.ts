@@ -34,6 +34,9 @@ import { BIOMES } from '../world/biomes';
 import { Commands } from './commands';
 import { Achievements } from './achievements';
 import { Redstone } from './redstone';
+import { Pistons } from './pistons';
+import { Devices } from './devices';
+import { Brewing } from './brewing';
 import { LoadingScreen } from '../ui/menus';
 import { tickFurnaces } from './furnace';
 import { rainTexture, snowTexture } from './weather';
@@ -60,6 +63,9 @@ export class Game {
   commands: Commands;
   achievements: Achievements;
   redstone: Redstone;
+  pistons: Pistons;
+  devices: Devices;
+  brewing: Brewing;
   entityRenderer: EntityRenderer;
   time = 0;
   ticks = 0;
@@ -116,6 +122,9 @@ export class Game {
     this.commands = new Commands(this);
     this.achievements = new Achievements(this);
     this.redstone = new Redstone(this);
+    this.pistons = new Pistons(this);
+    this.devices = new Devices(this);
+    this.brewing = new Brewing(this);
     this.ui = new UI(this);
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -152,9 +161,11 @@ export class Game {
     world.onUnload = (c) => this.renderer.freeChunk(c);
     this.particles = new Particles(world);
     this.ticker = new BlockTicker(this, world);
+    this.pistons.reset();
     world.onBlockChange = (x, y, z, old, v) => this.ticker!.onChange(x, y, z, old, v);
     world.onChunkLoaded = (c, spawns) => {
       this.ticker!.onChunkLoaded(c);
+      this.pistons.scanChunk(c.cx, c.cz);
       if (spawns && !this.panorama) for (const sp of spawns) {
         const e = createEntity(sp.type, world, this);
         if (!e) continue;
@@ -484,8 +495,18 @@ export class Game {
       e.tick();
       if (e.removed) this.entities.splice(i, 1);
     }
+    // potion swirls around entities under status effects
+    for (const e of [p, ...this.entities]) {
+      if (!(e instanceof LivingEntity) || !e.effectColor || e.dead) continue;
+      const own = e === p && this.thirdPerson === 0;
+      if (this.rng.next() > (own ? 0.12 : e.effects.has('invisibility') ? 0.15 : 0.6)) continue;
+      this.particles!.swirl(e.x + (this.rng.next() - 0.5) * e.width, e.y + this.rng.next() * e.height, e.z + (this.rng.next() - 0.5) * e.width, 0, 0.02, 0, e.effectColor);
+    }
     this.ticker!.tick();
     this.redstone.tick();
+    this.pistons.tick();
+    this.devices.tick();
+    this.brewing.tick();
     tickFurnaces(this);
     this.entityRenderer.tick();
     this.spawner!.tick();
@@ -750,6 +771,8 @@ export class Game {
       cameraY: cam.y, gamma: this.options.gamma, clouds: this.options.clouds, skyTemp: biome.cold ? -0.5 : biome.name === 'Desert' ? 2 : 0.8,
       flicker: 1.5 + this.torchFlicker * 0.1, ticks: this.ticks + t,
     });
+    const nv = p.effects.get('night_vision');
+    env.nightVision = nv ? (nv.dur > 200 ? 1 : 0.7 + Math.sin(((nv.dur - t) * Math.PI) * 0.2) * 0.3) : 0;
     r.beginFrame(env);
     if (!nether) r.drawSky();
     r.drawChunks(w.chunks.values(), 'opaque');

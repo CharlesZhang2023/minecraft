@@ -8,7 +8,7 @@ export const chunkKey = (cx: number, cz: number) => (cx + 0x8000) * 0x10000 + (c
 export const keyStr = (cx: number, cz: number) => cx + ',' + cz;
 
 export interface TileEntity {
-  type: 'chest' | 'furnace';
+  type: 'chest' | 'furnace' | 'comparator' | 'hopper' | 'dispenser' | 'dropper' | 'brewing' | 'moving' | 'spawner';
   [k: string]: unknown;
 }
 

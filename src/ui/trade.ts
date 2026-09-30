@@ -46,7 +46,7 @@ export class TradeScreen extends ContainerScreen {
       ctx.fillStyle = can ? '#ffffff' : t.uses >= t.max ? '#a02020' : '#8b8b8b';
       ctx.fillRect(r.x + 46, r.y + 9, 8, 2);
       for (let k = 0; k < 4; k++) ctx.fillRect(r.x + 54 + k, r.y + 6 + k, 1, 8 - k * 2);
-      this.ui.drawItem(ctx, stack(t.result[0], t.result[1]), r.x + 66, r.y + 2);
+      this.ui.drawItem(ctx, { ...stack(t.result[0], t.result[1]), ...(t.ench ? { ench: { ...t.ench } } : {}) }, r.x + 66, r.y + 2);
       if (t.uses >= t.max) { ctx.fillStyle = 'rgba(160,32,32,0.35)'; ctx.fillRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2); }
     });
     // villager preview
@@ -83,7 +83,7 @@ export class TradeScreen extends ContainerScreen {
     const inv = this.inv;
     inv.remove(t.cost[0], t.cost[1]);
     if (t.cost2) inv.remove(t.cost2[0], t.cost2[1]);
-    const left = inv.add(stack(t.result[0], t.result[1]));
+    const left = inv.add({ ...stack(t.result[0], t.result[1]), ...(t.ench ? { ench: { ...t.ench } } : {}) });
     if (left > 0) this.game.interact!.throwStack(stack(t.result[0], left));
     t.uses++;
     this.game.player!.addXp(3 + Math.floor(Math.random() * 4));

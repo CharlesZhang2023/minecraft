@@ -6,9 +6,10 @@ import * as M from './models';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball } from '../entity/item';
+import { ThrownPotion } from '../entity/potion';
 import { getItem, I } from '../game/items';
-import { BLOCKS, TEXTURES, Render, B, isLeaves, pack } from '../world/blocks';
-import { modelBoxes } from '../world/models';
+import { BLOCKS, TEXTURES, Render, B, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE } from '../world/blocks';
+import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
 import { getTexture } from './textures';
 import { Player } from '../game/player';
@@ -33,14 +34,14 @@ export class EntityRenderer {
     const gl = r.gl;
     const defs: Record<string, M.ModelDef> = {
       biped: M.bipedModel(), bipedThin: M.bipedModel(true), creeper: M.creeperModel(), pig: M.pigModel(), cow: M.cowModel(),
-      sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(),
+      sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(), blaze: M.blazeModel(),
       armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(), enderman: M.endermanModel(), slimeInner: M.slimeInnerModel(), slimeOuter: M.slimeOuterModel(), squid: M.squidModel(), bat: M.batModel(), wolf: M.wolfModel(),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
       cow: M.cowSkin(), sheep: M.sheepSkin(), wool: M.woolSkin(), chicken: M.chickenSkin(), spider: M.spiderSkin(),
-      ghast: M.ghastSkin(false), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(), wolf: M.wolfSkin('wild'), wolfTame: M.wolfSkin('tame'), wolfAngry: M.wolfSkin('angry'),
+      ghast: M.ghastSkin(false), blaze: M.blazeSkin(), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(), wolf: M.wolfSkin('wild'), wolfTame: M.wolfSkin('tame'), wolfAngry: M.wolfSkin('angry'),
     };
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
@@ -162,7 +163,8 @@ export class EntityRenderer {
       if (!this.r.boxVisible(x - e.width, y - 0.5, z - e.width, x + e.width, y + e.height + 0.5, z + e.width)) continue;
       const [sky, blk] = w.getLight(Math.floor(e.x), Math.floor(e.y + e.height * 0.5), Math.floor(e.z));
       if (e instanceof ItemEntity) this.drawItemEntity(dyn, e, x, y, z, t, sky, blk);
-      else if (e instanceof FallingBlock) this.blockCube(dyn, e.block, x - 0.5, y, z - 0.5, 1, sky, blk, 0);
+      else if (e instanceof FallingBlock) this.blockModel(dyn, e.block, x - 0.5, y, z - 0.5, sky, blk);
+      else if (e instanceof ThrownPotion) this.billboard(dyn, x, y + 0.125, z, 0.25, TEXTURES.indexOf('item/' + (getItem(e.item.id).sprite ?? 'glass_bottle')), 0xffffff, sky, blk);
       else if (e instanceof PrimedTnt) {
         const f = e.fuse - t + 1;
         let s = 1;
@@ -172,13 +174,18 @@ export class EntityRenderer {
       } else if (e instanceof Arrow) this.drawArrow(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof XpOrb) this.billboard(dyn, x, y + 0.25, z, 0.25, TEXTURES.indexOf('particle_spell'), 0x9ffc3a, 15, 15);
       else if (e instanceof Snowball) this.billboard(dyn, x, y + 0.125, z, 0.25, TEXTURES.indexOf('item/' + e.kind), 0xffffff, sky, blk);
-      else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
+      else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, e.small ? 0.35 : 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
       else if (e instanceof Boat) this.drawBoat(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof FishingHook) {
         this.billboard(dyn, x, y + 0.12, z, 0.35, TEXTURES.indexOf('item/fishing_bobber'), 0xffffff, sky, blk);
         this.fishingLine(game, e, x, y, z, t);
       }
-      else if (e instanceof LivingEntity) this.drawLiving(game, e, x, y, z, t, sky, blk);
+      else if (e instanceof LivingEntity) { if (!e.effects.has('invisibility')) this.drawLiving(game, e, x, y, z, t, sky, blk); }
+    }
+    // blocks being moved by pistons
+    for (const [bv, bx, by, bz] of game.pistons.renderList(t)) {
+      const [sky, blk] = w.getLight(Math.round(bx), Math.round(by), Math.round(bz));
+      this.blockModel(dyn, bv, bx - cam.x, by - cam.y, bz - cam.z, sky, Math.max(blk, BLOCKS[bv & 0xfff].light));
     }
     // item pickup animations
     for (let i = this.pickups.length - 1; i >= 0; i--) {
@@ -433,6 +440,19 @@ export class EntityRenderer {
         gl.disable(gl.BLEND);
         break;
       }
+      case 'blaze': {
+        // three rings of four rods orbiting at different speeds (ModelBlaze)
+        const offs: Record<string, [number, number, number]> = {};
+        let f = age * Math.PI * -0.1;
+        for (let i = 0; i < 4; i++, f += Math.PI / 2) offs['rod' + i] = [Math.cos(f) * 9 - 1, -2 + Math.cos((i * 2 + age) * 0.25), Math.sin(f) * 9 - 1];
+        f = Math.PI / 4 + age * Math.PI * 0.03;
+        for (let i = 4; i < 8; i++, f += Math.PI / 2) offs['rod' + i] = [Math.cos(f) * 7 - 1, 2 + Math.cos((i * 2 + age) * 0.25), Math.sin(f) * 7 - 1];
+        f = 0.47123894 + age * Math.PI * -0.05;
+        for (let i = 8; i < 12; i++, f += Math.PI / 2) offs['rod' + i] = [Math.cos(f) * 5 - 1, 11 + Math.cos((i * 1.5 + age) * 0.5), Math.sin(f) * 5 - 1];
+        pose.head = [hp, netHead, 0];
+        this.drawModel('blaze', 'blaze', base, pose, [15, 15], overlay, undefined, 1, offs);
+        break;
+      }
       case 'squid': {
         const tent = (anyE.tentacle as number) ?? 0;
         for (let i = 0; i < 8; i++) pose['t' + i] = [tent, (i * Math.PI * -2) / 8 + Math.PI / 2, 0];
@@ -653,6 +673,40 @@ export class EntityRenderer {
       if (isBlock) scale(m, m, 0.25, 0.25, 0.25);
       else { translate(m, m, 0, 0, k * 0.06 - (n - 1) * 0.03); scale(m, m, 0.5, 0.5, 0.5); }
       this.appendItem(mesh, e.item.id, m, sky, blk);
+    }
+  }
+
+  /** Draw a block state (with its model, orientation and uv rules) at camera-relative (x,y,z). */
+  blockModel(mesh: DynMesh, v: number, x: number, y: number, z: number, sky: number, blk: number) {
+    const id = v & 0xfff, meta = v >>> 12;
+    const def = BLOCKS[id];
+    let boxes: Box[];
+    if (def.render === Render.Model) boxes = modelBoxes(v);
+    else if (def.render === Render.Cube && id !== B.GRASS && def.tint === 'none') {
+      const tex = new Int32Array(6), rot = new Int8Array(6);
+      for (let f = 0; f < 6; f++) tex[f] = def.faces[f];
+      if (isFacing6Cube(id)) facing6CubeFaces(id, meta, tex, rot);
+      else if (def.faces.length > 6) tex[HORIZ_TO_FACE[meta & 3]] = def.faces[6];
+      boxes = [{ x0: 0, y0: 0, z0: 0, x1: 16, y1: 16, z1: 16, tex: [...tex], rot: [...rot] }];
+    } else { this.blockCube(mesh, id, x, y, z, 1, sky, blk, 0); return; }
+    const shade = [0.6, 0.6, 0.5, 1, 0.8, 0.8];
+    for (const b of boxes) {
+      for (let f = 0; f < 6; f++) {
+        if (b.skip && b.skip & (1 << f)) continue;
+        const rect = b.uv?.[f];
+        const rot = b.rot?.[f] ?? 0;
+        const c = Math.round(shade[f] * 255);
+        const col = (c << 16) | (c << 8) | c;
+        for (const k of FACE_CORNERS[f]) {
+          const px = k[0] ? b.x1 : b.x0, py = k[1] ? b.y1 : b.y0, pz = k[2] ? b.z1 : b.z0;
+          let u: number, vv: number;
+          const n = faceUV16(f, px, py, pz);
+          if (rect) { const d = faceUV16(f, k[0] * 16, k[1] * 16, k[2] * 16); u = rect[0] + ((rect[2] - rect[0]) * d[0]) / 16; vv = rect[1] + ((rect[3] - rect[1]) * d[1]) / 16; }
+          else { u = n[0]; vv = n[1]; }
+          for (let r = 0; r < rot; r++) { const tt = u; u = 16 - vv; vv = tt; }
+          mesh.v(x + px / 16, y + py / 16, z + pz / 16, u / 16, vv / 16, b.tex[f], col, 1, sky, blk);
+        }
+      }
     }
   }
 
@@ -905,4 +959,23 @@ function wrapDelta(d: number) {
   if (d >= 180) d -= 360;
   if (d < -180) d += 360;
   return d;
+}
+
+const FACE_CORNERS = [
+  [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]],
+  [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]],
+  [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
+  [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]],
+  [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]],
+  [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]],
+];
+/** Default block-face uv (16ths) for a point on face f, matching the chunk mesher. */
+function faceUV16(f: number, px: number, py: number, pz: number): [number, number] {
+  switch (f) {
+    case 0: return [pz, 16 - py];
+    case 1: return [16 - pz, 16 - py];
+    case 2: case 3: return [px, pz];
+    case 4: return [16 - px, 16 - py];
+    default: return [px, 16 - py];
+  }
 }

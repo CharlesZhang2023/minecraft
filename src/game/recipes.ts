@@ -1,6 +1,6 @@
 // Crafting & smelting recipes.
 import { B, WOOL_COLORS } from '../world/blocks';
-import { I, I2, TOOLS, ARMOR, ItemStack, stack, getItem } from './items';
+import { I, I2, I3, TOOLS, ARMOR, ItemStack, stack, getItem } from './items';
 
 interface Shaped { pattern: string[]; key: Record<string, number | number[]>; out: ItemStack }
 interface Shapeless { ingredients: (number | number[])[]; out: ItemStack }
@@ -137,6 +137,34 @@ function matches(slot: ItemStack | null, want: number | number[] | undefined): b
 }
 
 /** grid is w*w row-major. Returns crafting result or null. */
+// redstone devices
+S(['TRT', 'SSS'], { T: B.REDSTONE_TORCH, R: I.REDSTONE, S: B.STONE }, I3.REPEATER);
+S([' T ', 'TQT', 'SSS'], { T: B.REDSTONE_TORCH, Q: I.QUARTZ, S: B.STONE }, I3.COMPARATOR);
+S(['PPP', 'CIC', 'CRC'], { P: PLANKS, C: B.COBBLESTONE, I: I.IRON_INGOT, R: I.REDSTONE }, B.PISTON);
+S(['S', 'P'], { S: I2.SLIME_BALL, P: B.PISTON }, B.STICKY_PISTON);
+S(['CCC', 'RRQ', 'CCC'], { C: B.COBBLESTONE, R: I.REDSTONE, Q: I.QUARTZ }, B.OBSERVER);
+S(['###', '###', '###'], { '#': I2.SLIME_BALL }, B.SLIME_BLOCK);
+L([B.SLIME_BLOCK], I2.SLIME_BALL, 9);
+S(['CCC', 'CBC', 'CRC'], { C: B.COBBLESTONE, B: I.BOW, R: I.REDSTONE }, B.DISPENSER);
+S(['CCC', 'C C', 'CRC'], { C: B.COBBLESTONE, R: I.REDSTONE }, B.DROPPER);
+S(['I I', 'ICI', ' I '], { I: I.IRON_INGOT, C: B.CHEST }, B.HOPPER);
+S(['BBB', ' I ', 'III'], { B: B.IRON_BLOCK, I: I.IRON_INGOT }, B.ANVIL);
+// brewing
+S([' B ', 'CCC'], { B: I3.BLAZE_ROD, C: B.COBBLESTONE }, I3.BREWING_STAND);
+S(['G G', ' G '], { G: B.GLASS }, I3.GLASS_BOTTLE, 3);
+L([I3.BLAZE_ROD], I2.BLAZE_POWDER, 2);
+L([I2.SLIME_BALL, I2.BLAZE_POWDER], I3.MAGMA_CREAM);
+L([I.SPIDER_EYE, B.BROWN_MUSHROOM, I.SUGAR], I3.FERMENTED_SPIDER_EYE);
+S(['NNN', 'NMN', 'NNN'], { N: I.GOLD_NUGGET, M: I.MELON_SLICE }, I3.GLISTERING_MELON);
+S(['NNN', 'NCN', 'NNN'], { N: I.GOLD_NUGGET, C: I3.CARROT }, I3.GOLDEN_CARROT);
+L([I.GOLD_INGOT], I.GOLD_NUGGET, 9);
+S(['###', '###', '###'], { '#': I.GOLD_NUGGET }, I.GOLD_INGOT);
+L([I2.BLAZE_POWDER, I.ENDER_PEARL], I2.ENDER_EYE);
+// nether bricks
+S(['##', '##'], { '#': I3.NETHER_BRICK }, B.NETHER_BRICKS);
+S(['###', '###'], { '#': B.NETHER_BRICKS }, B.NETHER_BRICK_FENCE, 6);
+S(['#  ', '## ', '###'], { '#': B.NETHER_BRICKS }, B.NETHER_BRICK_STAIRS, 4);
+
 export function craft(grid: (ItemStack | null)[], w: number): ItemStack | null {
   // bounding box
   let minX = w, minY = w, maxX = -1, maxY = -1, count = 0;
@@ -213,4 +241,7 @@ export const SMELTING: Record<number, { out: number; xp: number }> = {
   [I.MUTTON]: { out: I.COOKED_MUTTON, xp: 0.35 },
   [I2.COD]: { out: I2.COOKED_COD, xp: 0.35 },
   [I2.SALMON]: { out: I2.COOKED_SALMON, xp: 0.35 },
+  [I3.POTATO]: { out: I3.BAKED_POTATO, xp: 0.35 },
+  [B.NETHERRACK]: { out: I3.NETHER_BRICK, xp: 0.1 },
+  [B.NETHER_QUARTZ_ORE]: { out: I.QUARTZ, xp: 0.2 },
 };

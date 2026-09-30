@@ -6,12 +6,18 @@ mob skins, the font, sounds and music are all generated procedurally at startup.
 
 > Fan-made, non-commercial recreation. Not an official Minecraft product; not affiliated with Mojang or Microsoft.
 
+## Play online
+
+**[Play Minecraft Web](https://mc.iloveust.com/)**
+
+Open the link in a desktop browser with WebGL2 support. Worlds are saved locally in your browser.
+
 ## Running
 
 ```bash
 npm install
 npm run dev        # http://127.0.0.1:5173
-npm run build      # single ~450 KB bundle in dist/ (worker inlined)
+npm run build      # production build in dist/ (worker inlined)
 npm run preview
 ```
 

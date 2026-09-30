@@ -7,6 +7,7 @@ uniform float u_gamma;
 uniform float u_flicker;     // block light multiplier (~1.5 with flicker)
 uniform float u_ambient;     // dimension ambient light (0 overworld, 0.1 nether)
 uniform vec3 u_ambientCol;
+uniform float u_nightVision;
 // Minecraft 1.8 lightmap brightness table
 float ltable(float l) { float f = 1.0 - clamp(l, 0.0, 15.0) / 15.0; return (1.0 - f) / (f * 3.0 + 1.0) * (1.0 - u_ambient) + u_ambient; }
 vec3 lightmap(float skyL, float blkL) {
@@ -16,6 +17,7 @@ vec3 lightmap(float skyL, float blkL) {
   vec3 sc = vec3(s * (f * 0.65 + 0.35), s * (f * 0.65 + 0.35), s) * u_skyLightCol;
   vec3 bc = vec3(b, b * ((b * 0.6 + 0.4) * 0.6 + 0.4), b * (b * b * 0.6 + 0.4));
   vec3 c = clamp((sc + bc + u_ambientCol) * 0.96 + 0.03, 0.0, 1.0);
+  if (u_nightVision > 0.0) { float m = max(c.r, max(c.g, c.b)); c = mix(c, c / max(m, 1e-3), u_nightVision); }
   vec3 inv = 1.0 - c;
   c = mix(c, 1.0 - inv * inv * inv * inv, u_gamma);
   return clamp(c * 0.96 + 0.03, 0.0, 1.0);

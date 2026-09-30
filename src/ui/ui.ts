@@ -9,6 +9,7 @@ import * as Menus from './menus';
 import * as Containers from './containers';
 import { TradeScreen } from './trade';
 import { EnchantScreen } from './enchant';
+import { HopperScreen, DispenserScreen, BrewingScreen, AnvilScreen } from './devices';
 import type { Villager } from '../entity/mobs';
 
 export class UI {
@@ -99,6 +100,12 @@ export class UI {
   openTrade(v: Villager) { this.open(new TradeScreen(this, v)); }
   openEnchant(x: number, y: number, z: number) { this.open(new EnchantScreen(this, x, y, z)); }
   openSleep() { this.open(new Menus.SleepScreen(this)); }
+  openHopper(x: number, y: number, z: number) { this.open(new HopperScreen(this, x, y, z)); }
+  openDispenser(x: number, y: number, z: number, dropper: boolean) { this.open(new DispenserScreen(this, x, y, z, dropper)); }
+  openBrewing(x: number, y: number, z: number) { this.open(new BrewingScreen(this, x, y, z)); }
+  openAnvil(x: number, y: number, z: number) { this.open(new AnvilScreen(this, x, y, z)); }
+  /** A container's contents changed outside the UI (hoppers, droppers): open screens read tiles live. */
+  containerChanged(_x: number, _y: number, _z: number) {}
 
   private keyDown(e: KeyboardEvent): boolean {
     const g = this.game;

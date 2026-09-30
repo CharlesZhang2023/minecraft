@@ -2,7 +2,7 @@
 import { ContainerScreen } from './containers';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { I, getItem } from '../game/items';
+import { I, I3, getItem } from '../game/items';
 import { B } from '../world/blocks';
 import { Random } from '../noise';
 import { canEnchant, slotCosts, rollEnchants, enchName } from '../game/enchant';
@@ -93,7 +93,9 @@ export class EnchantScreen extends ContainerScreen {
       const it = this.slotsE[0], lap = this.slotsE[1];
       if (!it || cost <= 0) return true;
       if (!p.creative && (p.xpLevel < cost || (lap?.count ?? 0) < i + 1)) return true;
-      it.ench = rollEnchants(it, cost, new Random(this.seed() + i));
+      const ench = rollEnchants(it, cost, new Random(this.seed() + i));
+      if (it.id === I.BOOK) this.slotsE[0] = { id: I3.ENCHANTED_BOOK, count: 1, ench };
+      else it.ench = ench;
       if (!p.creative) {
         p.xpLevel = Math.max(0, p.xpLevel - (i + 1));
         lap!.count -= i + 1;

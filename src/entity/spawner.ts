@@ -75,6 +75,11 @@ export class Spawner {
       g.interact!.spawnMob('ghast', x + 0.5, y, z + 0.5);
       return;
     }
+    // fortress floors: blazes (vanilla spawns them anywhere inside fortress bounds)
+    if (this.spawnable(x, y, z, 2) && w.getId(x, y - 1, z) === B.NETHER_BRICKS) {
+      if (this.rng.int(3) === 0) g.interact!.spawnMob('blaze', x + 0.5, y, z + 0.5);
+      return;
+    }
     if (!this.spawnable(x, y, z, 2) || w.getId(x, y - 1, z) !== B.NETHERRACK) return;
     const n = 1 + this.rng.int(3);
     for (let i = 0; i < n; i++) {

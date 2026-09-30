@@ -3,6 +3,7 @@ import { Octaves, Random, hash2, Noise } from '../noise';
 import { B, OPAQUE } from './blocks';
 import { BIOME } from './biomes';
 import type { ChunkGenResult } from './worldgen';
+import { fortressesNear, buildFortress } from './fortress';
 
 const H = 128; // nether height (top 128 of the column is empty)
 const LAVA_SEA = 31;
@@ -115,6 +116,9 @@ export class NetherGen {
         if (blocks[idx(x, y, z)] === 0 && OPAQUE[blocks[idx(x, y - 1, z)]] && r.int(8) === 0) { blocks[idx(x, y, z)] = r.bool() ? B.BROWN_MUSHROOM : B.RED_MUSHROOM; break; }
       }
     }
+    // nether fortresses
+    for (const f of fortressesNear(this.seed, cx, cz))
+      buildFortress(f, cx, cz, (x, y, z) => blocks[idx(x - cx * 16, y, z - cz * 16)], (x, y, z, v) => { blocks[idx(x - cx * 16, y, z - cz * 16)] = v; });
     return { blocks, biomes };
   }
 

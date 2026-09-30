@@ -135,21 +135,44 @@ export class XpOrb extends Entity {
 export class FallingBlock extends Entity {
   typeName = 'Falling Block';
   persist = false;
+  private startY = NaN;
+  /** block: packed block state (id | meta << 12) */
   constructor(world: World, public game: Game, public block: number) {
     super(world);
     this.width = this.height = 0.98;
   }
   override tick() {
+    if (isNaN(this.startY)) this.startY = this.y;
     this.vy -= 0.04;
     this.move(this.vx, this.vy, this.vz);
     this.vx *= 0.98; this.vy *= 0.98; this.vz *= 0.98;
+    const id = this.block & 0xfff;
+    if (id === B.ANVIL && this.vy < 0) {
+      // falling anvils hurt whatever they land on: 2 per block fallen, up to 40
+      const fell = this.startY - this.y;
+      for (const e of [this.game.player!, ...this.game.entities]) {
+        const le = e as unknown as { damage?: (n: number, s: string) => boolean; dead?: boolean };
+        if (e === this || !le.damage || le.dead) continue;
+        if (Math.abs(e.x - this.x) < 0.8 && Math.abs(e.z - this.z) < 0.8 && e.y + e.height > this.y && e.y <= this.y) le.damage(Math.min(40, Math.max(0, Math.ceil((fell - 1) * 2))), 'anvil');
+      }
+    }
     if (this.onGround) {
       const x = Math.floor(this.x), y = Math.floor(this.y + 0.01), z = Math.floor(this.z);
       const cur = this.world.getId(x, y, z);
+      let v = this.block;
+      if (id === B.ANVIL) {
+        this.game.audio.play('anvil.land', this, 0.6, 0.9 + Math.random() * 0.1);
+        const fell = this.startY - this.y;
+        if (fell > 1 && Math.random() < 0.05 + fell * 0.05) {
+          const dmg = ((v >>> 12) >> 2) + 1;
+          v = dmg > 2 ? 0 : (v & 0x3fff) | (dmg << 14);
+          if (!v) { this.removed = true; return; }
+        }
+      }
       if (BLOCKS[cur].replaceable) {
-        this.world.set(x, y, z, this.block);
+        this.world.set(x, y, z, v);
       } else {
-        this.game.dropItem(this.x, this.y + 0.5, this.z, { id: this.block, count: 1 });
+        this.game.dropItem(this.x, this.y + 0.5, this.z, { id, count: 1 });
       }
       this.removed = true;
     } else if (this.age > 600 || this.y < -10) {
@@ -290,6 +313,7 @@ export class Snowball extends Entity {
 export class Fireball extends Entity {
   typeName = 'Fireball';
   persist = false;
+  small = false; // blaze / fire charge: sets fire instead of exploding
   ax = 0; ay = 0; az = 0;
   constructor(world: World, public game: Game, public shooter: Entity | null, dx: number, dy: number, dz: number) {
     super(world);
@@ -305,15 +329,31 @@ export class Fireball extends Entity {
     const p = this.game.player!;
     const hitPlayer = this.shooter !== p && p.distanceTo({ x: nx, y: ny - 0.5, z: nz }) < 1.2 && !p.dead && !p.spectator;
     if ((hitBlock || hitEnt || hitPlayer) && this.age > 1) {
-      if (hitPlayer) p.damage(6, 'explosion', this.shooter);
       this.removed = true;
+      if (this.small) {
+        if (hitPlayer && p.damage(5, 'fire', this.shooter) && !p.effects.has('fire_resistance')) p.fireTicks = Math.max(p.fireTicks, 100);
+        else if (hitEnt) {
+          const e = hitEnt as unknown as { damage?: (n: number, s: string, a: Entity | null) => boolean; fireTicks: number; fireImmune?: boolean };
+          if (e.damage && !e.fireImmune && e.damage(5, 'fire', this.shooter)) e.fireTicks = Math.max(e.fireTicks, 100);
+        } else {
+          // set fire to the block face that was hit
+          const bx = Math.floor(this.x), by = Math.floor(this.y + 0.5), bz = Math.floor(this.z);
+          if (this.world.getId(bx, by, bz) === 0) {
+            this.world.set(bx, by, bz, B.FIRE);
+            this.game.ticker?.schedule(bx, by, bz, 30);
+          }
+        }
+        return;
+      }
+      if (hitPlayer) p.damage(6, 'explosion', this.shooter);
       this.game.interact!.explode(this.x, this.y + 0.5, this.z, 1, true, this);
       return;
     }
     this.x = nx; this.y = ny; this.z = nz;
     this.vx += this.ax; this.vy += this.ay; this.vz += this.az;
     this.vx *= 0.95; this.vy *= 0.95; this.vz *= 0.95;
-    this.game.particles?.smoke(this.x, this.y + 0.5, this.z);
+    if (this.small) { if (this.age % 2 === 0) this.game.particles?.smoke(this.x, this.y + 0.5, this.z); }
+    else this.game.particles?.smoke(this.x, this.y + 0.5, this.z);
   }
   /** Punching a fireball sends it back. */
   deflect(dx: number, dy: number, dz: number) {

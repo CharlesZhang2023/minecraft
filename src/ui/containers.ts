@@ -2,14 +2,16 @@
 import { Screen, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I } from '../game/items';
+import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, POTION_ITEMS, itemByName } from '../game/items';
 import { craft, SMELTING } from '../game/recipes';
 import { addToSlots } from '../game/inventory';
 import { BLOCKS, Render, B, isLeaves, isSapling, isStairs, isSlab } from '../world/blocks';
 import { COOK_TIME, FurnaceTile } from '../game/furnace';
-import { enchName } from '../game/enchant';
+import { enchName, ENCHANTS } from '../game/enchant';
+import { drawEffectList } from './effects';
+import { POTION_BY_KEY, effectLine } from '../game/potiondata';
 
-interface Slot {
+export interface Slot {
   x: number; y: number;
   get(): ItemStack | null;
   set(s: ItemStack | null): void;
@@ -171,7 +173,7 @@ export abstract class ContainerScreen extends Screen {
       const have = cur ? cur.count : 0;
       const k = Math.min(per, max - have, left);
       if (k <= 0) continue;
-      s.set({ id: d.start.id, count: have + k, damage: d.start.damage, ...(d.start.ench ? { ench: d.start.ench } : {}) });
+      s.set({ ...d.start, count: have + k });
       left -= k;
     }
     this.cursor = left > 0 ? { ...d.start, count: left } : null;
@@ -306,7 +308,7 @@ export abstract class ContainerScreen extends Screen {
     for (const t of targets) {
       if (!t.get()) {
         const k = Math.min(Math.min(max, t.limit ?? 64), left);
-        t.set({ id: st.id, count: k, damage: st.damage, ...(st.ench ? { ench: st.ench } : {}) });
+        t.set({ ...st, count: k });
         left -= k;
         if (!left) return 0;
       }
@@ -379,7 +381,13 @@ export abstract class ContainerScreen extends Screen {
 
 export function tooltipLines(s: ItemStack): string[] {
   const d = getItem(s.id);
-  const lines = [(s.ench ? '§b' : d.rarity === 'rare' ? '§b' : '') + d.display];
+  const col = d.rarity === 'rare' ? '§b' : d.rarity === 'uncommon' ? '§e' : s.ench ? '§b' : '';
+  const lines = [col + (s.name ?? d.display)];
+  if (d.potion) {
+    const type = POTION_BY_KEY.get(d.potion);
+    if (type && type.effects.length) for (const e of type.effects) lines.push(effectLine(e));
+    else lines.push('§7No Effects');
+  }
   if (s.ench) for (const [k, v] of Object.entries(s.ench)) lines.push('§7' + enchName(k, v));
   if (d.tool?.type === 'sword' || d.attack) lines.push('', `§9+${d.attack ?? 1} Attack Damage`);
   if (d.armor) lines.push('', `§9+${d.armor.points} Armor`);
@@ -418,7 +426,7 @@ function addGridSlots(scr: ContainerScreen, g: CraftGrid, x0: number, y0: number
   scr.slots.push({ x: big ? rx - 4 : rx, y: big ? ry - 4 : ry, get: () => g.result, set: (s) => { g.result = s; }, output: true, big, group: 'result', onTake: (t) => { scr.game.achievements.onCraft(t.id); g.consume(); } });
 }
 
-function arrow(ctx: Ctx, x: number, y: number, progress = 0, len = 22) {
+export function arrow(ctx: Ctx, x: number, y: number, progress = 0, len = 22) {
   const shaft = len - 7;
   const shape = (col: string) => {
     ctx.fillStyle = col;
@@ -448,6 +456,11 @@ export class InventoryScreen extends ContainerScreen {
     this.addPlayerSlots();
   }
   override changed() { this.grid.update(); }
+  override init() {
+    super.init();
+    // 1.8: the inventory shifts right to make room for the effect list
+    if (this.player.effects.size) this.left += 60;
+  }
   override quickTargets(s: Slot, st: ItemStack): string[] {
     if ((s.group === 'main' || s.group === 'hotbar') && getItem(st.id).armor) {
       const slot = getItem(st.id).armor!.slot;
@@ -457,6 +470,7 @@ export class InventoryScreen extends ContainerScreen {
   }
   override drawBackground(ctx: Ctx, mx: number, my: number) {
     const L = this.left, T = this.top;
+    drawEffectList(ctx, this.ui, L - 124, T);
     // player preview box
     ctx.fillStyle = '#000000';
     ctx.fillRect(L + 25, T + 7, 52, 72);
@@ -580,54 +594,75 @@ export class ChestScreen extends ContainerScreen {
 }
 
 // ------------------------------------------------------------------ creative
-type Tab = { name: string; icon: number; filter: (d: ItemDef) => boolean };
-const isFood = (d: ItemDef) => !!d.food;
-const isTool = (d: ItemDef) => !!d.tool && d.tool.type !== 'sword' || [I.BUCKET, I.WATER_BUCKET, I.LAVA_BUCKET, I.MILK_BUCKET, I.FLINT_AND_STEEL, I.COMPASS, I.CLOCK].includes(d.id);
-const isCombat = (d: ItemDef) => d.tool?.type === 'sword' || !!d.armor || d.id === I.BOW || d.id === I.ARROW || d.id === I.SNOWBALL || d.id === I.EGG || d.id === I.ENDER_PEARL;
+type Tab = { name: string; icon: number; items: () => ItemStack[] };
+const one = (id: number): ItemStack => ({ id, count: 1 });
+const defs = () => [...ITEMS.values()].filter((d) => d.id !== 0);
+const REDSTONE_IDS = [I.REDSTONE, B.REDSTONE_TORCH, I3.REPEATER, I3.COMPARATOR, B.REDSTONE_BLOCK, B.LEVER, B.STONE_BUTTON, B.STONE_PRESSURE_PLATE,
+  B.PISTON, B.STICKY_PISTON, B.OBSERVER, B.DISPENSER, B.DROPPER, B.HOPPER, B.REDSTONE_LAMP, B.TNT, I.OAK_DOOR];
+const BREWING_IDS = [I3.GLASS_BOTTLE, I.GHAST_TEAR, I3.FERMENTED_SPIDER_EYE, I2.BLAZE_POWDER, I3.MAGMA_CREAM, I3.BREWING_STAND, I3.GLISTERING_MELON, I.SPIDER_EYE];
+const MISC_IDS = [I.BUCKET, I.WATER_BUCKET, I.LAVA_BUCKET, I.MILK_BUCKET, I.FIRE_CHARGE, I2.ENDER_EYE, I.PAPER, I.BOOK, I2.SLIME_BALL, I.BONE_MEAL, I.SNOWBALL];
+const TOOL_ENCH = ['efficiency', 'silk_touch', 'unbreaking', 'fortune', 'luck_of_the_sea', 'lure'];
+const special = new Set<number>([...REDSTONE_IDS, ...BREWING_IDS, ...MISC_IDS, I2.BOAT, I3.ENCHANTED_BOOK]);
+const isFood = (d: ItemDef) => !!d.food && !d.potion;
+const isTool = (d: ItemDef) => (!!d.tool && d.tool.type !== 'sword') || [I.FLINT_AND_STEEL, I.COMPASS, I.CLOCK, I2.FISHING_ROD, I3.NAME_TAG].includes(d.id);
+const isCombat = (d: ItemDef) => d.tool?.type === 'sword' || !!d.armor || d.id === I.BOW || d.id === I.ARROW || d.id === I.EGG || d.id === I.ENDER_PEARL;
 const isDecoration = (d: ItemDef) => {
-  if (d.block === undefined || d.sprite) return d.id === I.OAK_DOOR || d.id === I.RED_BED;
+  if (d.block === undefined || d.sprite) return d.id === I.RED_BED || d.id === I3.NETHER_WART && false;
   const b = BLOCKS[d.block];
-  return b.render !== Render.Cube && !isStairs(b.id) && !isSlab(b.id) || isLeaves(b.id) || isSapling(b.id) || [B.CRAFTING_TABLE, B.FURNACE, B.CHEST, B.PUMPKIN, B.JACK_O_LANTERN, B.MELON, B.BOOKSHELF, B.GLOWSTONE, B.SPONGE, B.TNT].includes(b.id);
+  return b.render !== Render.Cube && !isStairs(b.id) && !isSlab(b.id) || isLeaves(b.id) || isSapling(b.id) || [B.CRAFTING_TABLE, B.FURNACE, B.CHEST, B.PUMPKIN, B.JACK_O_LANTERN, B.MELON, B.BOOKSHELF, B.GLOWSTONE, B.SPONGE, B.SLIME_BLOCK].includes(b.id);
 };
 const isBuilding = (d: ItemDef) => d.block !== undefined && !d.sprite && !isDecoration(d);
+const books = (filter: (id: string) => boolean, allLevels: boolean): ItemStack[] => {
+  const out: ItemStack[] = [];
+  for (const e of ENCHANTS) {
+    if (!filter(e.id)) continue;
+    for (let l = allLevels ? 1 : e.max; l <= e.max; l++) out.push({ id: I3.ENCHANTED_BOOK, count: 1, ench: { [e.id]: l } });
+  }
+  return out;
+};
+const potions = (): ItemStack[] => [...defs().filter((d) => d.potion && !d.splash), ...defs().filter((d) => d.splash)].map((d) => one(d.id));
+const general = (f: (d: ItemDef) => boolean) => () => defs().filter((d) => !special.has(d.id) && !d.egg && !d.potion && f(d)).map((d) => one(d.id));
 const TABS: Tab[] = [
-  { name: 'Building Blocks', icon: B.BRICKS, filter: isBuilding },
-  { name: 'Decoration Blocks', icon: B.POPPY, filter: isDecoration },
-  { name: 'Foodstuffs', icon: 0, filter: isFood },
-  { name: 'Tools', icon: 0, filter: isTool },
-  { name: 'Combat', icon: 0, filter: isCombat },
-  { name: 'Materials', icon: 0, filter: (d) => !isBuilding(d) && !isDecoration(d) && !isFood(d) && !isTool(d) && !isCombat(d) },
-  { name: 'Search Items', icon: 0, filter: () => true },
-  { name: 'Survival Inventory', icon: B.CHEST, filter: () => false },
+  { name: 'Building Blocks', icon: B.BRICKS, items: general(isBuilding) },
+  { name: 'Decoration Blocks', icon: B.POPPY, items: general(isDecoration) },
+  { name: 'Redstone', icon: I.REDSTONE, items: () => REDSTONE_IDS.map(one) },
+  { name: 'Transportation', icon: I2.BOAT, items: () => [one(I2.BOAT)] },
+  { name: 'Miscellaneous', icon: I.LAVA_BUCKET, items: () => [...MISC_IDS.map(one), ...defs().filter((d) => d.egg).map((d) => one(d.id))] },
+  { name: 'Search Items', icon: I.COMPASS, items: () => [...defs().filter((d) => d.id !== I3.ENCHANTED_BOOK).map((d) => one(d.id)), ...books(() => true, true)] },
+  { name: 'Foodstuffs', icon: I.APPLE, items: general(isFood) },
+  { name: 'Tools', icon: 0, items: () => [...general(isTool)(), ...books((e) => TOOL_ENCH.includes(e), false)] },
+  { name: 'Combat', icon: 0, items: () => [...general(isCombat)(), ...books((e) => !TOOL_ENCH.includes(e), false)] },
+  { name: 'Brewing', icon: 0, items: () => [...potions(), ...BREWING_IDS.map(one)] },
+  { name: 'Materials', icon: I.STICK, items: general((d) => !isBuilding(d) && !isDecoration(d) && !isFood(d) && !isTool(d) && !isCombat(d)) },
+  { name: 'Survival Inventory', icon: B.CHEST, items: () => [] },
 ];
+const SEARCH = 5, SURVIVAL = 11;
 
 export class CreativeScreen extends ContainerScreen {
   title = 'Creative';
   tab = 0;
   scroll = 0;
-  items: ItemDef[] = [];
+  items: ItemStack[] = [];
   search!: TextField;
   private draggingScroll = false;
   override init() {
     this.pw = 195;
     this.ph = 136;
-    TABS[2].icon = I.APPLE; TABS[3].icon = 1000 + 200; TABS[4].icon = I.BOW; TABS[5].icon = I.STICK; TABS[6].icon = I.COMPASS;
-    const t3 = [...ITEMS.values()].find((d) => d.name === 'iron_axe');
-    if (t3) TABS[3].icon = t3.id;
-    const t4 = [...ITEMS.values()].find((d) => d.name === 'golden_sword');
-    if (t4) TABS[4].icon = t4.id;
+    TABS[7].icon = itemByName('iron_axe')?.id ?? I.STICK;
+    TABS[8].icon = itemByName('golden_sword')?.id ?? I.BOW;
+    TABS[9].icon = POTION_ITEMS.strength;
     this.search = new TextField(this.ui, 0, 0, 89, 11, this.search?.value ?? '', 30);
     super.init();
     this.search.x = this.left + 82;
     this.search.y = this.top + 5;
-    this.search.visible = this.tab === 6;
-    this.search.focused = this.tab === 6;
+    this.search.visible = this.tab === SEARCH;
+    this.search.focused = this.tab === SEARCH;
     this.widgets = [this.search];
   }
   override buildSlots() {
     this.refreshItems();
     const inv = this.inv;
-    if (this.tab === 7) {
+    if (this.tab === SURVIVAL) {
       // survival inventory tab
       for (let i = 0; i < 4; i++) {
         const k = i;
@@ -641,7 +676,7 @@ export class CreativeScreen extends ContainerScreen {
     for (let r = 0; r < 5; r++)
       for (let c = 0; c < 9; c++) {
         const k = r * 9 + c;
-        this.slots.push({ x: 9 + c * 18, y: 18 + r * 18, get: () => { const d = this.items[(this.scroll + r) * 9 + c]; return d ? { id: d.id, count: 1 } : null; }, set: () => {}, group: 'palette', infinite: true });
+        this.slots.push({ x: 9 + c * 18, y: 18 + r * 18, get: () => cloneStack(this.items[(this.scroll + r) * 9 + c] ?? null), set: () => {}, group: 'palette', infinite: true });
         void k;
       }
     for (let c = 0; c < 9; c++) this.slots.push({ x: 9 + c * 18, y: 112, get: () => inv.main[c], set: (s) => (inv.main[c] = s), group: 'hotbar' });
@@ -649,7 +684,7 @@ export class CreativeScreen extends ContainerScreen {
   refreshItems() {
     const q = this.search?.value.toLowerCase() ?? '';
     const tab = TABS[this.tab];
-    this.items = [...ITEMS.values()].filter((d) => d.id !== 0 && tab.filter(d) && (this.tab !== 6 || !q || d.display.toLowerCase().includes(q)));
+    this.items = tab.items().filter((st) => this.tab !== SEARCH || !q || tooltipLines(st).join(' ').replace(/§./g, '').toLowerCase().includes(q));
     this.scroll = Math.min(this.scroll, this.maxScroll());
   }
   maxScroll() {
@@ -661,7 +696,7 @@ export class CreativeScreen extends ContainerScreen {
       this.insertInto({ ...st, count: getItem(st.id).maxStack }, ['hotbar']);
       return;
     }
-    if (this.tab !== 7 && s.group === 'hotbar') { s.set(null); return; }
+    if (this.tab !== SURVIVAL && s.group === 'hotbar') { s.set(null); return; }
     super.quickMove(s);
   }
   override click(s: Slot, button: number) {
@@ -686,12 +721,12 @@ export class CreativeScreen extends ContainerScreen {
   }
   tabPos(i: number): [number, number] {
     const L = this.left, T = this.top;
-    if (i < 6) return [L + i * 29, T - 28];
-    return [L + (i - 6) * 29 + (this.pw - 29 * 2), T + this.ph - 4];
+    const x = i % 6 === 5 ? L + this.pw - 28 : L + (i % 6) * 29;
+    return i < 6 ? [x, T - 28] : [x, T + this.ph - 4];
   }
   override drawBackground(ctx: Ctx, mx: number, my: number) {
     const L = this.left, T = this.top;
-    if (this.tab !== 7) {
+    if (this.tab !== SURVIVAL) {
       // scrollbar
       ctx.fillStyle = '#8b8b8b';
       ctx.fillRect(L + 174, T + 18, 14, 90);
@@ -702,7 +737,7 @@ export class CreativeScreen extends ContainerScreen {
       this.gui.button(ctx, L + 175, ky, 12, 15, '', false, ms > 0);
     }
     this.label(ctx, TABS[this.tab].name, 8, 6);
-    if (this.tab === 7) {
+    if (this.tab === SURVIVAL) {
       this.label(ctx, '', 0, 0);
       ctx.fillStyle = '#000000';
       ctx.fillRect(L + 72, T + 5, 34, 45);
@@ -735,7 +770,7 @@ export class CreativeScreen extends ContainerScreen {
       }
     }
     const L = this.left, T = this.top;
-    if (this.tab !== 7 && mx >= L + 174 && mx < L + 188 && my >= T + 18 && my < T + 108) {
+    if (this.tab !== SURVIVAL && mx >= L + 174 && mx < L + 188 && my >= T + 18 && my < T + 108) {
       this.draggingScroll = true;
       this.scrollTo(my);
       return true;
@@ -758,7 +793,7 @@ export class CreativeScreen extends ContainerScreen {
     this.scroll = Math.max(0, Math.min(this.maxScroll(), this.scroll + d));
   }
   override key(e: KeyboardEvent): boolean {
-    if (this.tab === 6 && this.search.focused) {
+    if (this.tab === SEARCH && this.search.focused) {
       if (e.code === 'Escape') { this.close(); return true; }
       if (this.search.key(e)) { this.refreshItems(); return true; }
       return true;
@@ -766,12 +801,12 @@ export class CreativeScreen extends ContainerScreen {
     return super.key(e);
   }
   override char(ch: string) {
-    if (this.tab === 6 && this.search.focused) {
+    if (this.tab === SEARCH && this.search.focused) {
       this.search.char(ch);
       this.refreshItems();
-    } else if (this.tab !== 6 && /[a-z]/i.test(ch) && ch.toLowerCase() !== 'e' && ch.toLowerCase() !== 'q' && !this.game.input.isDown('ControlLeft')) {
+    } else if (this.tab !== SEARCH && /[a-z]/i.test(ch) && ch.toLowerCase() !== 'e' && ch.toLowerCase() !== 'q' && !this.game.input.isDown('ControlLeft')) {
       // typing jumps to search like vanilla
-      this.tab = 6;
+      this.tab = SEARCH;
       this.init();
       this.search.value = ch;
       this.refreshItems();

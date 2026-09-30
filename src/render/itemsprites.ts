@@ -1,5 +1,7 @@
 // 16x16 item sprites as hand-authored pixel art. Outlines are added automatically.
 import { Img, RGB, newImg, hex, set, get, art, shade, S } from './pixels';
+import { POTION_SPRITES } from '../game/potiondata';
+import { SPAWN_EGGS } from '../game/items';
 
 type Pal = Record<string, RGB | [number, number, number, number]>;
 const sprites: Record<string, () => Img> = {};
@@ -795,6 +797,258 @@ sprite('ink_sac', [
   '.....kKKKKk.....',
   '......kkkk......',
 ], { k: hex('#101018'), K: hex('#262636'), L: hex('#4a4a60') }, '#050508');
+
+// ------------------------------------------------------------------ brewing, eggs, potions
+const rgb = (c: number): RGB => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+const GLASS: RGB = hex('#d8e4f0');
+function potionSprite(name: string, col: number, splash: boolean) {
+  const L = rgb(col);
+  const rows = splash ? [
+    '',
+    '......cccc......',
+    '.......gg.......',
+    '.......gg.......',
+    '......gLLg......',
+    '.....gLWLLg.....',
+    '....gLWLLLLg....',
+    '....gLLLLLLg....',
+    '...gLLLLLLLDg...',
+    '...gLLLLLLLDg...',
+    '...gLLLLLLDDg...',
+    '....gLLLLDDg....',
+    '.....gggggg.....',
+  ] : [
+    '',
+    '.......cc.......',
+    '......gccg......',
+    '.......gg.......',
+    '......g..g......',
+    '......gWLg......',
+    '.....gLLLLg.....',
+    '....gLWLLLLg....',
+    '...gLWLLLLLDg...',
+    '...gLLLLLLLDg...',
+    '...gLLLLLLDDg...',
+    '...gLLLLLDDDg...',
+    '....gLLLLDDg....',
+    '.....gggggg.....',
+  ];
+  sprite(name, rows, { c: hex('#8a6035'), g: GLASS, L, D: shade(L, 0.75), W: [Math.min(255, L[0] + 90), Math.min(255, L[1] + 90), Math.min(255, L[2] + 90)] }, '#4a5a6a');
+}
+for (const [k, col] of Object.entries(POTION_SPRITES)) {
+  potionSprite('potion_' + k, col, false);
+  potionSprite('splash_potion_' + k, col, true);
+}
+sprite('glass_bottle', [
+  '',
+  '.......cc.......',
+  '......gccg......',
+  '.......gg.......',
+  '......g..g......',
+  '......gw.g......',
+  '.....g....g.....',
+  '....g.w....g....',
+  '...g.w......g...',
+  '...g........g...',
+  '...g........g...',
+  '...g........g...',
+  '....g......g....',
+  '.....gggggg.....',
+], { c: hex('#8a6035'), g: GLASS, w: hex('#ffffff') }, '#4a5a6a');
+for (const e of SPAWN_EGGS) {
+  const E = rgb(e.c1), sp = rgb(e.c2);
+  sprite(`${e.mob}_spawn_egg`, [
+    '',
+    '',
+    '......eeee......',
+    '.....eEEEEe.....',
+    '....eEHEEEEe....',
+    '....eHEEsEEe....',
+    '...eEEsEEEsEe...',
+    '...eEEEEEEEEe...',
+    '...eEEEsEEEEe...',
+    '...eEEEEEEsEe...',
+    '...esEEEEEEEe...',
+    '....eEEEEsEe....',
+    '.....eeeeee.....',
+  ], { e: shade(E, 0.7), E, H: [Math.min(255, E[0] + 60), Math.min(255, E[1] + 60), Math.min(255, E[2] + 60)], s: sp }, '#101010');
+}
+sprite('enchanted_book', [
+  '', '', '',
+  '....bbbbbbbbb...',
+  '...bBBBBBBBBbp..',
+  '...bBBBBBBBBbp..',
+  '...bBBGGGGBBbp..',
+  '...bBBGrrGBBbp..',
+  '...bBBGGGGBBbp..',
+  '...bBBBBBBBBbp..',
+  '...bBBBBBBBBbp..',
+  '...bbbbbbbbbbp..',
+  '....pppppppppp..',
+], { b: hex('#4a1e3a'), B: hex('#7a2e5a'), G: hex('#d8b030'), r: hex('#b02040'), p: hex('#f0f0e0') }, '#1a0814');
+sprite('blaze_rod', [
+  '', '',
+  '............yY..',
+  '...........yYo..',
+  '..........yYo...',
+  '.........yYo....',
+  '........yYo.....',
+  '.......yYo......',
+  '......yYo.......',
+  '.....yYo........',
+  '....yYo.........',
+  '...yYo..........',
+  '..yYo...........',
+  '..Yo............',
+], { y: hex('#f8d020'), Y: hex('#fff080'), o: hex('#e08010') }, '#6a3a00');
+sprite('fermented_spider_eye', [
+  '', '', '',
+  '......bbbb......',
+  '.....bBBBBb.....',
+  '....bBwBBwBb....',
+  '....rrrrrrrr....',
+  '....rRRkkRRr....',
+  '....rRkWkRRr....',
+  '....rRRkkRRr....',
+  '.....rRRRRr.....',
+  '......rrrr......',
+], { b: hex('#5a3a1e'), B: hex('#8a6035'), w: hex('#f0f0f0'), r: hex('#6a1020'), R: hex('#b82840'), k: hex('#1a0a0a'), W: hex('#ffd0d0') }, '#2a0408');
+sprite('glistering_melon_slice', [
+  '', '', '',
+  '..y.............',
+  '..yYr...........',
+  '..yYRr..........',
+  '..yYRRr.........',
+  '..yYRyRr........',
+  '..yYRRRRr.......',
+  '..yYRRyRRr......',
+  '..yYRRRRRRr.....',
+  '..yYYYYYYYYr....',
+  '..yyyyyyyyyy....',
+], { y: hex('#c29b10'), Y: hex('#fff080'), R: hex('#e03030'), r: hex('#b02020') }, '#4a3500');
+sprite('magma_cream', [
+  '', '', '', '',
+  '......oooo......',
+  '....ooOOOOoo....',
+  '...oOOyyyyOOo...',
+  '...oOyYYYYyOo...',
+  '...oOyYWYYyOo...',
+  '...oOOyyyyOOo...',
+  '....ooOOOOoo....',
+  '......oooo......',
+], { o: hex('#8a3a0a'), O: hex('#d06a1a'), y: hex('#f8b020'), Y: hex('#ffe060'), W: hex('#ffffc0') }, '#3a1400');
+function carrotSprite(name: string, a: string, b: string, c: string, o: string) {
+  sprite(name, [
+    '', '',
+    '...........gg...',
+    '..........gGg...',
+    '.........gGgg...',
+    '........aBa.....',
+    '.......aBBa.....',
+    '......aBCBa.....',
+    '.....aBBBa......',
+    '....aBCBa.......',
+    '...aBBBa........',
+    '..aBBa..........',
+    '..aa............',
+  ], { a: hex(a), B: hex(b), C: hex(c), g: hex('#2d6a14'), G: hex('#6ab830') }, o);
+}
+carrotSprite('carrot', '#c05a08', '#f08a1a', '#ffb050', '#4a2000');
+carrotSprite('golden_carrot', '#c29b10', '#f5cc27', '#fffcb8', '#4a3500');
+function foodLump(name: string, a: string, b: string, c: string, o: string) {
+  sprite(name, [
+    '', '', '', '',
+    '......aaaa......',
+    '....aaBBBBaa....',
+    '...aBBCBBBBBa...',
+    '...aBBBBBaBBa...',
+    '...aBaBBBBBBa...',
+    '....aBBBBCBa....',
+    '.....aaaaaa.....',
+  ], { a: hex(a), B: hex(b), C: hex(c) }, o);
+}
+foodLump('potato', '#9a7a3a', '#d0a860', '#e8c888', '#3a2a0a');
+foodLump('baked_potato', '#8a5a1a', '#d8a040', '#f0c860', '#3a2008');
+sprite('pufferfish', [
+  '', '', '',
+  '....y..y..y.....',
+  '.....yyyyyy.....',
+  '..y.yYYYYYYy....',
+  '...yYkYYYYYYyff.',
+  '..yYYYYYYYYYyff.',
+  '...yYYYYYYYYyff.',
+  '..y.yYYYYYYy....',
+  '.....yyyyyy.....',
+  '....y..y..y.....',
+], { y: hex('#c8a010'), Y: hex('#f8d838'), k: hex('#101010'), f: hex('#d8b020') }, '#4a3a00');
+sprite('tropical_fish', [
+  '', '', '', '',
+  '..........ff....',
+  '...oowoooof.....',
+  '..oOkwOOwOOoff..',
+  '.oOOOwOOwOOOoff.',
+  '..oOOwOOwOOoff..',
+  '...oowoooof.....',
+  '..........ff....',
+], { o: hex('#c85010'), O: hex('#f07820'), w: hex('#f8f8f8'), k: hex('#101010'), f: hex('#f07820') }, '#3a1400');
+sprite('name_tag', [
+  '', '', '',
+  '...........ss...',
+  '..........s..s..',
+  '...ttttttttt.s..',
+  '..tTTTTTTTTtss..',
+  '..tTkkTkkTTt....',
+  '..tTTTTTTTTt....',
+  '...ttttttttt....',
+], { t: hex('#8a6035'), T: hex('#e8d8b0'), k: hex('#6a6a6a'), s: hex('#c8c8c8') }, '#2a1a08');
+function diodeSprite(name: string, three: boolean) {
+  sprite(name, [
+    '', '', '', '', '',
+    three ? '..r.......r.....' : '..r......r......',
+    three ? '..R....r..R.....' : '..R......R......',
+    three ? '..s....R..s.....' : '..s......s......',
+    three ? '..s....s..s.....' : '..s......s......',
+    'aaaaaaaaaaaaaa..',
+    'bBBBBBBBBBBBBb..',
+    'bbbbbbbbbbbbbb..',
+  ], { r: hex('#ff3020'), R: hex('#b01010'), s: hex('#8a6b3c'), a: hex('#b8b8b8'), B: hex('#9a9a9a'), b: hex('#6a6a6a') }, '#2a2a2a');
+}
+diodeSprite('repeater', false);
+diodeSprite('comparator', true);
+sprite('brewing_stand', [
+  '',
+  '.......y........',
+  '.......r........',
+  '...aaaaraaaa....',
+  '...a...r...a....',
+  '..ggg..r..ggg...',
+  '..gLg..r..gLg...',
+  '.gLLLg.r.gLLLg..',
+  '.gLLLg.r.gLLLg..',
+  '..ggg..r..ggg...',
+  '.......r........',
+  '.....bbrbb......',
+  '...bbbbbbbbb....',
+], { y: hex('#f8d020'), r: hex('#6a5a3a'), a: hex('#6a5a3a'), g: GLASS, L: hex('#8aa4e8'), b: hex('#707070') }, '#2a2a2a');
+sprite('nether_brick', [
+  '', '', '', '', '',
+  '..bbbbbbbbbbbb..',
+  '.bBBBBBBBBBBBBb.',
+  '.bBRBBBBBBRBBBb.',
+  '.bBBBBBRBBBBBBb.',
+  '.bbBBBBBBBBBBbb.',
+  '..bbbbbbbbbbbb..',
+], { b: hex('#2a1014'), B: hex('#4a1c22'), R: hex('#6a2a30') }, '#12060a');
+sprite('nether_wart', [
+  '', '', '', '',
+  '.....rr..rr.....',
+  '....rRRrrRRr....',
+  '....rRWRRRRr....',
+  '.....rRRRRr.....',
+  '......rRRr......',
+  '.......dd.......',
+  '......d..d......',
+], { r: hex('#6a1014'), R: hex('#b0202a'), W: hex('#e05050'), d: hex('#5a0a0e') }, '#2a0406');
 
 export function getItemSprite(name: string): Img | null {
   const f = sprites[name];

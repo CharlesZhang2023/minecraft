@@ -4,7 +4,8 @@ import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import type { Player } from '../game/player';
 import { B, BLOCKS, idOf, metaOf } from '../world/blocks';
-import { I, I2, TOOLS, stack, ItemStack } from '../game/items';
+import { I, I2, I3, stack, ItemStack } from '../game/items';
+import { level, randomBook, rollEnchants } from '../game/enchant';
 import { Random } from '../noise';
 
 const rng = new Random(Date.now() & 0xfff);
@@ -20,8 +21,10 @@ export class FishingHook extends Entity {
   constructor(world: World, public game: Game, public angler: Player) {
     super(world);
     this.width = this.height = 0.25;
-    this.wait = 100 + rng.int(500);
+    this.wait = this.waitTime();
   }
+  private rod() { return this.angler.inventory.held(); }
+  private waitTime() { return Math.max(20, 100 + rng.int(500) - level(this.rod(), 'lure') * 100); }
 
   cast() {
     const p = this.angler;
@@ -69,7 +72,7 @@ export class FishingHook extends Entity {
     const pt = this.game.particles;
     if (this.bite > 0) {
       this.bite--;
-      if (this.bite === 0) this.wait = 100 + rng.int(500);
+      if (this.bite === 0) this.wait = this.waitTime();
       return;
     }
     if (this.approach > 0) {
@@ -108,15 +111,26 @@ export class FishingHook extends Entity {
   }
 
   private loot(): ItemStack {
-    const r = rng.int(100);
-    if (r < 85) return stack(rng.int(100) < 70 ? I2.COD : I2.SALMON);
-    if (r < 95) {
+    const luck = level(this.rod(), 'luck_of_the_sea');
+    const r = rng.next() * 100;
+    const junkP = 10 - luck * 2.5, treasureP = 5 + luck;
+    if (r >= junkP + treasureP) {
+      const f = rng.int(100);
+      return stack(f < 60 ? I2.COD : f < 85 ? I2.SALMON : f < 87 ? I3.CLOWNFISH : I3.PUFFERFISH);
+    }
+    if (r < junkP) {
       const junk = [ [I.STICK, 1], [I.STRING, 1], [I.BONE, 1], [I.BOWL, 1], [I.ROTTEN_FLESH, 1], [B.LILY_PAD, 1], [I2.INK_SAC, 5], [I.LEATHER, 1] ];
       const [id, n] = junk[rng.int(junk.length)];
       return stack(id, n);
     }
-    const treasure = [I.BOW, I2.FISHING_ROD, I.EMERALD, I.GOLDEN_APPLE, TOOLS.iron_sword];
-    return stack(treasure[rng.int(treasure.length)]);
+    const t = rng.int(6);
+    if (t === 0) return randomBook(rng);
+    if (t === 1) return stack(I3.NAME_TAG);
+    if (t === 2) return stack(B.LILY_PAD);
+    const it = stack(t === 3 ? I.BOW : I2.FISHING_ROD);
+    it.damage = rng.int(20);
+    it.ench = rollEnchants(it, 30, rng);
+    return it;
   }
 
   discard() {

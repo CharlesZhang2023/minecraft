@@ -129,6 +129,11 @@ export class Particles {
     this.add({ x, y, z, vx: (rng.next() - 0.5) * 0.05, vy: 0.05, vz: (rng.next() - 0.5) * 0.05, kind: 'spell', layer: PT.spell, size: 0.07, life: 16 + rng.int(10), gravity: -0.003, col, collide: false });
   }
 
+  /** Coloured potion swirl with an explicit velocity. */
+  swirl(x: number, y: number, z: number, vx: number, vy: number, vz: number, col: number) {
+    this.add({ x, y, z, vx, vy, vz, kind: 'spell', layer: PT.spell, size: 0.06 + rng.next() * 0.03, life: 16 + rng.int(14), gravity: -0.002, col, collide: false, friction: 0.92 });
+  }
+
   tick() {
     const w = this.world;
     for (let i = this.list.length - 1; i >= 0; i--) {

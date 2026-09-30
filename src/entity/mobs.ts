@@ -5,7 +5,8 @@ import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import { findPath, PathNode } from './path';
 import { B, BLOCKS, idOf, WOOL_COLORS } from '../world/blocks';
-import { I, I2, ItemStack, stack, getItem, TOOLS } from '../game/items';
+import { I, I2, I3, ItemStack, stack, getItem, TOOLS } from '../game/items';
+import { level, ENCHANTS } from '../game/enchant';
 import { Arrow, XpOrb, Fireball } from './item';
 import { Random } from '../noise';
 import { raycastBlocks } from '../game/raycast';
@@ -198,7 +199,11 @@ export abstract class Mob extends LivingEntity {
       this.game.achievements.onKill(this.typeName, source === 'arrow' ? this.distanceTo(p) : undefined, source === 'explosion');
     }
     if (!this.baby) {
-      for (const s of this.drops(this.fireTicks > 0)) this.game.dropItem(this.x, this.y + 0.5, this.z, s);
+      const looting = byPlayer ? level(this.game.player!.inventory.held(), 'looting') : 0;
+      for (const s of this.drops(this.fireTicks > 0)) {
+        if (looting && getItem(s.id).maxStack > 1) s.count += rng.int(looting + 1);
+        this.game.dropItem(this.x, this.y + 0.5, this.z, s);
+      }
       if (byPlayer && this.xp > 0) {
         let n = this.xp;
         while (n > 0) {
@@ -227,6 +232,8 @@ export abstract class Mob extends LivingEntity {
   nearestPlayer(range: number): LivingEntity | null {
     const p = this.game.player;
     if (!p || p.dead || p.creative || p.spectator) return null;
+    // invisible players are only noticed up close (vanilla: 7% of the range without armour)
+    if (p.effects.has('invisibility')) range *= Math.max(0.07, p.inventory.armor.filter(Boolean).length / 4) * 0.7;
     return this.distanceTo(p) < range ? p : null;
   }
 
@@ -285,7 +292,7 @@ abstract class Monster extends Mob {
     if (dx * dx + dz * dz <= reach + 0.5 && Math.abs(dy) < 2 && this.attackCooldown <= 0) {
       this.attackCooldown = 20;
       this.swing();
-      if (t.damage(this.attackDamage, 'mob', this)) {
+      if (t.damage(Math.max(0, this.attackDamage + this.attackBonus()), 'mob', this)) {
         if (this.fireTicks > 0 && rng.next() < 0.3) t.fireTicks = Math.max(t.fireTicks, 40);
       }
     }
@@ -303,6 +310,7 @@ export class Zombie extends Monster {
   override speedAttr = 0.23;
   override chaseSpeed = 0.23 * 0.23 * 1.0 * 1.0;
   override canBreathe = true;
+  override undead = true;
   constructor(world: World, game: Game) {
     super(world, game);
     this.width = 0.6; this.height = 1.95;
@@ -312,7 +320,7 @@ export class Zombie extends Monster {
   override eyeHeight() { return 1.74; }
   override drops(): ItemStack[] {
     const out = [stack(I.ROTTEN_FLESH, rng.int(3))].filter((s) => s.count > 0);
-    if (rng.int(40) === 0) out.push(stack(I.IRON_INGOT));
+    if (rng.int(40) === 0) out.push(stack([I.IRON_INGOT, I3.CARROT, I3.POTATO][rng.int(3)]));
     return out;
   }
 }
@@ -328,6 +336,7 @@ export class Skeleton extends Monster {
   override burnsInDay = true;
   override speedAttr = 0.25;
   override chaseSpeed = 0.25 * 0.25;
+  override undead = true;
   override canBreathe = true;
   override heldItem = I.BOW;
   private shootTimer = 40;
@@ -424,6 +433,7 @@ export class Spider extends Monster {
   typeName = 'Spider';
   override model = 'spider';
   override skin = 'spider';
+  override arthropod = true;
   override sayName = 'spider.say';
   override hurtName = 'spider.say';
   override deathName = 'spider.say';
@@ -1052,7 +1062,13 @@ export class Bat extends Mob {
 }
 
 // ------------------------------------------------------------------ villagers
-export interface Trade { cost: [number, number]; cost2?: [number, number]; result: [number, number]; uses: number; max: number }
+/** Librarian enchanted-book trade: a random enchantment, costing 2 + 3*level + rand(5 + 10*level) emeralds (1.8). */
+function bookTrade(r: Random): { ench: Record<string, number>; cost2: [number, number] } {
+  const e = ENCHANTS[r.int(ENCHANTS.length)];
+  const lvl = 1 + r.int(e.max);
+  return { ench: { [e.id]: lvl }, cost2: [I.EMERALD, Math.min(64, 2 + r.int(5 + lvl * 10) + 3 * lvl)] };
+}
+export interface Trade { cost: [number, number]; cost2?: [number, number]; result: [number, number]; ench?: Record<string, number>; uses: number; max: number }
 
 export class Villager extends Mob {
   typeName = 'Villager';
@@ -1093,8 +1109,8 @@ export class Villager extends Mob {
     const n = (lo: number, hi: number) => lo + r.int(hi - lo + 1);
     const T: Record<string, Trade[]> = {
       farmer: [t([I.WHEAT, n(18, 22)], [E, 1]), t([E, 1], [I.BREAD, n(4, 6)]), t([E, 1], [I.APPLE, n(4, 6)]), t([B.PUMPKIN, n(8, 13)], [E, 1]), t([E, 1], [I.COOKIE, n(7, 10)])],
-      librarian: [t([I.PAPER, n(24, 36)], [E, 1]), t([I.BOOK, n(8, 10)], [E, 1]), t([E, n(3, 4)], [B.BOOKSHELF, 1]), t([E, 1], [B.GLASS, n(3, 5)]), t([E, n(8, 10)], [I.COMPASS, 1])],
-      priest: [t([I.ROTTEN_FLESH, n(36, 40)], [E, 1]), t([E, 1], [I.REDSTONE, n(1, 4)]), t([E, 1], [I.LAPIS, n(1, 2)]), t([E, n(4, 7)], [I.ENDER_PEARL, 1]), t([E, n(3, 4)], [I.GLOWSTONE_DUST, n(1, 3)])],
+      librarian: [t([I.PAPER, n(24, 36)], [E, 1]), { ...t([I.BOOK, 1], [I3.ENCHANTED_BOOK, 1], [E, 0]), ...bookTrade(r) }, t([I.BOOK, n(8, 10)], [E, 1]), t([E, n(3, 4)], [B.BOOKSHELF, 1]), t([E, 1], [B.GLASS, n(3, 5)]), t([E, n(8, 10)], [I.COMPASS, 1]), t([E, n(20, 22)], [I3.NAME_TAG, 1])],
+      priest: [t([I.ROTTEN_FLESH, n(36, 40)], [E, 1]), t([I.GOLD_INGOT, n(8, 10)], [E, 1]), t([E, n(2, 4)], [I3.GLASS_BOTTLE, n(2, 3)]), t([E, 1], [I3.NETHER_WART, n(1, 3)]), t([E, 1], [I.REDSTONE, n(1, 4)]), t([E, 1], [I.LAPIS, n(1, 2)]), t([E, n(4, 7)], [I.ENDER_PEARL, 1]), t([E, n(3, 4)], [I.GLOWSTONE_DUST, n(1, 3)])],
       smith: [t([I.COAL, n(16, 24)], [E, 1]), t([I.IRON_INGOT, n(7, 9)], [E, 1]), t([E, n(7, 9)], [TOOLS.iron_pickaxe, 1]), t([E, n(9, 12)], [TOOLS.iron_sword, 1]), t([E, n(12, 15)], [TOOLS.diamond_axe, 1])],
       butcher: [t([I.PORKCHOP, n(14, 18)], [E, 1]), t([I.CHICKEN, n(14, 18)], [E, 1]), t([E, 1], [I.COOKED_PORKCHOP, n(5, 7)]), t([E, 1], [I.COOKED_BEEF, n(5, 7)])],
     };
@@ -1127,6 +1143,7 @@ export class ZombiePigman extends Monster {
   override heldItem = 0;
   override fireImmune = true;
   override canBreathe = true;
+  override undead = true;
   anger = 0;
   override holding = true;
   constructor(world: World, game: Game) {
@@ -1224,6 +1241,83 @@ export class Ghast extends Mob {
   }
   override drops(): ItemStack[] {
     return [stack(I.GHAST_TEAR, rng.int(2)), stack(I.GUNPOWDER, rng.int(3))].filter((s) => s.count > 0);
+  }
+}
+
+/** Blazes: fortress guardians that hover, burst-fire three small fireballs and drop blaze rods. */
+export class Blaze extends Monster {
+  typeName = 'Blaze';
+  override model = 'blaze';
+  override skin = 'blaze';
+  override sayName = 'blaze.breathe';
+  override hurtName = 'blaze.hurt';
+  override deathName = 'blaze.death';
+  override fireImmune = true;
+  override canBreathe = true;
+  override xp = 10;
+  onFire = false; // charging: glows and smokes
+  private heightOffset = 0.5;
+  private heightTimer = 0;
+  private attackStep = 0;
+  private attackTime = 0;
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.width = 0.6; this.height = 1.8;
+    this.maxHealth = this.health = 20;
+    this.attackDamage = 6;
+    this.aggroRange = 48;
+    this.followRange = 48;
+  }
+  override eyeHeight() { return 1.62; }
+  override ai() {
+    const p = this.nearestPlayer(this.aggroRange);
+    if (!this.target || this.target.dead || this.distanceTo(this.target) > this.followRange) this.target = p && this.canSee(p) ? p : null;
+    // wet blazes take damage
+    if (this.inWater || (this.game.weather && this.game.weather.rain > 0.2 && this.game.weather.rainAt(Math.floor(this.x), Math.floor(this.y + 1), Math.floor(this.z)))) this.damage(1, 'drown');
+    if (--this.heightTimer <= 0) { this.heightTimer = 100; this.heightOffset = 0.5 + rng.gaussian() * 3; }
+    const t = this.target;
+    if (t) {
+      this.lookTarget = { x: t.x, y: t.y + t.eyeHeight(), z: t.z };
+      this.bodyYaw = this.yaw = (Math.atan2(t.z - this.z, t.x - this.x) * 180) / Math.PI - 90;
+      if (t.y + t.eyeHeight() > this.y + this.eyeHeight() + this.heightOffset) this.vy += (0.3 - this.vy) * 0.3;
+      const d2 = (t.x - this.x) ** 2 + (t.y - this.y) ** 2 + (t.z - this.z) ** 2;
+      if (--this.attackTime < 0) this.attackTime = 0;
+      if (d2 < 4) {
+        if (this.attackTime <= 0) { this.attackTime = 20; this.swing(); t.damage(this.attackDamage, 'mob', this); }
+        this.moveToward(t.x, t.z, 0.1);
+      } else if (d2 < 48 * 48) {
+        if (this.attackTime <= 0) {
+          this.attackStep++;
+          if (this.attackStep === 1) { this.attackTime = 60; this.onFire = true; }
+          else if (this.attackStep <= 4) this.attackTime = 6;
+          else { this.attackTime = 100; this.attackStep = 0; this.onFire = false; }
+          if (this.attackStep > 1) {
+            const spread = Math.sqrt(Math.sqrt(d2)) * 0.5;
+            const tx = t.x - this.x, ty = t.y + t.height / 2 - (this.y + this.height / 2), tz = t.z - this.z;
+            const f = new Fireball(this.world, this.game, this, tx + rng.gaussian() * spread, ty, tz + rng.gaussian() * spread);
+            f.small = true;
+            f.setPos(this.x, this.y + this.height / 2 - 0.5 + 0.5, this.z);
+            this.game.addEntity(f);
+            this.game.audio.play('blaze.shoot', this, 1, 1);
+          }
+        }
+        if (d2 > 25) this.moveToward(t.x, t.z, 0.03);
+      }
+    } else {
+      this.onFire = false;
+      this.attackStep = 0;
+      this.wander(0.05);
+    }
+    if (rng.int(this.onFire ? 2 : 6) === 0) this.game.particles?.smoke(this.x + (rng.next() - 0.5) * this.width, this.y + rng.next() * this.height, this.z + (rng.next() - 0.5) * this.width);
+  }
+  override travel(strafe: number, forward: number) {
+    super.travel(strafe, forward);
+    if (!this.onGround && this.vy < 0) this.vy *= 0.6; // slow descent
+  }
+  override landed() {}
+  override onLand() {}
+  override drops(): ItemStack[] {
+    return this.lastAttacker === this.game.player ? [stack(I3.BLAZE_ROD, rng.int(2))].filter((s) => s.count > 0) : [];
   }
 }
 

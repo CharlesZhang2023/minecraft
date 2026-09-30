@@ -157,7 +157,13 @@ export class Entity {
     this.onGround = this.collidedV && ody < 0;
     if (odx !== dx) this.vx = 0;
     if (odz !== dz) this.vz = 0;
-    if (ody !== dy) this.vy = 0;
+    // slime blocks bounce whatever lands on them (unless sneaking) and cancel fall damage
+    const slime = this.onGround && this.world.getId(Math.floor(this.x), Math.floor(this.y - 0.2), Math.floor(this.z)) === B.SLIME_BLOCK && !this.sneaking;
+    if (ody !== dy) this.vy = slime && ody < -0.08 ? -ody * (this.bounceFactor()) : 0;
+    if (slime) {
+      this.fallDistance = 0;
+      if (Math.abs(this.vy) < 0.1) { const f = 0.4 + Math.abs(this.vy) * 0.2; this.vx *= f; this.vz *= f; }
+    }
     // fall damage bookkeeping
     if (this.onGround) {
       if (this.fallDistance > 0) {
@@ -168,6 +174,7 @@ export class Entity {
   }
 
   onLand(_fall: number, _wasOnGround: boolean) {}
+  bounceFactor() { return 1; }
 
   /** Update inWater/inLava flags; returns true if touching water. */
   updateFluidState() {

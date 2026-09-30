@@ -215,14 +215,17 @@ function buildLamp(L: (x: number, y: number, z: number, b: number) => void) {
 
 function buildFarm(L: (x: number, y: number, z: number, b: number) => void, p: Piece, r: Random) {
   const w = p.rot % 2 ? p.d : p.w, d = p.rot % 2 ? p.w : p.d;
-  const crop = r.int(3) === 0 ? B.PUMPKIN_STEM : B.WHEAT;
+  // each half of the farm gets its own crop (vanilla: wheat, carrots, potatoes; pumpkins here too)
+  const pick = () => [B.WHEAT, B.WHEAT, B.CARROTS, B.POTATOES, B.PUMPKIN_STEM][r.int(5)];
+  const crops = [pick(), pick()];
   for (let x = 0; x < w; x++)
     for (let z = 0; z < d; z++) {
       const border = x === 0 || z === 0 || x === w - 1 || z === d - 1;
       if (border) { L(x, -1, z, B.OAK_LOG); continue; }
       if (x === (w >> 1)) { L(x, -1, z, B.WATER); continue; }
       L(x, -1, z, pack(B.FARMLAND, 1));
-      L(x, 0, z, pack(crop, crop === B.WHEAT ? r.int(8) : 0));
+      const crop = crops[x < (w >> 1) ? 0 : 1];
+      L(x, 0, z, pack(crop, crop === B.PUMPKIN_STEM ? 0 : r.int(8)));
     }
 }
 

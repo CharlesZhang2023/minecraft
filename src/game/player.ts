@@ -181,6 +181,14 @@ export class Player extends LivingEntity {
     this.saturation = Math.min(this.food, this.saturation + saturation);
   }
 
+  override exhaustEffect(n: number) { this.exhaust(n); }
+  override depthStrider() { return this.inventory.armor[3]?.ench?.depth_strider ?? 0; }
+  /** Respiration: level/(level+1) chance to keep air each tick underwater. */
+  override keepAir() {
+    const r = this.inventory.armor[0]?.ench?.respiration ?? 0;
+    return r > 0 && Math.random() < r / (r + 1);
+  }
+
   override jump() {
     super.jump();
     this.exhaust(this.sprinting ? 0.2 : 0.05);
@@ -195,16 +203,26 @@ export class Player extends LivingEntity {
     // enchantment protection (EPF, capped at 20 -> 80%)
     if (source !== 'void' && source !== 'kill' && source !== 'starve') {
       let epf = 0;
+      const typed = (lvl: number, mul: number) => (lvl ? Math.floor(((6 + lvl * lvl) * mul) / 3) : 0);
       for (const a of this.inventory.armor) {
-        const pr = a?.ench?.protection ?? 0;
-        if (pr) epf += Math.floor(((6 + pr * pr) * 0.75) / 3);
-        const ff = a?.ench?.feather_falling ?? 0;
-        if (ff && source === 'fall') epf += Math.floor(((6 + ff * ff) * 2.5) / 3);
+        const e = a?.ench;
+        if (!e) continue;
+        epf += typed(e.protection ?? 0, 0.75);
+        if (source === 'fall') epf += typed(e.feather_falling ?? 0, 2.5);
+        if (source === 'fire' || source === 'lava') epf += typed(e.fire_protection ?? 0, 1.25);
+        if (source === 'explosion') epf += typed(e.blast_protection ?? 0, 1.5);
+        if (source === 'arrow') epf += typed(e.projectile_protection ?? 0, 1.5);
       }
       if (epf) amount *= 1 - Math.min(20, epf) / 25;
     }
     const before = this.health;
     const r = super.damage(amount, source, attacker);
+    if (r && attacker && (source === 'mob' || source === 'player')) {
+      // Thorns: 15% chance per level to hurt the attacker for 1-4
+      const th = this.inventory.armor.reduce((m, a) => Math.max(m, a?.ench?.thorns ?? 0), 0);
+      const le = attacker as unknown as { damage?: (n: number, s: DamageSource, a: Entity | null) => boolean };
+      if (th && Math.random() < 0.15 * th && le.damage) le.damage(1 + Math.floor(Math.random() * 4), 'thorns', this);
+    }
     if (r) {
       this.exhaust(0.3);
       this.hurtFlash = 10;
@@ -229,6 +247,9 @@ export class Player extends LivingEntity {
       mob: `Player was slain by ${who}`,
       arrow: `Player was shot by ${who}`,
       suffocate: 'Player suffocated in a wall',
+      magic: attacker ? `Player was killed by ${who} using magic` : 'Player was killed by magic',
+      thorns: `Player was killed while trying to hurt ${who}`,
+      anvil: 'Player was squashed by a falling anvil',
       kill: 'Player fell out of the world',
     };
     this.deathMessage = msgs[source] ?? 'Player died';
@@ -261,6 +282,7 @@ export class Player extends LivingEntity {
     this.xpLevel = 0;
     this.xpProgress = 0;
     this.xpTotal = 0;
+    this.clearEffects();
     this.vx = this.vy = this.vz = 0;
     this.setPos(this.spawnX + 0.5, this.spawnY, this.spawnZ + 0.5);
   }
@@ -272,6 +294,7 @@ export class Player extends LivingEntity {
       xpLevel: this.xpLevel, xpProgress: this.xpProgress, xpTotal: this.xpTotal,
       gameMode: this.gameMode, flying: this.flying, inventory: this.inventory.toJSON(),
       spawn: [this.spawnX, this.spawnY, this.spawnZ], fireTicks: this.fireTicks,
+      effects: [...this.effects.values()], absorption: this.absorption,
     };
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -285,6 +308,10 @@ export class Player extends LivingEntity {
     this.inventory.load(d.inventory);
     if (d.spawn) [this.spawnX, this.spawnY, this.spawnZ] = d.spawn;
     this.fireTicks = d.fireTicks ?? 0;
+    this.effects.clear();
+    for (const e of d.effects ?? []) this.effects.set(e.id, { ...e });
+    this.effectsChanged();
+    this.absorption = d.absorption ?? 0;
     if (this.health <= 0) { this.dead = true; }
   }
 }

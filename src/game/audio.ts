@@ -253,6 +253,55 @@ const GENS: Record<string, Gen> = {
   'pigman.say': (r) => normalize(lowpass(env(tone(SR * 0.6, 150 + r.next() * 30, 110, 'square', 0.08, 25), 0.03, 0.55, 1.5), 700), 0.7),
   'pigman.hurt': (r) => normalize(lowpass(env(tone(SR * 0.35, 260 + r.next() * 40, 160, 'square', 0.1, 30), 0.01, 0.3, 2), 1000), 0.7),
   'pigman.angry': (r) => normalize(lowpass(env(tone(SR * 0.7, 320 + r.next() * 40, 180, 'saw', 0.15, 35), 0.01, 0.65, 1.5), 1500), 0.8),
+  // redstone devices, brewing, anvils
+  'piston.out': (r) => {
+    const n = SR * 0.35;
+    const b = env(bandpass(noise(n, r), 150, 1800), 0.002, 0.25, 2.5);
+    mixInto(b, env(tone(n, 220, 90, 'saw'), 0.002, 0.2, 3), 0.6);
+    return normalize(lowpass(b, 2200), 0.8);
+  },
+  'piston.in': (r) => {
+    const n = SR * 0.3;
+    const b = env(bandpass(noise(n, r), 120, 1400), 0.002, 0.22, 2.5);
+    mixInto(b, env(tone(n, 160, 260, 'saw'), 0.002, 0.18, 3), 0.5);
+    return normalize(lowpass(b, 1800), 0.7);
+  },
+  'dig.slime': (r) => {
+    const n = SR * 0.3;
+    const b = env(lowpass(grains(n, r, 10, 150, 900, 0.03), 900), 0.01, 0.25, 2);
+    mixInto(b, env(tone(n, 180 + r.next() * 60, 90, 'sine', 0.2, 18), 0.01, 0.25, 2), 0.8);
+    return normalize(b, 0.7);
+  },
+  drink: (r) => normalize(env(grains(SR * 0.25, r, 6, 200, 1200, 0.04), 0.01, 0.2, 1.5), 0.6),
+  'glass.break': (r) => {
+    const n = SR * 0.6;
+    const b = env(highpass(grains(n, r, 60, 2000, 9000, 0.01), 1500), 0.001, 0.5, 2);
+    mixInto(b, env(bandpass(noise(n, r), 2500, 8000), 0.001, 0.2, 3), 0.6);
+    return normalize(b, 0.8);
+  },
+  brew: (r) => normalize(env(grains(SR * 1.2, r, 25, 150, 1200, 0.05), 0.2, 0.9, 1.2), 0.5),
+  'anvil.use': (r) => {
+    const n = SR * 0.6;
+    const b = env(tone(n, 1150 + r.next() * 40, 1100, 'sine'), 0.001, 0.55, 3);
+    mixInto(b, env(tone(n, 2890, 2880, 'sine'), 0.001, 0.35, 3), 0.5);
+    mixInto(b, env(bandpass(noise(n, r), 1500, 6000), 0.001, 0.05, 3), 0.8);
+    return normalize(b, 0.7);
+  },
+  'anvil.land': (r) => {
+    const n = SR * 0.8;
+    const b = env(tone(n, 700, 680, 'sine'), 0.001, 0.7, 3);
+    mixInto(b, env(lowpass(noise(n, r), 800), 0.001, 0.2, 3), 1.2);
+    return normalize(b, 0.9);
+  },
+  'blaze.breathe': (r) => normalize(env(lowpass(noise(SR * 1.2, r), 700), 0.3, 0.9, 1.2), 0.5),
+  'blaze.hurt': (r) => normalize(env(bandpass(tone(SR * 0.35, 380 + r.next() * 60, 240, 'saw', 0.2, 40), 200, 3000), 0.005, 0.3, 2), 0.7),
+  'blaze.death': (r) => normalize(env(bandpass(tone(SR * 1.2, 420, 90, 'saw', 0.2, 30), 150, 2500), 0.005, 1.1, 1.5), 0.7),
+  'blaze.shoot': (r) => {
+    const n = SR * 0.4;
+    const b = env(lowpass(noise(n, r), 1800), 0.005, 0.35, 2);
+    mixInto(b, env(tone(n, 300, 120, 'saw'), 0.005, 0.3, 2), 0.4);
+    return normalize(b, 0.6);
+  },
   thunder: (r) => {
     const n = SR * 3;
     const b = env(lowpass(noise(n, r), 250), 0.01, 2.8, 1.5);
@@ -475,5 +524,5 @@ function hashName(s: string) {
 
 export const SOUND_FOR: Record<string, string> = {
   stone: 'dig.stone', wood: 'dig.wood', grass: 'dig.grass', gravel: 'dig.gravel', sand: 'dig.sand',
-  glass: 'dig.glass', cloth: 'dig.cloth', snow: 'dig.snow', metal: 'dig.metal', none: '',
+  glass: 'dig.glass', cloth: 'dig.cloth', snow: 'dig.snow', metal: 'dig.metal', slime: 'dig.slime', none: '',
 };

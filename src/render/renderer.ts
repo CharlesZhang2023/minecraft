@@ -47,6 +47,7 @@ export interface EnvState {
   ambient: number;
   ambientCol: [number, number, number];
   noSky?: boolean;
+  nightVision?: number;
 }
 
 const MAX_QUADS = 1 << 18;
@@ -299,6 +300,7 @@ export class Renderer {
     gl.uniform1f(p.u.u_flicker, e.flicker);
     gl.uniform1f(p.u.u_ambient, e.ambient);
     gl.uniform3fv(p.u.u_ambientCol, e.ambientCol);
+    gl.uniform1f(p.u.u_nightVision, e.nightVision ?? 0);
     gl.uniform3fv(p.u.u_fogColor, e.fogColor);
     gl.uniform3fv(p.u.u_fogSky, e.skyColor);
     gl.uniform2f(p.u.u_fog, e.fogStart, e.fogEnd);

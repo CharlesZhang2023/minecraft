@@ -1,5 +1,6 @@
 // Item registry. Block items share ids with their blocks (< 1000); other items start at 1000.
 import { BLOCKS, B, blockByName, Render } from '../world/blocks';
+import { POTIONS } from './potiondata';
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'hoe' | 'sword' | 'shears';
 export interface ItemDef {
@@ -17,6 +18,10 @@ export interface ItemDef {
   sprite?: string; // item sprite name (else rendered from the block)
   flatBlock?: boolean; // block item rendered as flat sprite (flowers, torches...)
   rarity?: 'common' | 'uncommon' | 'rare' | 'epic';
+  potion?: string; // potion type key (potiondata.ts)
+  splash?: boolean;
+  egg?: string; // spawn egg mob type
+  drink?: boolean; // consumed by drinking (potions, milk)
 }
 
 export const ITEMS = new Map<number, ItemDef>();
@@ -170,6 +175,56 @@ export const I2 = {
   COOKED_SALMON: item('cooked_salmon', 'Cooked Salmon', { food: { hunger: 6, saturation: 9.6 } }),
 };
 
+// Spawn eggs (vanilla egg colours).
+export const SPAWN_EGGS: { mob: string; display: string; c1: number; c2: number }[] = [
+  { mob: 'creeper', display: 'Creeper', c1: 0x0da70b, c2: 0x000000 },
+  { mob: 'skeleton', display: 'Skeleton', c1: 0xc1c1c1, c2: 0x494949 },
+  { mob: 'spider', display: 'Spider', c1: 0x342d27, c2: 0xa80e0e },
+  { mob: 'zombie', display: 'Zombie', c1: 0x00afaf, c2: 0x799c65 },
+  { mob: 'slime', display: 'Slime', c1: 0x51a03e, c2: 0x7ebf6e },
+  { mob: 'ghast', display: 'Ghast', c1: 0xf9f9f9, c2: 0xbcbcbc },
+  { mob: 'zombie_pigman', display: 'Zombie Pigman', c1: 0xea9393, c2: 0x4c7129 },
+  { mob: 'enderman', display: 'Enderman', c1: 0x161616, c2: 0x000000 },
+  { mob: 'blaze', display: 'Blaze', c1: 0xf6b201, c2: 0xfff87e },
+  { mob: 'bat', display: 'Bat', c1: 0x4c3e30, c2: 0x0f0f0f },
+  { mob: 'pig', display: 'Pig', c1: 0xf0a5a2, c2: 0xdb635f },
+  { mob: 'sheep', display: 'Sheep', c1: 0xe7e7e7, c2: 0xffb5b5 },
+  { mob: 'cow', display: 'Cow', c1: 0x443626, c2: 0xa1a1a1 },
+  { mob: 'chicken', display: 'Chicken', c1: 0xa1a1a1, c2: 0xff0000 },
+  { mob: 'squid', display: 'Squid', c1: 0x223b4d, c2: 0x708899 },
+  { mob: 'wolf', display: 'Wolf', c1: 0xd7d3d3, c2: 0xceaf96 },
+  { mob: 'villager', display: 'Villager', c1: 0x563c33, c2: 0xbd8b72 },
+];
+
+// Redstone devices, brewing, enchanted books, spawn eggs and potions (appended after I2).
+export const I3 = {
+  ENCHANTED_BOOK: item('enchanted_book', 'Enchanted Book', { maxStack: 1, rarity: 'uncommon' }),
+  REPEATER: item('repeater', 'Redstone Repeater', { block: B.REPEATER }),
+  COMPARATOR: item('comparator', 'Redstone Comparator', { block: B.COMPARATOR }),
+  BREWING_STAND: item('brewing_stand', 'Brewing Stand', { block: B.BREWING_STAND }),
+  NETHER_WART: item('nether_wart', 'Nether Wart', { block: B.NETHER_WART }),
+  GLASS_BOTTLE: item('glass_bottle', 'Glass Bottle'),
+  BLAZE_ROD: item('blaze_rod', 'Blaze Rod', { fuel: 2400 }),
+  FERMENTED_SPIDER_EYE: item('fermented_spider_eye', 'Fermented Spider Eye'),
+  GLISTERING_MELON: item('glistering_melon_slice', 'Glistering Melon'),
+  MAGMA_CREAM: item('magma_cream', 'Magma Cream'),
+  CARROT: item('carrot', 'Carrot', { block: B.CARROTS, food: { hunger: 3, saturation: 3.6 } }),
+  GOLDEN_CARROT: item('golden_carrot', 'Golden Carrot', { food: { hunger: 6, saturation: 14.4 } }),
+  POTATO: item('potato', 'Potato', { block: B.POTATOES, food: { hunger: 1, saturation: 0.6 } }),
+  BAKED_POTATO: item('baked_potato', 'Baked Potato', { food: { hunger: 5, saturation: 6 } }),
+  PUFFERFISH: item('pufferfish', 'Pufferfish', { food: { hunger: 1, saturation: 0.2 } }),
+  CLOWNFISH: item('tropical_fish', 'Clownfish', { food: { hunger: 1, saturation: 0.2 } }),
+  NAME_TAG: item('name_tag', 'Name Tag'),
+  NETHER_BRICK: item('nether_brick', 'Nether Brick'),
+};
+export const EGG_ITEMS: Record<string, number> = {};
+for (const e of SPAWN_EGGS) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
+export const POTION_ITEMS: Record<string, number> = {};
+export const SPLASH_ITEMS: Record<string, number> = {};
+for (const p of POTIONS) POTION_ITEMS[p.key] = item(`potion_${p.key}`, p.name, { maxStack: 1, potion: p.key, drink: true, sprite: `potion_${p.sprite}` });
+for (const p of POTIONS) SPLASH_ITEMS[p.key] = item(`splash_potion_${p.key}`, p.key === 'water' ? 'Splash Water Bottle' : 'Splash ' + p.name, { maxStack: 1, potion: p.key, splash: true, sprite: `splash_potion_${p.sprite}` });
+getItem(I.MILK_BUCKET).drink = true;
+
 export function itemByName(name: string): ItemDef | undefined {
   return byName.get(name);
 }
@@ -187,10 +242,14 @@ export interface ItemStack {
   count: number;
   damage?: number; // durability used
   ench?: Record<string, number>;
+  name?: string; // custom name from an anvil
+  repair?: number; // anvil prior-work penalty
 }
 export const stack = (id: number, count = 1, damage = 0): ItemStack => ({ id, count, damage });
-export const cloneStack = (s: ItemStack | null): ItemStack | null => (s ? { id: s.id, count: s.count, damage: s.damage ?? 0, ...(s.ench ? { ench: { ...s.ench } } : {}) } : null);
-export const sameItem = (a: ItemStack | null, b: ItemStack | null) => !!a && !!b && a.id === b.id && (a.damage ?? 0) === (b.damage ?? 0) && JSON.stringify(a.ench ?? null) === JSON.stringify(b.ench ?? null);
+export const cloneStack = (s: ItemStack | null): ItemStack | null => (s ? { ...s, damage: s.damage ?? 0, ...(s.ench ? { ench: { ...s.ench } } : {}) } : null);
+export const sameItem = (a: ItemStack | null, b: ItemStack | null) => !!a && !!b && a.id === b.id && (a.damage ?? 0) === (b.damage ?? 0) && JSON.stringify(a.ench ?? null) === JSON.stringify(b.ench ?? null) && (a.name ?? '') === (b.name ?? '') && (a.repair ?? 0) === (b.repair ?? 0);
+/** Display name (custom anvil name if set). */
+export const stackName = (s: ItemStack) => s.name ?? getItem(s.id).display;
 export const maxStack = (s: ItemStack) => getItem(s.id).maxStack;
 
 // ------------------------------------------------------------------ block drops
@@ -203,7 +262,7 @@ export function blockDrops(blockId: number, meta: number, tool: ItemDef | undefi
   if (def.harvestLevel >= 0) {
     if (!tool?.tool || tool.tool.type !== def.tool || tool.tool.level < def.harvestLevel) return [];
   }
-  void silk;
+  if (silk && def.item && blockId !== B.SPAWNER && !def.needsSupport) return [stack(blockId)];
   const shears = tool?.tool?.type === 'shears';
   switch (blockId) {
     case B.OAK_LEAVES: case B.SPRUCE_LEAVES: case B.BIRCH_LEAVES: {
@@ -238,6 +297,10 @@ export function blockDrops(blockId: number, meta: number, tool: ItemDef | undefi
     case B.SUGAR_CANE: return [stack(I.SUGAR_CANE)];
     case B.PUMPKIN_STEM: return [stack(I.PUMPKIN_SEEDS)];
     case B.DOUBLE_STONE_SLAB: return [stack(B.STONE_SLAB, 2)];
+    case B.CARROTS: return [stack(I3.CARROT, meta >= 7 ? 1 + rng.int(4) : 1)];
+    case B.POTATOES: return meta >= 7 ? [stack(I3.POTATO, 1 + rng.int(4))] : [stack(I3.POTATO)];
+    case B.NETHER_WART: return [stack(I3.NETHER_WART, meta >= 3 ? 2 + rng.int(3) : 1)];
+    case B.GLASS: case B.GLASS_PANE: case B.ICE: return silk ? [stack(blockId)] : [];
   }
   if (isLeaves(blockId)) return [];
   if (def.drop === null) return [];

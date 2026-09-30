@@ -16,7 +16,7 @@ function passable(w: World, x: number, y: number, z: number, avoidWater: boolean
 function standable(w: World, x: number, y: number, z: number): boolean {
   const id = idOf(w.get(x, y - 1, z));
   const d = BLOCKS[id];
-  if (id === B.OAK_FENCE || id === B.CACTUS || id === B.LAVA || id === B.FIRE) return false;
+  if (id === B.OAK_FENCE || id === B.NETHER_BRICK_FENCE || id === B.CACTUS || id === B.LAVA || id === B.FIRE) return false;
   return d.solid || id === B.WATER;
 }
 function danger(w: World, x: number, y: number, z: number): boolean {

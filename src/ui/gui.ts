@@ -52,6 +52,7 @@ export class Gui {
     this.sprites.heartEmptyFlash = spriteCanvas(HEART_EMPTY, { k: '#ffffff', d: '#3a0e0e' });
     this.sprites.heartPoison = spriteCanvas(HEART, { k: '#1c1c00', R: '#8a8a18', W: '#d0d080' });
     this.sprites.heartHardcore = spriteCanvas(HEART, { k: '#1c0000', R: '#d80000', W: '#ffffff' });
+    this.sprites.heartAbsorb = spriteCanvas(HEART, { k: '#2a1c00', R: '#e0b020', W: '#fff0a0' });
     const foodPal = { k: '#2a1604', B: '#b36a25', R: '#d8321c', W: '#f0e0d0' };
     this.sprites.food = spriteCanvas(FOOD, foodPal);
     this.sprites.foodHalf = spriteCanvas(FOOD_HALF, foodPal);

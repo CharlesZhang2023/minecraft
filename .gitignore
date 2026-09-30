@@ -3,3 +3,12 @@ dist
 *.log
 .DS_Store
 shots
+
+.playwright-cli/
+output/
+work/
+.env
+.env.*
+!.env.example
+*.pem
+*.key

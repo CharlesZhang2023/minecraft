@@ -81,7 +81,7 @@ export function addToSlots(slots: Slots, s: ItemStack, order: number[]): number 
   for (const i of order) {
     if (!slots[i]) {
       const k = Math.min(max, left);
-      slots[i] = { id: s.id, count: k, damage: s.damage ?? 0, ...(s.ench ? { ench: s.ench } : {}) };
+      slots[i] = { ...s, count: k, damage: s.damage ?? 0 };
       left -= k;
       if (!left) return 0;
     }

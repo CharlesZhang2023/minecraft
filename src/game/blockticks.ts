@@ -1,11 +1,12 @@
 // Scheduled & random block updates: fluids, gravity, plants, leaf decay, fire...
 import type { Game } from './game';
 import type { World, Chunk } from '../world/world';
-import { B, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY } from '../world/blocks';
+import { B, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston } from '../world/blocks';
 import { WorldGen, Setter } from '../world/worldgen';
 import { Random } from '../noise';
 import { FallingBlock } from '../entity/item';
-import { I, stack, TOOLS, ARMOR } from './items';
+import { I, I3, stack, TOOLS, ARMOR } from './items';
+import { randomBook } from './enchant';
 import { portalCanStay } from './portal';
 
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
@@ -96,7 +97,7 @@ export class BlockTicker {
       return OPAQUE[w.getId(x + dx, y, z + dz)] === 1;
     }
     if (id === B.TORCH || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH) {
-      if (meta === 0) return BLOCKS[below].solid && (OPAQUE[below] === 1 || below === B.OAK_FENCE || below === B.GLASS);
+      if (meta === 0) return BLOCKS[below].solid && (OPAQUE[below] === 1 || below === B.OAK_FENCE || below === B.NETHER_BRICK_FENCE || below === B.GLASS);
       const [dx, dz] = HORIZ[(meta - 1) & 3];
       return OPAQUE[w.getId(x + dx, y, z + dz)] === 1;
     }
@@ -115,7 +116,14 @@ export class BlockTicker {
       const o = head ? w.get(x - dx, y, z - dz) : w.get(x + dx, y, z + dz);
       return idOf(o) === B.BED;
     }
-    if (id === B.WHEAT) return below === B.FARMLAND;
+    if (id === B.WHEAT || id === B.CARROTS || id === B.POTATOES) return below === B.FARMLAND;
+    if (id === B.NETHER_WART) return below === B.SOUL_SAND;
+    if (id === B.REPEATER || id === B.POWERED_REPEATER || id === B.COMPARATOR) return OPAQUE[below] === 1;
+    if (id === B.PISTON_HEAD) {
+      const [dx, dy, dz] = FACING6[meta & 7];
+      const bv = w.get(x - dx, y - dy, z - dz);
+      return isPiston(idOf(bv)) && (metaOf(bv) & 8) !== 0 && (metaOf(bv) & 7) === (meta & 7);
+    }
     if (id === B.SUGAR_CANE) {
       if (below === B.SUGAR_CANE) return true;
       if (below !== B.GRASS && below !== B.DIRT && below !== B.SAND && below !== B.PODZOL) return false;
@@ -144,7 +152,7 @@ export class BlockTicker {
       const below = w.getId(x, y - 1, z);
       if (y > 0 && (below === B.AIR || BLOCKS[below].fluid || below === B.FIRE)) {
         w.set(x, y, z, B.AIR);
-        const e = new FallingBlock(w, this.game, id);
+        const e = new FallingBlock(w, this.game, v);
         e.setPos(x + 0.5, y, z + 0.5);
         this.game.addEntity(e);
       }
@@ -396,12 +404,17 @@ export class BlockTicker {
         }
         return;
       }
-      case B.WHEAT: {
+      case B.WHEAT: case B.CARROTS: case B.POTATOES: {
         const m = metaOf(v);
         if (m < 7 && lightAbove >= 9) {
           const moist = metaOf(w.get(x, y - 1, z)) > 0;
-          if (this.rng.int(moist ? 6 : 14) === 0) w.set(x, y, z, pack(B.WHEAT, m + 1));
+          if (this.rng.int(moist ? 6 : 14) === 0) w.set(x, y, z, pack(id, m + 1));
         }
+        return;
+      }
+      case B.NETHER_WART: {
+        const m = metaOf(v);
+        if (m < 3 && this.rng.int(10) === 0) w.set(x, y, z, pack(id, m + 1));
         return;
       }
       case B.FARMLAND: {
@@ -412,7 +425,7 @@ export class BlockTicker {
         if (water && m === 0) w.set(x, y, z, pack(B.FARMLAND, 1));
         else if (!water) {
           if (m > 0) w.set(x, y, z, pack(B.FARMLAND, 0));
-          else if (w.getId(x, y + 1, z) !== B.WHEAT && w.getId(x, y + 1, z) !== B.PUMPKIN_STEM) w.set(x, y, z, B.DIRT);
+          else if (![B.WHEAT, B.PUMPKIN_STEM, B.CARROTS, B.POTATOES].includes(w.getId(x, y + 1, z))) w.set(x, y, z, B.DIRT);
         }
         return;
       }
@@ -492,10 +505,10 @@ export class BlockTicker {
     const w = this.world;
     const v = w.get(x, y, z);
     const id = idOf(v);
-    if (id === B.WHEAT) {
+    if (id === B.WHEAT || id === B.CARROTS || id === B.POTATOES) {
       const m = metaOf(v);
       if (m >= 7) return false;
-      w.set(x, y, z, pack(B.WHEAT, Math.min(7, m + 2 + this.rng.int(4))));
+      w.set(x, y, z, pack(id, Math.min(7, m + 2 + this.rng.int(4))));
       return true;
     }
     if (id === B.PUMPKIN_STEM) { w.set(x, y, z, pack(id, Math.min(7, metaOf(v) + 3))); return true; }
@@ -525,10 +538,26 @@ export class BlockTicker {
       const id = c.blocks[i] & 0xfff;
       if (id !== B.CHEST && id !== B.SPAWNER) continue;
       if (c.tiles.has(i)) continue;
-      if (id === B.CHEST) c.tiles.set(i, { type: 'chest', items: this.dungeonLoot() });
-      else c.tiles.set(i, { type: 'spawner' as 'chest', mob: ['zombie', 'zombie', 'skeleton', 'spider'][this.rng.int(4)], delay: 200 });
+      const nether = this.world.dimension === 'nether';
+      if (id === B.CHEST) c.tiles.set(i, { type: 'chest', items: nether ? this.fortressLoot() : this.dungeonLoot() });
+      else c.tiles.set(i, { type: 'spawner', mob: nether ? 'blaze' : ['zombie', 'zombie', 'skeleton', 'spider'][this.rng.int(4)], delay: 200 });
     }
     void isFlower;
+  }
+
+  /** Nether fortress chest (1.8 table, minus horse gear). */
+  private fortressLoot() {
+    const items: ({ id: number; count: number } | null)[] = new Array(27).fill(null);
+    const table: [number, number, number][] = [
+      [I.DIAMOND, 1, 3], [I.IRON_INGOT, 1, 5], [I.GOLD_INGOT, 1, 3], [TOOLS.golden_sword, 1, 1], [ARMOR.golden_chestplate, 1, 1],
+      [I.FLINT_AND_STEEL, 1, 1], [I3.NETHER_WART, 3, 7], [B.OBSIDIAN, 2, 4], [I3.BLAZE_ROD, 1, 2],
+    ];
+    const n = 2 + this.rng.int(4);
+    for (let k = 0; k < n; k++) {
+      const [id, lo, hi] = table[this.rng.int(table.length)];
+      items[this.rng.int(27)] = stack(id, lo + this.rng.int(hi - lo + 1));
+    }
+    return items;
   }
 
   private dungeonLoot() {
@@ -537,11 +566,12 @@ export class BlockTicker {
       [I.BREAD, 1, 3], [I.WHEAT, 1, 4], [I.IRON_INGOT, 1, 4], [I.GOLD_INGOT, 1, 4], [I.REDSTONE, 1, 4], [I.GUNPOWDER, 1, 4],
       [I.STRING, 1, 4], [I.BUCKET, 1, 1], [I.GOLDEN_APPLE, 1, 1], [I.COAL, 3, 8], [I.BONE, 2, 6], [I.ROTTEN_FLESH, 2, 6],
       [TOOLS.iron_pickaxe, 1, 1], [ARMOR.iron_chestplate, 1, 1], [I.DIAMOND, 1, 2], [I.APPLE, 1, 3], [I.ENDER_PEARL, 1, 1],
+      [I3.ENCHANTED_BOOK, 1, 1], [I3.NAME_TAG, 1, 1], [I3.NETHER_WART, 1, 3], [I3.CARROT, 1, 3], [I3.POTATO, 1, 3],
     ];
     const n = 4 + this.rng.int(5);
     for (let k = 0; k < n; k++) {
       const [id, lo, hi] = table[this.rng.int(table.length)];
-      items[this.rng.int(27)] = stack(id, lo + this.rng.int(hi - lo + 1));
+      items[this.rng.int(27)] = id === I3.ENCHANTED_BOOK ? randomBook(this.rng) : stack(id, lo + this.rng.int(hi - lo + 1));
     }
     return items;
   }

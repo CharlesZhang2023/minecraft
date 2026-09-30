@@ -3,10 +3,10 @@
 // Lighting is computed statelessly from a 3x3 chunk neighbourhood: light travels at most 15 blocks,
 // so a 48x48 region around the centre chunk contains every light source that can reach it.
 import {
-  B, BLOCKS, OPAQUE, LIGHT_OPACITY, LIGHT_EMIT, RENDER, Render, T, idOf, metaOf, HORIZ, HORIZ_TO_FACE, isLog, isLeaves, BlockDef,
+  B, BLOCKS, OPAQUE, LIGHT_OPACITY, LIGHT_EMIT, RENDER, Render, T, idOf, metaOf, HORIZ, HORIZ_TO_FACE, isLog, isLeaves, BlockDef, cropTexture, isFacing6Cube,
 } from './blocks';
 import { BIOMES } from './biomes';
-import { modelBoxes } from './models';
+import { modelBoxes, facing6CubeFaces } from './models';
 
 const R = 48;
 const RA = R * R;
@@ -333,7 +333,8 @@ function meshCube(i: number, v: number, id: number, def: BlockDef, x: number, y:
   const meta = v >>> 12;
   const buf = def.translucent ? transBuf : opaqueBuf;
   for (let f = 0; f < 6; f++) { faceTex[f] = def.faces[f]; faceRot[f] = 0; }
-  if (def.faces.length > 6) faceTex[HORIZ_TO_FACE[meta & 3]] = def.faces[6];
+  if (isFacing6Cube(id)) facing6CubeFaces(id, meta, faceTex, faceRot);
+  else if (def.faces.length > 6) faceTex[HORIZ_TO_FACE[meta & 3]] = def.faces[6];
   if (isLog(id) && meta) {
     const top = def.faces[3];
     const side = def.faces[0];
@@ -487,8 +488,7 @@ function meshCross(i: number, id: number, def: BlockDef, x: number, y: number, z
 }
 
 function meshCrops(i: number, v: number, x: number, y: number, z: number) {
-  const stage = Math.min(7, metaOf(v));
-  const tex = T.wheat[stage];
+  const tex = cropTexture(v & 0xfff, metaOf(v));
   const s = sky[i], b = blk[i];
   const yb = y - 1 / 16, yt = y + 15 / 16;
   for (const p of [4, 12]) {
@@ -546,11 +546,17 @@ function meshModel(i: number, v: number, id: number, def: BlockDef, x: number, y
       }
       const verts = FACE_VERTS[f];
       const rot = bx.rot ? bx.rot[f] : 0;
+      const rect = bx.uv ? bx.uv[f] : null;
       buf.ensure(4);
       for (const vt of verts) {
         const px = vt[0] ? mx[0] : mn[0], py = vt[1] ? mx[1] : mn[1], pz = vt[2] ? mx[2] : mn[2];
         let u: number, vv: number;
-        switch (f) {
+        if (rect) {
+          // explicit rect: map the face's corners onto it (same orientation as the default mapping)
+          const [du, dv] = faceUV(f, vt[0], vt[1], vt[2]);
+          u = rect[0] + (rect[2] - rect[0]) * du;
+          vv = rect[1] + (rect[3] - rect[1]) * dv;
+        } else switch (f) {
           case 0: u = pz * 16; vv = 16 - py * 16; break;
           case 1: u = 16 - pz * 16; vv = 16 - py * 16; break;
           case 2: case 3: u = px * 16; vv = pz * 16; break;
@@ -563,6 +569,17 @@ function meshModel(i: number, v: number, id: number, def: BlockDef, x: number, y
     }
   }
   void isLeaves;
+}
+
+/** Normalised (0..1) uv of a face corner in the default orientation. */
+function faceUV(f: number, cx: number, cy: number, cz: number): [number, number] {
+  switch (f) {
+    case 0: return [cz, 1 - cy];
+    case 1: return [1 - cz, 1 - cy];
+    case 2: case 3: return [cx, cz];
+    case 4: return [1 - cx, 1 - cy];
+    default: return [cx, 1 - cy];
+  }
 }
 
 function wireColor(p: number): number {
