@@ -59,12 +59,22 @@ Click the game to capture the mouse. Worlds save automatically to IndexedDB.
 - Block updates: flowing water and lava (the vanilla flow algorithm, infinite sources, obsidian and cobblestone
   generation), falling sand and gravel, leaf decay, grass spread, spreading fire, crop, cactus and sugar cane
   growth.
+- **Redstone**: dust that carries signal strength (15 down to 1, with step up/down), levers, buttons, pressure plates,
+  redstone torches acting as delayed inverters, lamps and redstone blocks. It can power doors and ignite TNT.
+- **Enchanting**: an enchanting table powered by nearby bookshelves, with the 1.8 cost formula and lapis.
+  Enchantments show a glint and have real effects: Efficiency, Unbreaking, Fortune, Sharpness, Knockback,
+  Fire Aspect, Power, Punch, Flame, Infinity, Protection and Feather Falling.
+- **Fishing**: the bobber waits, then bubbles approach and the fish bites. Loot is fish, junk or treasure, and cod
+  and salmon can be cooked.
 - Mobs with A* pathfinding:
   - Hostile: zombies (burn in daylight), skeletons (archers), creepers (they swell, then explode), spiders,
     endermen (stare aggro, teleporting, block stealing), slimes (split on death), ghasts (fireballs you can punch
     back) and zombie pigmen (group anger).
   - Passive: pigs, cows (milkable), sheep (shearable, eat grass) and chickens (lay eggs). Passive mobs breed and
     can be tempted with food.
+  - Tameable wolves: feed them bones, then they sit, follow, teleport to you and defend you. Wild packs turn
+    angry when attacked.
+  - Ambient: squid in oceans and bats in caves. Villagers have professions and trade.
 - Rideable boats, 1.8-style achievements with popups, and chat commands.
 
 **Interface**

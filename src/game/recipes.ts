@@ -85,6 +85,7 @@ S([' #', '# '], { '#': I.IRON_INGOT }, I.SHEARS);
 S(['# #', ' # '], { '#': PLANKS }, I.BOWL, 4);
 S(['# #', '###'], { '#': PLANKS }, I2.BOAT);
 S(['R', 'S'], { R: I.REDSTONE, S: I.STICK }, B.REDSTONE_TORCH);
+S(['  #', ' #S', '# S'], { '#': I.STICK, S: I.STRING }, I2.FISHING_ROD);
 S(['S', 'C'], { S: I.STICK, C: B.COBBLESTONE }, B.LEVER);
 L([B.STONE], B.STONE_BUTTON);
 S(['##'], { '#': B.STONE }, B.STONE_PRESSURE_PLATE);
@@ -210,4 +211,6 @@ export const SMELTING: Record<number, { out: number; xp: number }> = {
   [I.BEEF]: { out: I.COOKED_BEEF, xp: 0.35 },
   [I.CHICKEN]: { out: I.COOKED_CHICKEN, xp: 0.35 },
   [I.MUTTON]: { out: I.COOKED_MUTTON, xp: 0.35 },
+  [I2.COD]: { out: I2.COOKED_COD, xp: 0.35 },
+  [I2.SALMON]: { out: I2.COOKED_SALMON, xp: 0.35 },
 };

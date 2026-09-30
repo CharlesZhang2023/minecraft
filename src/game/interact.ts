@@ -8,6 +8,7 @@ import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { PrimedTnt, Arrow, Snowball, XpOrb, ItemEntity, FallingBlock, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
+import { FishingHook } from '../entity/fishing';
 import { createEntity } from '../entity/registry';
 import { aabbIntersects } from '../math';
 import { Random } from '../noise';
@@ -480,6 +481,21 @@ export class Interaction {
           p.swing();
         }
       }
+      return;
+    }
+    if (held.id === I2.FISHING_ROD) {
+      if (p.fishHook) {
+        const d = p.fishHook.reel();
+        if (d) this.damageHeld(d);
+        g.audio.play('bow', p, 0.5, 0.4 / (this.rng.next() * 0.4 + 0.8));
+      } else {
+        const h = new FishingHook(w, g, p);
+        h.cast();
+        p.fishHook = h;
+        g.addEntity(h);
+        g.audio.play('bow', p, 0.5, 0.4 / (this.rng.next() * 0.4 + 0.8));
+      }
+      p.swing();
       return;
     }
     if (held.id === I2.BOAT) {

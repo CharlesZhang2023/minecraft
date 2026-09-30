@@ -163,6 +163,11 @@ export const I2 = {
   ENDER_EYE: item('ender_eye', 'Eye of Ender'),
   BLAZE_POWDER: item('blaze_powder', 'Blaze Powder'),
   INK_SAC: item('ink_sac', 'Ink Sac'),
+  FISHING_ROD: item('fishing_rod', 'Fishing Rod', { maxStack: 1, durability: 64, fuel: 300 }),
+  COD: item('cod', 'Raw Cod', { food: { hunger: 2, saturation: 0.4 } }),
+  COOKED_COD: item('cooked_cod', 'Cooked Cod', { food: { hunger: 5, saturation: 6 } }),
+  SALMON: item('salmon', 'Raw Salmon', { food: { hunger: 2, saturation: 0.4 } }),
+  COOKED_SALMON: item('cooked_salmon', 'Cooked Salmon', { food: { hunger: 6, saturation: 9.6 } }),
 };
 
 export function itemByName(name: string): ItemDef | undefined {

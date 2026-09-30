@@ -631,6 +631,10 @@ export class Game {
     return e;
   }
 
+  spawnXpAt(x: number, y: number, z: number, n: number) {
+    this.interact?.spawnXp(x, y, z, n);
+  }
+
   addEntity(e: Entity) {
     this.entities.push(e);
   }

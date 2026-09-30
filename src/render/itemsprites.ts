@@ -745,6 +745,46 @@ sprite('blaze_powder', [
   '..yYYYYYYYYYy...',
 ], { y: hex('#c88a10'), Y: hex('#ffc830'), O: hex('#fff0a0') }, '#5a3a00');
 
+sprite('fishing_rod', [
+  '', '',
+  '..........ssw...',
+  '.........sS..w..',
+  '........sS....w.',
+  '.......sS.....w.',
+  '......sS......w.',
+  '.....sS.......w.',
+  '....sS........w.',
+  '...sS.........g.',
+  '..sS..........G.',
+  '.sS.............',
+  'sS..............',
+], { s: hex('#8a6b3c'), S: hex('#6b5130'), w: hex('#e8e8e8'), g: hex('#707070'), G: hex('#a0a0a0') });
+function fish(name: string, body: string, belly: string, fin: string, o: string) {
+  sprite(name, [
+    '', '', '', '',
+    '..........ff....',
+    '...bbbbbbbbf....',
+    '..bBBBBBBBBbf...',
+    '.bKBBBBBBBBBbFF.',
+    '.bBBLLLLLLBBbFF.',
+    '..bLLLLLLLLbf...',
+    '...bbbbbbbbf....',
+    '..........ff....',
+  ], { b: hex(o), B: hex(body), L: hex(belly), f: hex(fin), F: hex(fin), K: hex('#101010') });
+}
+fish('cod', '#b8a07a', '#d8ccb0', '#8a7456', '#5a4a36');
+fish('cooked_cod', '#c89a5a', '#e0c090', '#8a6030', '#4a3218');
+fish('salmon', '#a84a3a', '#e0907a', '#6a2a20', '#3a1a14');
+fish('cooked_salmon', '#b8703a', '#e0a870', '#7a4a20', '#3a2410');
+sprite('fishing_bobber', [
+  '', '', '', '', '',
+  '.......kk.......',
+  '......kRRk......',
+  '......RRRR......',
+  '......WWWW......',
+  '......kWWk......',
+  '.......kk.......',
+], { k: hex('#2a2a2a'), R: hex('#d82020'), W: hex('#f0f0f0') });
 sprite('ink_sac', [
   '', '', '', '',
   '.......kk.......',

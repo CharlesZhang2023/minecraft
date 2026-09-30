@@ -13,6 +13,7 @@ import { DynMesh } from './gl';
 import { getTexture } from './textures';
 import { Player } from '../game/player';
 import { Boat } from '../entity/boat';
+import { FishingHook } from '../entity/fishing';
 
 interface PartGPU { vao: WebGLVertexArrayObject; count: number; def: M.ModelPart }
 interface ModelGPU { parts: Map<string, PartGPU> }
@@ -173,6 +174,10 @@ export class EntityRenderer {
       else if (e instanceof Snowball) this.billboard(dyn, x, y + 0.125, z, 0.25, TEXTURES.indexOf('item/' + e.kind), 0xffffff, sky, blk);
       else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
       else if (e instanceof Boat) this.drawBoat(dyn, e, x, y, z, t, sky, blk);
+      else if (e instanceof FishingHook) {
+        this.billboard(dyn, x, y + 0.12, z, 0.35, TEXTURES.indexOf('item/fishing_bobber'), 0xffffff, sky, blk);
+        this.fishingLine(game, e, x, y, z, t);
+      }
       else if (e instanceof LivingEntity) this.drawLiving(game, e, x, y, z, t, sky, blk);
     }
     // item pickup animations
@@ -669,6 +674,31 @@ export class EntityRenderer {
     mesh.v(x + rx - ux, y - uy, z + rz - uz, 1, 1, layer, col, 1, sky, blk);
     mesh.v(x + rx + ux, y + uy, z + rz + uz, 1, 0, layer, col, 1, sky, blk);
     mesh.v(x - rx + ux, y + uy, z - rz + uz, 0, 0, layer, col, 1, sky, blk);
+  }
+
+  private fishingLine(game: Game, e: FishingHook, x: number, y: number, z: number, t: number) {
+    const p = e.angler, cam = this.r.cam;
+    const yaw = ((p.pyaw + (p.yaw - p.pyaw) * t) * Math.PI) / 180;
+    let sx: number, sy: number, sz: number;
+    if (game.thirdPerson === 0) {
+      // from the rod tip at the lower right of the view
+      const d = game.lookVec(p.yaw, p.pitch);
+      const rx = -Math.cos(yaw), rz = -Math.sin(yaw);
+      sx = d.x * 0.6 + rx * 0.35; sy = d.y * 0.6 - 0.25; sz = d.z * 0.6 + rz * 0.35;
+    } else {
+      sx = p.lerpX(t) - cam.x - Math.cos(yaw) * 0.35 - Math.sin(yaw) * 0.8;
+      sy = p.lerpY(t) - cam.y + 1.8;
+      sz = p.lerpZ(t) - cam.z - Math.sin(yaw) * 0.35 + Math.cos(yaw) * 0.8;
+    }
+    const ex = x, ey = y + 0.2, ez = z;
+    const pts: number[] = [];
+    const N = 12;
+    for (let i = 0; i < N; i++) {
+      const a = i / N, b = (i + 1) / N;
+      const sag = (f: number) => -Math.sin(f * Math.PI) * 0.4;
+      pts.push(sx + (ex - sx) * a, sy + (ey - sy) * a * a + sag(a), sz + (ez - sz) * a, sx + (ex - sx) * b, sy + (ey - sy) * b * b + sag(b), sz + (ez - sz) * b);
+    }
+    this.r.drawLines(new Float32Array(pts), [0, 0, 0, 0.8]);
   }
 
   private drawBoat(mesh: DynMesh, e: Boat, x: number, y: number, z: number, t: number, sky: number, blk: number) {

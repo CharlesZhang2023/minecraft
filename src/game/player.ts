@@ -48,6 +48,7 @@ export class Player extends LivingEntity {
   portalCooldown = 0;
   score = 0;
   riding: { dismount(): void; yaw: number; x: number; y: number; z: number } | null = null;
+  fishHook: { reel(): number; discard(): void; x: number; y: number; z: number } | null = null;
 
   constructor(world: World) {
     super(world);
