@@ -9,7 +9,7 @@ const page = await browser.newPage({ viewport: { width: sc.width ?? 1280, height
 const logs = [];
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}\n${e.stack}`));
-await page.goto(`http://127.0.0.1:5173/${sc.query ?? ''}`);
+await page.goto(`http://127.0.0.1:${process.env.PORT ?? 5173}/${sc.query ?? ''}`);
 for (const st of sc.steps) {
   if (st.wait) await page.waitForTimeout(st.wait);
   if (st.eval) {

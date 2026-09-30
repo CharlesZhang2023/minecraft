@@ -33,6 +33,7 @@ import { Random } from '../noise';
 import { BIOMES } from '../world/biomes';
 import { Commands } from './commands';
 import { Achievements } from './achievements';
+import { LoadingScreen } from '../ui/menus';
 import { tickFurnaces } from './furnace';
 import { rainTexture, snowTexture } from './weather';
 
@@ -229,7 +230,7 @@ export class Game {
     this.traveling = true;
     const p = this.player, meta = this.meta;
     const from = this.world;
-    const loading = new (await import('../ui/menus')).LoadingScreen(this.ui, to === 'nether' ? 'Entering the Nether' : 'Leaving the Nether');
+    const loading = new LoadingScreen(this.ui, to === 'nether' ? 'Entering the Nether' : 'Leaving the Nether');
     loading.ready = true;
     this.ui.open(loading);
     // persist the dimension we're leaving

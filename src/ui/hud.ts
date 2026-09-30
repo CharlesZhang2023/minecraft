@@ -173,7 +173,7 @@ export class Hud {
     const g = this.ui.game, gui = this.ui.gui;
     if (g.showDebug) this.debug(ctx);
     else if (g.options.showFps) gui.text(ctx, `${g.fps} fps`, 2, 2, '#FFFFFF');
-    if (!this.ui.screen || this.ui.screen.constructor.name !== 'ChatScreen') this.ui.chat.render(ctx, false);
+    if (!this.ui.screen?.showsChat) this.ui.chat.render(ctx, false);
   }
 
   private hotbarFrame(ctx: Ctx, x: number, y: number) {

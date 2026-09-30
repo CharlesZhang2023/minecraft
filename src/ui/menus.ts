@@ -523,6 +523,7 @@ export class SleepScreen extends Screen {
 }
 
 export class ChatScreen extends Screen {
+  override showsChat = true;
   input: TextField;
   histIndex = -1;
   override hidesSelection = false;

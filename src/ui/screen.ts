@@ -86,6 +86,7 @@ export abstract class Screen {
   pausesGame = false;
   hidesSelection = true;
   darkens = true;
+  showsChat = false; // the screen draws the chat itself
   widgets: Widget[] = [];
   constructor(public ui: UI) {}
   get game() { return this.ui.game; }
