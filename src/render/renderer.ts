@@ -295,6 +295,7 @@ export class Renderer {
     gl.uniform1f(p.u.u_gamma, e.gamma);
     gl.uniform1f(p.u.u_flicker, e.flicker);
     gl.uniform3fv(p.u.u_fogColor, e.fogColor);
+    gl.uniform3fv(p.u.u_fogSky, e.skyColor);
     gl.uniform2f(p.u.u_fog, e.fogStart, e.fogEnd);
   }
 

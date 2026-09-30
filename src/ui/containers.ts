@@ -18,6 +18,7 @@ interface Slot {
   limit?: number;
   onTake?(): void;
   infinite?: boolean; // creative palette
+  big?: boolean; // large result slot
 }
 
 const inSlot = (s: Slot, mx: number, my: number, ox: number, oy: number) => mx >= ox + s.x - 1 && my >= oy + s.y - 1 && mx < ox + s.x + 17 && my < oy + s.y + 17;
@@ -64,10 +65,10 @@ export abstract class ContainerScreen extends Screen {
     this.drawPanelBase(ctx);
     this.drawBackground(ctx, mx, my);
     const L = this.left, T = this.top;
-    for (const s of this.slots) this.gui.slot(ctx, L + s.x - 1, T + s.y - 1, s.output ? 26 : 18, s.output ? 26 : 18);
+    for (const s of this.slots) this.gui.slot(ctx, L + s.x - 1, T + s.y - 1, s.big ? 26 : 18, s.big ? 26 : 18);
     for (const s of this.slots) {
       const st = s.get();
-      const ox = s.output ? 4 : 0;
+      const ox = s.big ? 4 : 0;
       if (st) this.ui.drawItem(ctx, st, L + s.x + ox, T + s.y + ox);
       if (this.drag && this.drag.slots.includes(s) && this.drag.slots.length > 1) {
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
@@ -76,7 +77,7 @@ export abstract class ContainerScreen extends Screen {
     }
     const hover = this.slotAt(mx, my);
     if (hover) {
-      const ox = hover.output ? 4 : 0;
+      const ox = hover.big ? 4 : 0;
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
       ctx.fillRect(L + hover.x + ox, T + hover.y + ox, 16, 16);
     }
@@ -90,7 +91,7 @@ export abstract class ContainerScreen extends Screen {
 
   slotAt(mx: number, my: number): Slot | null {
     for (const s of this.slots) {
-      if (s.output) {
+      if (s.big) {
         if (mx >= this.left + s.x + 3 && my >= this.top + s.y + 3 && mx < this.left + s.x + 21 && my < this.top + s.y + 21) return s;
       } else if (inSlot(s, mx, my, this.left, this.top)) return s;
     }
@@ -406,37 +407,29 @@ class CraftGrid {
   }
 }
 
-function addGridSlots(scr: ContainerScreen, g: CraftGrid, x0: number, y0: number, rx: number, ry: number) {
+function addGridSlots(scr: ContainerScreen, g: CraftGrid, x0: number, y0: number, rx: number, ry: number, big = true) {
   for (let r = 0; r < g.size; r++)
     for (let c = 0; c < g.size; c++) {
       const i = r * g.size + c;
       scr.slots.push({ x: x0 + c * 18, y: y0 + r * 18, get: () => g.items[i], set: (s) => { g.items[i] = s; }, group: 'craft' });
     }
-  scr.slots.push({ x: rx - 4, y: ry - 4, get: () => g.result, set: (s) => { g.result = s; }, output: true, group: 'result', onTake: () => g.consume() });
+  scr.slots.push({ x: big ? rx - 4 : rx, y: big ? ry - 4 : ry, get: () => g.result, set: (s) => { g.result = s; }, output: true, big, group: 'result', onTake: () => g.consume() });
 }
 
-function arrow(ctx: Ctx, x: number, y: number, progress = 0) {
-  ctx.fillStyle = '#8b8b8b';
-  ctx.fillRect(x, y + 5, 16, 6);
-  ctx.beginPath();
-  ctx.moveTo(x + 15, y);
-  ctx.lineTo(x + 22, y + 8);
-  ctx.lineTo(x + 15, y + 16);
-  ctx.closePath();
-  ctx.fill();
+function arrow(ctx: Ctx, x: number, y: number, progress = 0, len = 22) {
+  const shaft = len - 7;
+  const shape = (col: string) => {
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y + 6, shaft, 4);
+    for (let i = 0; i < 8; i++) ctx.fillRect(x + shaft + i, y + i, 1, 16 - i * 2);
+  };
+  shape('#8b8b8b');
   if (progress > 0) {
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x, y, 22 * progress + 0.5, 17);
+    ctx.rect(x, y, len * progress + 0.5, 17);
     ctx.clip();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(x, y + 5, 16, 6);
-    ctx.beginPath();
-    ctx.moveTo(x + 15, y);
-    ctx.lineTo(x + 22, y + 8);
-    ctx.lineTo(x + 15, y + 16);
-    ctx.closePath();
-    ctx.fill();
+    shape('#ffffff');
     ctx.restore();
   }
 }
@@ -449,7 +442,7 @@ export class InventoryScreen extends ContainerScreen {
     const armor = this.inv.armor;
     for (let i = 0; i < 4; i++)
       this.slots.push({ x: 8, y: 8 + i * 18, get: () => armor[i], set: (s) => (armor[i] = s), group: 'armor', limit: 1, canPlace: (s) => getItem(s.id).armor?.slot === i || (i === 0 && s.id === B.PUMPKIN) });
-    addGridSlots(this, this.grid, 98, 18, 154, 28);
+    addGridSlots(this, this.grid, 98, 18, 154, 28, false);
     this.addPlayerSlots();
   }
   override changed() { this.grid.update(); }
@@ -467,7 +460,7 @@ export class InventoryScreen extends ContainerScreen {
     ctx.fillRect(L + 25, T + 7, 52, 72);
     ctx.clearRect(L + 26, T + 8, 50, 70);
     this.ui.previewBox = { x: L + 26, y: T + 8, w: 50, h: 70, yaw: Math.atan((L + 51 - mx) / 40), pitch: Math.atan((T + 25 - my) / 40) };
-    arrow(ctx, L + 134, T + 28);
+    arrow(ctx, L + 135, T + 29, 0, 16);
   }
   override drawForeground(ctx: Ctx) {
     this.label(ctx, 'Crafting', 97, 6);
@@ -513,7 +506,7 @@ export class FurnaceScreen extends ContainerScreen {
     const sl = t.slots;
     this.slots.push({ x: 56, y: 17, get: () => sl[0], set: (s) => (sl[0] = s), group: 'input' });
     this.slots.push({ x: 56, y: 53, get: () => sl[1], set: (s) => (sl[1] = s), group: 'fuel', canPlace: (s) => !!getItem(s.id).fuel });
-    this.slots.push({ x: 112, y: 31, get: () => sl[2], set: (s) => (sl[2] = s), group: 'out', output: true, onTake: () => this.takeXp() });
+    this.slots.push({ x: 112, y: 31, get: () => sl[2], set: (s) => (sl[2] = s), group: 'out', output: true, big: true, onTake: () => this.takeXp() });
     this.addPlayerSlots();
   }
   takeXp() {

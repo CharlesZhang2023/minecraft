@@ -74,8 +74,7 @@ export function computeEnv(i: EnvInput): EnvState {
   sunB = 1 - sunB;
   sunB *= 1 - i.rain * 5 / 16;
   sunB = sunB * 0.8 + 0.2;
-  const night = 1 - clamp((sunB - 0.2) / 0.8, 0, 1);
-  const skyLightCol: [number, number, number] = [1 - night * 0.3, 1 - night * 0.25, 1];
+  const skyLightCol: [number, number, number] = [1, 1, 1];
 
   const R = i.renderDistance * 16;
   let fogStart = R * 0.75, fogEnd = R;

@@ -81,6 +81,8 @@ export class Game {
   lastHeldId = -1;
   lastHeldSlot = -1;
   sleepFade = 0;
+  torchFlicker = 0;
+  private torchFlickerDX = 0;
   titleYaw = 0;
   private uiCanvas: HTMLCanvasElement;
 
@@ -301,6 +303,10 @@ export class Game {
     this.audio.tickMusic(!w || this.panorama);
     if (!w || !p) return;
     this.renderer.atlas.tick(this.ticks);
+    this.torchFlickerDX += (Math.random() - Math.random()) * Math.random() * Math.random();
+    this.torchFlickerDX *= 0.9;
+    this.torchFlicker += this.torchFlickerDX - this.torchFlicker;
+    this.torchFlicker *= 0.9;
     if (this.panorama) {
       this.time += 1;
       this.titleYaw += 0.1;
@@ -547,7 +553,7 @@ export class Game {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.uiCanvas.width, this.uiCanvas.height);
     if (!this.world || !this.player) {
-      r.beginFrame(computeEnv({ time: 6000, renderDistance: 8, underwater: false, inLava: false, blind: 0, rain: 0, thunder: 0, cameraY: 64, gamma: 0.5, clouds: false, skyTemp: 0.8, flicker: 1, ticks: 0 }));
+      r.beginFrame(computeEnv({ time: 6000, renderDistance: 8, underwater: false, inLava: false, blind: 0, rain: 0, thunder: 0, cameraY: 64, gamma: 0.5, clouds: false, skyTemp: 0.8, flicker: 1.5, ticks: 0 }));
       this.ui.render(ctx);
       return;
     }
@@ -597,7 +603,7 @@ export class Game {
     const env = computeEnv({
       time: this.time, renderDistance: w.renderDistance, underwater, inLava, blind: 0, rain, thunder: this.weather!.thunder,
       cameraY: cam.y, gamma: this.options.gamma, clouds: this.options.clouds, skyTemp: biome.cold ? -0.5 : biome.name === 'Desert' ? 2 : 0.8,
-      flicker: 1 + (Math.sin(this.ticks * 0.7) * 0.02 + (this.rng.next() - 0.5) * 0.04), ticks: this.ticks + t,
+      flicker: 1.5 + this.torchFlicker * 0.1, ticks: this.ticks + t,
     });
     r.beginFrame(env);
     r.drawSky();

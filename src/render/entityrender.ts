@@ -519,7 +519,7 @@ export class EntityRenderer {
       rightArm: [0, 0, 0.1], leftArm: [0, 0, -0.1], rightLeg: [0, 0, 0], leftLeg: [0, 0, 0],
     };
     const saved = this.r.env;
-    this.r.env = { ...saved, fogStart: 1e5, fogEnd: 1e5 + 1, sunBright: 1, gamma: 1 };
+    this.r.env = { ...saved, fogStart: 1e5, fogEnd: 1e5 + 1, sunBright: 1, gamma: 0.5 };
     this.drawModel('biped', 'steve', base, pose, [15, 15], [0, 0, 0, 0], new Set(['hat']));
     const it = p.inventory.held();
     if (it) this.drawHeldThirdPerson(it.id, base, pose.rightArm, [15, 15]);

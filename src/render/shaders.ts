@@ -1,30 +1,35 @@
 // GLSL sources.
 
 const LIGHTING = /* glsl */ `
-uniform float u_sunBright;   // 0.2 (night) .. 1 (day)
+uniform float u_sunBright;   // world sun brightness: 0.2 (night) .. 1 (day)
 uniform vec3 u_skyLightCol;
 uniform float u_gamma;
-uniform float u_flicker;
-float lcurve(float l) { float f = 1.0 - clamp(l, 0.0, 15.0) / 15.0; return (1.0 - f) / (f * 3.0 + 1.0); }
+uniform float u_flicker;     // block light multiplier (~1.5 with flicker)
+// Minecraft 1.8 lightmap: brightness table with 5% floor
+float ltable(float l) { float f = 1.0 - clamp(l, 0.0, 15.0) / 15.0; return (1.0 - f) / (f * 3.0 + 1.0) * 0.95 + 0.05; }
 vec3 lightmap(float skyL, float blkL) {
-  float s = lcurve(skyL) * u_sunBright;
-  float b = lcurve(blkL) * u_flicker;
+  float f = u_sunBright * 0.95 + 0.05;
+  float s = ltable(skyL) * f;
+  float b = ltable(blkL) * u_flicker;
+  vec3 sc = vec3(s * (f * 0.65 + 0.35), s * (f * 0.65 + 0.35), s) * u_skyLightCol;
   vec3 bc = vec3(b, b * ((b * 0.6 + 0.4) * 0.6 + 0.4), b * (b * b * 0.6 + 0.4));
-  vec3 c = s * u_skyLightCol + bc;
-  c = c * 0.96 + 0.03;
-  c = clamp(c, 0.0, 1.0);
+  vec3 c = clamp((sc + bc) * 0.96 + 0.03, 0.0, 1.0);
   vec3 inv = 1.0 - c;
   c = mix(c, 1.0 - inv * inv * inv * inv, u_gamma);
-  return c;
+  return clamp(c * 0.96 + 0.03, 0.0, 1.0);
 }
 `;
 
 const FOG = /* glsl */ `
 uniform vec3 u_fogColor;
+uniform vec3 u_fogSky; // sky colour: distant fog blends toward it with view elevation
 uniform vec2 u_fog; // start, end
-vec3 applyFog(vec3 c, float d) {
+vec3 applyFog(vec3 c, vec3 p) {
+  float d = length(p);
   float f = clamp((d - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0);
-  return mix(c, u_fogColor, f);
+  float up = p.y / max(d, 1e-3);
+  vec3 fc = mix(u_fogColor, u_fogSky, smoothstep(-0.02, 0.35, up));
+  return mix(c, fc, f);
 }
 `;
 
@@ -37,7 +42,7 @@ uniform vec3 u_offset;
 out vec3 v_uv;
 out vec4 v_col;
 out vec2 v_light;
-out float v_dist;
+out vec3 v_dist;
 flat out int v_masked;
 void main() {
   vec3 p = vec3(a_pos.xyz) / 16.0 - 16.0 + u_offset;
@@ -46,7 +51,7 @@ void main() {
   v_masked = int(a_pos.w >> 15u);
   v_col = a_col;
   v_light = a_uvl.zw / 16.0;
-  v_dist = length(p);
+  v_dist = p;
 }`;
 
 export const CHUNK_FS = /* glsl */ `#version 300 es
@@ -59,7 +64,7 @@ ${FOG}
 in vec3 v_uv;
 in vec4 v_col;
 in vec2 v_light;
-in float v_dist;
+in vec3 v_dist;
 flat in int v_masked;
 out vec4 o;
 void main() {
@@ -85,14 +90,14 @@ uniform mat4 u_model;
 out vec3 v_uv;
 out vec4 v_col;
 out vec2 v_light;
-out float v_dist;
+out vec3 v_dist;
 void main() {
   vec4 p = u_model * vec4(a_pos, 1.0);
   gl_Position = u_viewProj * p;
   v_uv = a_uv;
   v_col = a_col;
   v_light = a_light * 15.0;
-  v_dist = length(p.xyz);
+  v_dist = p.xyz;
 }`;
 
 export const DYN_FS = /* glsl */ `#version 300 es
@@ -108,7 +113,7 @@ ${FOG}
 in vec3 v_uv;
 in vec4 v_col;
 in vec2 v_light;
-in float v_dist;
+in vec3 v_dist;
 out vec4 o;
 void main() {
   vec3 uv = v_uv;
@@ -129,7 +134,7 @@ uniform mat4 u_viewProj;
 uniform mat4 u_model;
 out vec2 v_uv;
 out float v_shade;
-out float v_dist;
+out vec3 v_dist;
 void main() {
   vec4 p = u_model * vec4(a_pos, 1.0);
   gl_Position = u_viewProj * p;
@@ -138,7 +143,7 @@ void main() {
   // two fixed directional lights like the classic entity lighting
   float l = 0.4 + 0.6 * max(0.0, dot(n, normalize(vec3(0.2, 1.0, -0.7)))) * 0.7 + 0.6 * max(0.0, dot(n, normalize(vec3(-0.2, 1.0, 0.7)))) * 0.45;
   v_shade = min(1.0, l);
-  v_dist = length(p.xyz);
+  v_dist = p.xyz;
 }`;
 
 export const ENTITY_FS = /* glsl */ `#version 300 es
@@ -151,7 +156,7 @@ ${LIGHTING}
 ${FOG}
 in vec2 v_uv;
 in float v_shade;
-in float v_dist;
+in vec3 v_dist;
 out vec4 o;
 void main() {
   vec4 t = texture(u_skin, v_uv);
