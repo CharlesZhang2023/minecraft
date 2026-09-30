@@ -21,7 +21,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       if (!gen || gen.seed !== msg.seed) gen = new WorldGen(msg.seed);
       r = gen.generate(msg.cx, msg.cz);
     }
-    (self as unknown as Worker).postMessage({ type: 'gen', id: msg.id, cx: msg.cx, cz: msg.cz, blocks: r.blocks, biomes: r.biomes }, [r.blocks.buffer, r.biomes.buffer]);
+    (self as unknown as Worker).postMessage({ type: 'gen', id: msg.id, cx: msg.cx, cz: msg.cz, blocks: r.blocks, biomes: r.biomes, spawns: r.spawns ?? [] }, [r.blocks.buffer, r.biomes.buffer]);
   } else if (msg.type === 'mesh') {
     const r = buildChunk(msg.chunks, msg.biomes, msg.sky);
     (self as unknown as Worker).postMessage(

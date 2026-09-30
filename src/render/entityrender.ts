@@ -33,7 +33,7 @@ export class EntityRenderer {
     const defs: Record<string, M.ModelDef> = {
       biped: M.bipedModel(), bipedThin: M.bipedModel(true), creeper: M.creeperModel(), pig: M.pigModel(), cow: M.cowModel(),
       sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(),
-      armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5),
+      armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
@@ -42,6 +42,7 @@ export class EntityRenderer {
       ghast: M.ghastSkin(false), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(),
     };
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
+    for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
     for (const m of M.ARMOR_MATERIALS) for (const l of [1, 2] as const) { const sk = M.armorSkin(m, l); this.skins.set(`armor_${m}_${l}`, r.makeTexture(sk.data, sk.w)); }
     this.handMesh = new DynMesh(gl);
     gl.bindVertexArray(this.handMesh.vao);
@@ -235,7 +236,7 @@ export class EntityRenderer {
   private drawLiving(game: Game, e: LivingEntity, x: number, y: number, z: number, t: number, sky: number, blk: number) {
     const anyE = e as unknown as Record<string, unknown>;
     const model = (anyE.model as string) ?? 'biped';
-    const skin = (anyE.skin as string) ?? 'steve';
+    const skin = model === 'villager' ? 'villager_' + (anyE.profession as string) : (anyE.skin as string) ?? 'steve';
     const bodyYaw = e.pBodyYaw + wrapDelta(e.bodyYaw - e.pBodyYaw) * t;
     const headYaw = e.pHeadYaw + wrapDelta(e.headYaw - e.pHeadYaw) * t;
     const pitch = e.ppitch + (e.pitch - e.ppitch) * t;
@@ -377,6 +378,14 @@ export class EntityRenderer {
         scale(g4, g4, -4.5, -4.5, 4.5);
         translate(g4, g4, 0, -1.501, 0);
         this.drawModel('ghast', (anyE.shooting as boolean) ? 'ghastShoot' : 'ghast', g4, pose, [15, 15], overlay);
+        break;
+      }
+      case 'villager': {
+        pose.head = [hp, netHead, 0];
+        pose.arms = [-0.75, 0, 0];
+        pose.rightLeg = [c(ls * 0.6662) * 1.4 * lsa * 0.5, 0, 0];
+        pose.leftLeg = [c(ls * 0.6662 + Math.PI) * 1.4 * lsa * 0.5, 0, 0];
+        this.drawModel('villager', skin, base, pose, light, overlay);
         break;
       }
       case 'spider': {

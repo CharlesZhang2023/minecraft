@@ -3,6 +3,7 @@ import { Octaves, Random, hash2, Noise } from '../noise';
 import { B, CHUNK_H, SEA_LEVEL, pack, BLOCKS, OPAQUE, isLeaves } from './blocks';
 import { BIOME, BIOMES } from './biomes';
 import { smoothstep, lerp } from '../math';
+import { villagesNear, placeVillage, Spawn } from './village';
 
 const GX = 5, GY = 33; // density grid: 4-block horizontal cells, 8-block vertical cells
 const idx = (x: number, y: number, z: number) => x | (z << 4) | (y << 8);
@@ -18,6 +19,7 @@ export interface ColumnParams {
 export interface ChunkGenResult {
   blocks: Uint16Array;
   biomes: Uint8Array;
+  spawns?: Spawn[];
 }
 
 export type Setter = (x: number, y: number, z: number, v: number, force?: boolean) => void;
@@ -278,8 +280,10 @@ export class WorldGen {
     for (let dz = -1; dz <= 1; dz++)
       for (let dx = -1; dx <= 1; dx++) this.placeTrees(cx + dx, cz + dz, set);
     this.plants(cx, cz, blocks, biomes, heights);
+    const spawns: Spawn[] = [];
+    for (const v of villagesNear(this, cx, cz)) placeVillage(this, v, cx, cz, blocks, spawns);
     this.snowAndIce(blocks, biomes);
-    return { blocks, biomes };
+    return { blocks, biomes, spawns };
   }
 
   // ------------------------------------------------------------------ caves (port of the classic carver)

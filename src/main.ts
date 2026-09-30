@@ -5,6 +5,7 @@ import { BLOCKS } from './world/blocks';
 import { ITEMS } from './game/items';
 import { WorldGen } from './world/worldgen';
 import { BIOMES } from './world/biomes';
+import { regionVillage } from './world/village';
 
 const gl = document.getElementById('gl') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLCanvasElement;
@@ -16,7 +17,7 @@ function fail(msg: string) {
 try {
   const game = new Game(gl, ui);
   (window as unknown as { game: Game }).game = game;
-  (window as unknown as { __mc: unknown }).__mc = { BLOCKS, ITEMS, WorldGen, BIOMES };
+  (window as unknown as { __mc: unknown }).__mc = { BLOCKS, ITEMS, WorldGen, BIOMES, regionVillage };
   game.start();
 
   // Automation hook: ?autoplay&seed=..&mode=..&time=..&x=..&z=..

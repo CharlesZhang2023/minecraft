@@ -673,6 +673,70 @@ export class Chicken extends Animal {
   }
 }
 
+// ------------------------------------------------------------------ villagers
+export interface Trade { cost: [number, number]; cost2?: [number, number]; result: [number, number]; uses: number; max: number }
+
+export class Villager extends Mob {
+  typeName = 'Villager';
+  override model = 'villager';
+  override sayName = 'villager.idle';
+  override hurtName = 'villager.hurt';
+  override deathName = 'villager.hurt';
+  override speedAttr = 0.25;
+  profession = 'farmer';
+  trades: Trade[] | null = null;
+  tradingWith: LivingEntity | null = null;
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.width = 0.6; this.height = 1.95;
+    this.maxHealth = this.health = 20;
+  }
+  override eyeHeight() { return 1.62; }
+  override ai() {
+    const p = this.game.player;
+    if (this.tradingWith) {
+      this.path = null;
+      this.lookTarget = { x: this.tradingWith.x, y: this.tradingWith.y + this.tradingWith.eyeHeight(), z: this.tradingWith.z };
+      return;
+    }
+    if (this.panicTicks > 0) {
+      if (!this.path || rng.int(20) === 0) this.setPathTo(this.x + rng.int(11) - 5, this.y, this.z + rng.int(11) - 5, 0.06);
+      return;
+    }
+    if (p && !p.dead && this.distanceTo(p) < 8 && rng.int(40) === 0) { this.lookTarget = { x: p.x, y: p.y + p.eyeHeight(), z: p.z }; this.lookTimer = 60; }
+    this.wander(0.035, 200);
+  }
+  override onDamaged() { this.panicTicks = 60; this.path = null; }
+  ensureTrades(): Trade[] {
+    if (this.trades) return this.trades;
+    const r = new Random((this.id * 7919) ^ 0x5eed);
+    const t = (cost: [number, number], result: [number, number], cost2?: [number, number]): Trade => ({ cost, cost2, result, uses: 0, max: 7 + r.int(6) });
+    const E = I.EMERALD;
+    const n = (lo: number, hi: number) => lo + r.int(hi - lo + 1);
+    const T: Record<string, Trade[]> = {
+      farmer: [t([I.WHEAT, n(18, 22)], [E, 1]), t([E, 1], [I.BREAD, n(4, 6)]), t([E, 1], [I.APPLE, n(4, 6)]), t([B.PUMPKIN, n(8, 13)], [E, 1]), t([E, 1], [I.COOKIE, n(7, 10)])],
+      librarian: [t([I.PAPER, n(24, 36)], [E, 1]), t([I.BOOK, n(8, 10)], [E, 1]), t([E, n(3, 4)], [B.BOOKSHELF, 1]), t([E, 1], [B.GLASS, n(3, 5)]), t([E, n(8, 10)], [I.COMPASS, 1])],
+      priest: [t([I.ROTTEN_FLESH, n(36, 40)], [E, 1]), t([E, 1], [I.REDSTONE, n(1, 4)]), t([E, 1], [I.LAPIS, n(1, 2)]), t([E, n(4, 7)], [I.ENDER_PEARL, 1]), t([E, n(3, 4)], [I.GLOWSTONE_DUST, n(1, 3)])],
+      smith: [t([I.COAL, n(16, 24)], [E, 1]), t([I.IRON_INGOT, n(7, 9)], [E, 1]), t([E, n(7, 9)], [TOOLS.iron_pickaxe, 1]), t([E, n(9, 12)], [TOOLS.iron_sword, 1]), t([E, n(12, 15)], [TOOLS.diamond_axe, 1])],
+      butcher: [t([I.PORKCHOP, n(14, 18)], [E, 1]), t([I.CHICKEN, n(14, 18)], [E, 1]), t([E, 1], [I.COOKED_PORKCHOP, n(5, 7)]), t([E, 1], [I.COOKED_BEEF, n(5, 7)])],
+    };
+    this.trades = T[this.profession] ?? T.farmer;
+    return this.trades;
+  }
+  interact(game: Game, held: ItemStack | null): boolean {
+    void held;
+    if (this.baby || this.dead) return false;
+    this.ensureTrades();
+    game.audio.play('villager.trade', this, 1, 1);
+    this.tradingWith = game.player;
+    game.ui.openTrade(this);
+    return true;
+  }
+  override despawnCheck() {}
+  override extraJSON() { return { profession: this.profession, trades: this.trades }; }
+  override loadExtra(d: Record<string, unknown>) { this.profession = (d.profession as string) ?? 'farmer'; this.trades = (d.trades as Trade[]) ?? null; }
+}
+
 // ------------------------------------------------------------------ nether
 export class ZombiePigman extends Monster {
   typeName = 'Zombie Pigman';

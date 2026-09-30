@@ -186,6 +186,19 @@ const GENS: Record<string, Gen> = {
     mixInto(b, env(tone(n, 440, 110, 'sine', 0.05, 5), 0.3, 2.6, 1.2), 0.6);
     return normalize(b, 0.7);
   },
+  'villager.idle': (r) => {
+    const n = SR * 0.45;
+    const b = env(tone(n, 180 + r.next() * 40, 140 + r.next() * 60, 'saw', 0.06, 9), 0.03, 0.4, 1.5);
+    return normalize(bandpass(b, 150, 1400), 0.6);
+  },
+  'villager.trade': (r) => {
+    const n = SR * 0.5;
+    const b = env(tone(n, 170 + r.next() * 20, 230, 'saw', 0.05, 8), 0.02, 0.45, 1.5);
+    return normalize(bandpass(b, 150, 1500), 0.6);
+  },
+  'villager.yes': (r) => normalize(bandpass(env(tone(SR * 0.35, 220 + r.next() * 20, 300, 'saw', 0.04, 8), 0.01, 0.3, 1.5), 150, 1500), 0.6),
+  'villager.no': (r) => normalize(bandpass(env(tone(SR * 0.4, 260 + r.next() * 20, 150, 'saw', 0.04, 8), 0.01, 0.35, 1.5), 150, 1500), 0.6),
+  'villager.hurt': (r) => normalize(bandpass(env(tone(SR * 0.3, 300 + r.next() * 40, 200, 'saw', 0.1, 20), 0.005, 0.25, 2), 150, 2000), 0.7),
   'ghast.moan': (r) => normalize(env(tone(SR * 2.2, 520 + r.next() * 200, 380, 'sine', 0.08, 5.5), 0.3, 1.8, 1.2), 0.5),
   'ghast.scream': (r) => {
     const b = env(tone(SR * 0.9, 900 + r.next() * 200, 600, 'saw', 0.1, 12), 0.02, 0.8, 1.5);

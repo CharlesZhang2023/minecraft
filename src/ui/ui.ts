@@ -7,6 +7,8 @@ import { Screen } from './screen';
 import { ItemStack } from '../game/items';
 import * as Menus from './menus';
 import * as Containers from './containers';
+import { TradeScreen } from './trade';
+import type { Villager } from '../entity/mobs';
 
 export class UI {
   gui: Gui;
@@ -93,6 +95,7 @@ export class UI {
     this.open(p.creative ? new Containers.CreativeScreen(this) : new Containers.InventoryScreen(this));
   }
   openDeath(msg: string) { this.open(new Menus.DeathScreen(this, msg)); }
+  openTrade(v: Villager) { this.open(new TradeScreen(this, v)); }
   openSleep() { this.open(new Menus.SleepScreen(this)); }
 
   private keyDown(e: KeyboardEvent): boolean {

@@ -115,6 +115,19 @@ export function spiderModel(): ModelDef {
   };
 }
 
+export function villagerModel(): ModelDef {
+  return {
+    texW: 64, texH: 64,
+    parts: [
+      part('head', 0, 0, 0, [box(-4, -10, -4, 8, 10, 8, 0, 0), box(-1, -3, -6, 2, 4, 2, 24, 0)]),
+      part('body', 0, 0, 0, [box(-4, 0, -3, 8, 12, 6, 16, 20), box(-4, 0, -3, 8, 18, 6, 0, 38, { inflate: 0.5 })]),
+      part('arms', 0, 3, -1, [box(-8, -2, -2, 4, 8, 4, 44, 22), box(4, -2, -2, 4, 8, 4, 44, 22, { mirror: true }), box(-4, 2, -2, 8, 4, 4, 40, 38)], { rx: -0.75 }),
+      part('rightLeg', -2, 12, 0, [box(-2, 0, -2, 4, 12, 4, 0, 22)]),
+      part('leftLeg', 2, 12, 0, [box(-2, 0, -2, 4, 12, 4, 0, 22, { mirror: true })]),
+    ],
+  };
+}
+
 export function ghastModel(): ModelDef {
   const tentacles: ModelPart[] = [];
   const r = new Random(1660);
@@ -333,6 +346,44 @@ export function chickenSkin(): Skin {
   s.paintBox(0, 9, 6, 8, 6, () => vary(r.int(5) === 0 ? wd : w, r, 0.03));
   s.paintBox(26, 0, 3, 5, 3, (f, x, y) => (y < 2 ? null : hx('#f0a020')));
   s.paintBox(24, 13, 1, 4, 6, () => vary(wd, r, 0.04));
+  return s;
+}
+
+const PROFESSION_ROBES: Record<string, [string, string, string?]> = {
+  farmer: ['#7a5a36', '#5a4026', '#c8b078'],
+  librarian: ['#e0e0da', '#b8b8b0'],
+  priest: ['#6a2a8a', '#4a1a62', '#e0c040'],
+  smith: ['#3a3a3a', '#262626', '#7a5a36'],
+  butcher: ['#e8e8e8', '#c0c0c0', '#b02020'],
+};
+export const PROFESSIONS = Object.keys(PROFESSION_ROBES);
+export function villagerSkin(prof: string): Skin {
+  const s = new Skin(64, 64);
+  const r = new Random(prof.length * 13);
+  const skin = hx('#b8805e'), skinD = hx('#9a684a');
+  const [robe, robeD, trim] = PROFESSION_ROBES[prof] ?? PROFESSION_ROBES.farmer;
+  const R = hx(robe), RD = hx(robeD), T = trim ? hx(trim) : RD;
+  s.paintBox(0, 0, 8, 10, 8, (f, x, y) => {
+    if (f === 'front') {
+      if (y === 3 && x >= 1 && x <= 6) return hx('#4a3020'); // unibrow
+      if (y === 4 && (x === 1 || x === 6)) return [255, 255, 255];
+      if (y === 4 && (x === 2 || x === 5)) return hx('#2a8a3a'); // green eyes
+      if (y === 8 && x >= 2 && x <= 5) return skinD;
+    }
+    if (f === 'top') return vary(prof === 'librarian' ? hx('#5a4030') : skinD, r, 0.05);
+    return vary(skin, r, 0.03);
+  });
+  s.paintBox(24, 0, 2, 4, 2, () => vary(hx('#a86c4c'), r, 0.04));
+  s.paintBox(16, 20, 8, 12, 6, (f, x, y) => (f === 'front' && y < 1 ? T : vary(y > 9 ? RD : R, r, 0.04)));
+  s.paintBox(0, 38, 8, 18, 6, (f, x, y) => {
+    if (prof === 'smith' && f === 'front' && y > 2) return vary(hx('#2a1a0a'), r, 0.05);
+    if (prof === 'butcher' && f === 'front' && y > 2 && y < 14) return y === 3 ? T : vary(hx('#f0f0f0'), r, 0.03);
+    if (y === 17) return T;
+    return vary(y % 5 === 0 ? RD : R, r, 0.04);
+  });
+  s.paintBox(44, 22, 4, 8, 4, (f, x, y) => (y > 5 ? vary(skin, r, 0.03) : vary(R, r, 0.04)));
+  s.paintBox(40, 38, 8, 4, 4, () => vary(R, r, 0.04));
+  s.paintBox(0, 22, 4, 12, 4, (f, x, y) => (y > 9 ? hx('#3a2a1a') : vary(RD, r, 0.04)));
   return s;
 }
 

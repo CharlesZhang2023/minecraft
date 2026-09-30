@@ -40,7 +40,7 @@ export class World {
   savedKeys = new Set<string>();
   onMesh: (c: Chunk, r: MeshResult) => void = () => {};
   onUnload: (c: Chunk) => void = () => {};
-  onChunkLoaded: (c: Chunk) => void = () => {};
+  onChunkLoaded: (c: Chunk, spawns?: { type: string; x: number; y: number; z: number; data?: Record<string, unknown> }[]) => void = () => {};
   onBlockChange: (x: number, y: number, z: number, old: number, v: number) => void = () => {};
   renderDistance = 8;
   centerCX = 0;
@@ -295,7 +295,7 @@ export class World {
     slot.w.postMessage({ type: 'mesh', id: ++this.jobId, cx: c.cx, cz: c.cz, chunks, biomes, sky: this.dimension !== 'nether' });
   }
 
-  private acceptChunk(c: Chunk, blocks: Uint16Array, biomes: Uint8Array, tiles?: [number, TileEntity][]) {
+  private acceptChunk(c: Chunk, blocks: Uint16Array, biomes: Uint8Array, tiles?: [number, TileEntity][], spawns?: { type: string; x: number; y: number; z: number; data?: Record<string, unknown> }[]) {
     c.blocks = blocks;
     c.biomes = biomes;
     c.ready = true;
@@ -308,8 +308,8 @@ export class World {
         const n = this.getChunk(c.cx + dx, c.cz + dz);
         if (n && n.ready && n !== c) n.dirty = true;
       }
-    // chests generated in dungeons get loot
-    this.onChunkLoaded(c);
+    // chests generated in dungeons get loot; fresh chunks may spawn structure inhabitants
+    this.onChunkLoaded(c, spawns);
   }
 
   private onWorkerMessage(slot: { w: Worker; busy: boolean; job: Job | null }, d: { type: string; cx: number; cz: number } & Record<string, unknown>) {
@@ -319,7 +319,8 @@ export class World {
     const c = job.chunk;
     if (d.type === 'gen') {
       if (this.chunks.get(chunkKey(c.cx, c.cz)) !== c) return; // unloaded meanwhile
-      this.acceptChunk(c, d.blocks as Uint16Array, d.biomes as Uint8Array);
+      this.acceptChunk(c, d.blocks as Uint16Array, d.biomes as Uint8Array, undefined, d.spawns as { type: string; x: number; y: number; z: number }[]);
+      c.modified = !!(d.spawns as unknown[] | undefined)?.length; // remember that inhabitants were spawned
     } else if (d.type === 'mesh') {
       c.meshing = false;
       if (this.chunks.get(chunkKey(c.cx, c.cz)) !== c) return;

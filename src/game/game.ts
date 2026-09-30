@@ -149,7 +149,16 @@ export class Game {
     this.particles = new Particles(world);
     this.ticker = new BlockTicker(this, world);
     world.onBlockChange = (x, y, z, old, v) => this.ticker!.onChange(x, y, z, old, v);
-    world.onChunkLoaded = (c) => this.ticker!.onChunkLoaded(c);
+    world.onChunkLoaded = (c, spawns) => {
+      this.ticker!.onChunkLoaded(c);
+      if (spawns && !this.panorama) for (const sp of spawns) {
+        const e = createEntity(sp.type, world, this);
+        if (!e) continue;
+        e.setPos(sp.x, sp.y, sp.z);
+        if (sp.data) Object.assign(e, sp.data);
+        this.entities.push(e);
+      }
+    };
     this.dimension = world.dimension;
   }
 
