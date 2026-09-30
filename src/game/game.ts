@@ -96,6 +96,7 @@ export class Game {
     const extra = ITEM_SPRITE_NAMES.map((n) => ({ name: 'item/' + n, img: getItemSprite(n)! }));
     extra.push({ name: 'weather_rain', img: rainTexture() }, { name: 'weather_snow', img: snowTexture() });
     extra.push({ name: 'grass_side_item', img: tintMasked(getTexture('grass_side'), 0x7cbd6b) });
+    extra.push({ name: 'entity_shadow', img: shadowTexture() });
     this.renderer.initAtlas(extra);
     this.gui = new Gui();
     this.input = new Input(uiCanvas);
@@ -735,6 +736,16 @@ export function boxFaces(m: import('../render/gl').DynMesh, a: number[], b: numb
 }
 
 export { stack, I, getItem, Render, CHUNK_H, mat4 };
+
+function shadowTexture(): Uint8ClampedArray {
+  const img = new Uint8ClampedArray(16 * 16 * 4);
+  for (let y = 0; y < 16; y++)
+    for (let x = 0; x < 16; x++) {
+      const d = Math.hypot(x - 7.5, y - 7.5) / 7.5;
+      img[(y * 16 + x) * 4 + 3] = d < 1 ? Math.round(255 * (1 - d * d) * 0.9 + 25) * (d < 0.95 ? 1 : 0.5) : 0;
+    }
+  return img;
+}
 
 /** Copy of a texture with the tint-masked (alpha 254) pixels coloured. */
 function tintMasked(img: Uint8ClampedArray, col: number): Uint8ClampedArray {

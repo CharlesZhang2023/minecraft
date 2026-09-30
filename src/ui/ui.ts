@@ -15,6 +15,7 @@ export class UI {
   chat: Chat;
   mx = 0;
   my = 0;
+  suppressChar = false;
   previewBox: { x: number; y: number; w: number; h: number; yaw: number; pitch: number } | null = null;
 
   constructor(public game: Game) {
@@ -23,7 +24,11 @@ export class UI {
     this.chat = new Chat(this);
     const inp = game.input;
     inp.onKeyDown = (e) => this.keyDown(e);
-    inp.onChar = (ch) => this.screen?.char(ch);
+    inp.onChar = (ch) => {
+      // the key that opened a screen must not also be typed into it
+      if (this.suppressChar) { this.suppressChar = false; return; }
+      this.screen?.char(ch);
+    };
     inp.onMouseDown = (x, y, b) => {
       game.audio.init();
       const [mx, my] = this.toGui(x, y);
@@ -99,9 +104,9 @@ export class UI {
     if (!g.world || g.panorama) return false;
     switch (e.code) {
       case 'Escape': this.open(new Menus.PauseScreen(this)); return true;
-      case 'KeyE': if (!g.player!.dead) this.openInventory(); return true;
-      case 'KeyT': this.open(new Menus.ChatScreen(this, '')); return true;
-      case 'Slash': this.open(new Menus.ChatScreen(this, '/')); return true;
+      case 'KeyE': if (!g.player!.dead) { this.suppressChar = true; this.openInventory(); } return true;
+      case 'KeyT': this.suppressChar = true; this.open(new Menus.ChatScreen(this, '')); return true;
+      case 'Slash': this.suppressChar = true; this.open(new Menus.ChatScreen(this, '/')); return true;
       case 'Enter': this.open(new Menus.ChatScreen(this, '')); return true;
       case 'F1': g.hideHud = !g.hideHud; return true;
       case 'F3': g.showDebug = !g.showDebug; return true;

@@ -1089,13 +1089,17 @@ for (let i = 0; i < 8; i++) {
 for (let i = 0; i < 16; i++) {
   gens['particle_explosion_' + i] = (r) => {
     const img = newImg();
-    const rad = 3 + i * 0.35;
-    for (let k = 0; k < 40 - i * 2; k++) {
-      const a = r.next() * Math.PI * 2, d = r.next() * rad;
-      const x = Math.round(7.5 + Math.cos(a) * d), y = Math.round(7.5 + Math.sin(a) * d);
-      const c = 255 - i * 10 - r.int(40);
-      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) set(img, x + dx, y + dy, [c, c, c], 255);
-    }
+    const f = blobField(new Random(4040), 2);
+    const rad = 5 + i * 0.2, fade = 1 - i / 18;
+    for (let y = 0; y < S; y++)
+      for (let x = 0; x < S; x++) {
+        const d = Math.hypot(x - 7.5, y - 7.5) / rad;
+        const n = f[y * S + x];
+        if (d + (n - 0.5) * 0.6 > 1) continue;
+        const c = Math.round((150 + n * 90 - i * 5) * (i < 3 ? 1.1 : 1));
+        set(img, x, y, [Math.min(255, c), Math.min(255, c), Math.min(255, c)], Math.round(255 * fade));
+      }
+    void r;
     return img;
   };
 }

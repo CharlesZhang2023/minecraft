@@ -160,19 +160,35 @@ export class Interaction {
     }
   }
 
+  /** Set several blocks atomically: support checks run only after all are in place. */
+  setAll(changes: [number, number, number, number][]) {
+    const t = this.game.ticker!, w = this.world;
+    t.suppress = true;
+    const done: [number, number, number, number][] = [];
+    for (const c of changes) if (w.set(c[0], c[1], c[2], c[3])) done.push(c);
+    t.suppress = false;
+    for (const [x, y, z] of done) {
+      t.neighborChanged(x, y, z);
+      for (const [dx, dy, dz] of FACE_DIRS) t.neighborChanged(x + dx, y + dy, z + dz);
+    }
+    return done.length > 0;
+  }
+
   /** Removes a block, and the other half of doors/beds. */
   private removeBlockAndPartner(x: number, y: number, z: number, v: number) {
     const w = this.world;
     const id = idOf(v), meta = metaOf(v);
-    w.set(x, y, z, B.AIR);
+    const changes: [number, number, number, number][] = [[x, y, z, B.AIR]];
     if (id === B.OAK_DOOR) {
       const oy = meta & 8 ? y - 1 : y + 1;
-      if (w.getId(x, oy, z) === B.OAK_DOOR) w.set(x, oy, z, B.AIR);
+      if (w.getId(x, oy, z) === B.OAK_DOOR) changes.push([x, oy, z, B.AIR]);
     } else if (id === B.BED) {
       const [dx, dz] = HORIZ[meta & 3];
       const ox = meta & 8 ? x - dx : x + dx, oz = meta & 8 ? z - dz : z + dz;
-      if (w.getId(ox, y, oz) === B.BED) w.set(ox, y, oz, B.AIR);
+      if (w.getId(ox, y, oz) === B.BED) changes.push([ox, y, oz, B.AIR]);
     }
+    if (changes.length === 1) w.set(x, y, z, B.AIR);
+    else this.setAll(changes);
   }
 
   dropTileContents(x: number, y: number, z: number, v: number) {
@@ -302,8 +318,7 @@ export class Interaction {
         const lowerY = meta & 8 ? t.y - 1 : t.y;
         const lower = w.get(t.x, lowerY, t.z);
         const nm = metaOf(lower) ^ 4;
-        w.set(t.x, lowerY, t.z, pack(B.OAK_DOOR, nm));
-        w.set(t.x, lowerY + 1, t.z, pack(B.OAK_DOOR, (nm & 7) | 8));
+        this.setAll([[t.x, lowerY, t.z, pack(B.OAK_DOOR, nm)], [t.x, lowerY + 1, t.z, pack(B.OAK_DOOR, (nm & 7) | 8)]]);
         g.audio.play('door', { x: t.x + 0.5, y: t.y + 0.5, z: t.z + 0.5 }, 1, 0.9 + Math.random() * 0.1);
         return true;
       }
@@ -564,8 +579,7 @@ export class Interaction {
     if (blockId === B.OAK_DOOR) {
       if (!BLOCKS[w.getId(x, y + 1, z)].replaceable || !BLOCKS[w.getId(x, y - 1, z)].solid) return false;
       if (!this.noEntities(x, y, z, pack(B.OAK_DOOR, facing)) || !this.noEntities(x, y + 1, z, pack(B.OAK_DOOR, facing | 8))) return false;
-      w.set(x, y, z, pack(B.OAK_DOOR, facing));
-      w.set(x, y + 1, z, pack(B.OAK_DOOR, facing | 8));
+      this.setAll([[x, y, z, pack(B.OAK_DOOR, facing)], [x, y + 1, z, pack(B.OAK_DOOR, facing | 8)]]);
       g.playBlockSound(B.OAK_DOOR, x, y, z, 'place');
       this.consume(1);
       return true;
@@ -574,8 +588,7 @@ export class Interaction {
       const [dx, dz] = HORIZ[facing];
       const hx = x + dx, hz = z + dz;
       if (!BLOCKS[w.getId(hx, y, hz)].replaceable || !BLOCKS[w.getId(x, y - 1, z)].solid || !BLOCKS[w.getId(hx, y - 1, hz)].solid) return false;
-      w.set(x, y, z, pack(B.BED, facing));
-      w.set(hx, y, hz, pack(B.BED, facing | 8));
+      this.setAll([[x, y, z, pack(B.BED, facing)], [hx, y, hz, pack(B.BED, facing | 8)]]);
       g.playBlockSound(B.BED, x, y, z, 'place');
       this.consume(1);
       return true;

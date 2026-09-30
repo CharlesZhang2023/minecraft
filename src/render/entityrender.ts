@@ -177,6 +177,45 @@ export class EntityRenderer {
       this.drawItemEntity(dyn, a.e, ix, iy, iz, t, 15, 0, true);
     }
     this.r.drawDyn(dyn, { cull: false });
+    // soft round shadows under entities (vanilla-style, projected on block tops)
+    const sh = this.r.dyn;
+    sh.reset();
+    const layer = TEXTURES.indexOf('entity_shadow');
+    for (const e of list) {
+      if (e === game.player && game.thirdPerson === 0) continue;
+      const size = e instanceof ItemEntity ? 0.15 : e instanceof LivingEntity ? Math.max(0.3, e.width * 0.7) * ((e as unknown as { baby?: boolean }).baby ? 0.5 : 1) : 0;
+      if (size <= 0 || (e as LivingEntity).deathTime > 0) continue;
+      const ex = e.lerpX(t), ey = e.lerpY(t), ez = e.lerpZ(t);
+      if ((ex - cam.x) ** 2 + (ez - cam.z) ** 2 > 32 * 32) continue;
+      const x0 = Math.floor(ex - size), x1 = Math.floor(ex + size), z0 = Math.floor(ez - size), z1 = Math.floor(ez + size);
+      const y0 = Math.floor(ey - 2), y1 = Math.floor(ey);
+      for (let bx = x0; bx <= x1; bx++)
+        for (let bz = z0; bz <= z1; bz++)
+          for (let by = y1; by >= y0; by--) {
+            const id = w.getId(bx, by, bz);
+            if (!BLOCKS[id].opaque) continue;
+            if (BLOCKS[w.getId(bx, by + 1, bz)].opaque) break;
+            const top = by + 1;
+            const a = 0.5 * (1 - (ey - top) / 2);
+            if (a <= 0) break;
+            const [sl] = w.getLight(bx, by + 1, bz);
+            const alpha = a * Math.max(0.3, sl / 15);
+            const u0 = (bx - ex) / (2 * size) + 0.5, u1 = (bx + 1 - ex) / (2 * size) + 0.5;
+            const v0 = (bz - ez) / (2 * size) + 0.5, v1 = (bz + 1 - ez) / (2 * size) + 0.5;
+            const yy = top + 0.0156 - cam.y;
+            const X0 = bx - cam.x, X1 = bx + 1 - cam.x, Z0 = bz - cam.z, Z1 = bz + 1 - cam.z;
+            sh.v(X0, yy, Z0, u0, v0, layer, 0x000000, alpha, 15, 15);
+            sh.v(X0, yy, Z1, u0, v1, layer, 0x000000, alpha, 15, 15);
+            sh.v(X1, yy, Z1, u1, v1, layer, 0x000000, alpha, 15, 15);
+            sh.v(X1, yy, Z0, u1, v0, layer, 0x000000, alpha, 15, 15);
+            break;
+          }
+    }
+    if (sh.count) {
+      gl.depthMask(false);
+      this.r.drawDyn(sh, { blend: true, cull: false, fullbright: true, alphaCut: 0.002 });
+      gl.depthMask(true);
+    }
   }
 
   tick() {

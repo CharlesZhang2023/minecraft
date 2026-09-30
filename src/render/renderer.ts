@@ -592,8 +592,8 @@ function sunImage(): Img {
     for (let x = 0; x < 32; x++) {
       const d = Math.max(Math.abs(x - 15.5), Math.abs(y - 15.5));
       const i = (y * 32 + x) * 4;
-      if (d < 8) { img[i] = 255; img[i + 1] = 255; img[i + 2] = d < 6 ? 235 : 190; img[i + 3] = 255; }
-      else if (d < 15) { const a = (1 - (d - 8) / 7) * 0.6; img[i] = 255; img[i + 1] = 220; img[i + 2] = 120; img[i + 3] = a * 255; }
+      if (d < 5) { img[i] = 255; img[i + 1] = 255; img[i + 2] = d < 4 ? 235 : 200; img[i + 3] = 255; }
+      else if (d < 14) { const a = Math.pow(1 - (d - 5) / 9, 1.6) * 0.55; img[i] = 255; img[i + 1] = 225; img[i + 2] = 140; img[i + 3] = a * 255; }
     }
   return img;
 }

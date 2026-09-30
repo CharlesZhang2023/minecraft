@@ -9,9 +9,9 @@ export const WEATHER_TEX = { rain: tex('weather_rain'), snow: tex('weather_snow'
 export function rainTexture(): Img {
   const img = newImg();
   const r = new Random(5);
-  for (let k = 0; k < 7; k++) {
-    const x = r.int(16), y0 = r.int(16), len = 3 + r.int(4);
-    for (let i = 0; i < len; i++) set(img, x, (y0 + i) % 16, [150, 170, 230], 170 + r.int(60));
+  for (let k = 0; k < 5; k++) {
+    const x = r.int(16), y0 = r.int(16), len = 4 + r.int(5);
+    for (let i = 0; i < len; i++) set(img, x, (y0 + i) % 16, [170, 190, 240], 90 + r.int(50));
   }
   return img;
 }
@@ -125,7 +125,7 @@ export class Weather {
         const vo = -((time + h) * speed) % 1 * (snow ? 1 : 4);
         const uo = snow ? Math.sin((time + h) * 0.02) * 0.2 : 0;
         const [sky, blk] = w.getLight(x, top, z);
-        const a = this.rain * (1 - Math.hypot(dx, dz) / R) * (snow ? 1 : 0.8);
+        const a = this.rain * (1 - Math.hypot(dx, dz) / R) * (snow ? 1 : 0.55);
         const px = x + 0.5 - cam.x, pz = z + 0.5 - cam.z;
         // quad facing the camera around the column axis
         const ang = Math.atan2(pz, px) + Math.PI / 2;
