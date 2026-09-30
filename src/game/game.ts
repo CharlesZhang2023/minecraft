@@ -501,6 +501,11 @@ export class Game {
       this.saveWorld();
     }
     this.ui.hud.tick();
+    // cave ambience: underground in the dark, every few minutes
+    if (this.dimension === 'overworld' && this.rng.int(6000) === 0) {
+      const [sl, bl] = w.getLight(Math.floor(p.x), Math.floor(p.y + 1), Math.floor(p.z));
+      if (sl === 0 && bl < 8 && p.y < 60) this.audio.play('cave', null, 0.7, 0.8 + this.rng.next() * 0.3);
+    }
     this.audio.setRain(this.dimension === 'overworld' && this.weather!.rainAt(p.x, p.y, p.z) && !p.isInsideOpaque() ? this.weather!.rain : 0);
   }
 

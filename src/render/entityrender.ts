@@ -33,13 +33,13 @@ export class EntityRenderer {
     const defs: Record<string, M.ModelDef> = {
       biped: M.bipedModel(), bipedThin: M.bipedModel(true), creeper: M.creeperModel(), pig: M.pigModel(), cow: M.cowModel(),
       sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(),
-      armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(), enderman: M.endermanModel(), slimeInner: M.slimeInnerModel(), slimeOuter: M.slimeOuterModel(),
+      armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(), enderman: M.endermanModel(), slimeInner: M.slimeInnerModel(), slimeOuter: M.slimeOuterModel(), squid: M.squidModel(), bat: M.batModel(),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
       cow: M.cowSkin(), sheep: M.sheepSkin(), wool: M.woolSkin(), chicken: M.chickenSkin(), spider: M.spiderSkin(),
-      ghast: M.ghastSkin(false), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(),
+      ghast: M.ghastSkin(false), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(),
     };
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
@@ -426,6 +426,39 @@ export class EntityRenderer {
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         this.drawModel('slimeOuter', 'slime', sb, pose, light, overlay, undefined, 1);
         gl.disable(gl.BLEND);
+        break;
+      }
+      case 'squid': {
+        const tent = (anyE.tentacle as number) ?? 0;
+        for (let i = 0; i < 8; i++) pose['t' + i] = [tent, (i * Math.PI * -2) / 8 + Math.PI / 2, 0];
+        const tilt = ((anyE.tilt as number) ?? 0) * DEG;
+        const sq = mat4();
+        identity(sq);
+        translate(sq, sq, x, y + 0.5, z);
+        rotateY(sq, sq, (180 - bodyYaw) * DEG);
+        rotateX(sq, sq, tilt);
+        if (deathRoll) rotateZ(sq, sq, deathRoll * DEG);
+        translate(sq, sq, 0, -1.2, 0);
+        scale(sq, sq, -1, -1, 1);
+        translate(sq, sq, 0, -1.501, 0);
+        this.drawModel('squid', 'squid', sq, pose, light, overlay);
+        break;
+      }
+      case 'bat': {
+        const hanging = !!anyE.hanging;
+        const flap = Math.cos(age * 1.3) * Math.PI * 0.25;
+        pose.rightWing = hanging ? [0, -0.15, 0] : [0, flap, 0];
+        pose.leftWing = hanging ? [0, 0.15, 0] : [0, -flap, 0];
+        pose.body = [hanging ? 0 : Math.PI / 4 + Math.cos(age * 0.1) * 0.15, 0, 0];
+        const bm = mat4();
+        identity(bm);
+        translate(bm, bm, x, y + (hanging ? 0.9 : 0), z);
+        rotateY(bm, bm, (180 - bodyYaw) * DEG);
+        if (hanging) rotateX(bm, bm, Math.PI);
+        scale(bm, bm, 0.35, 0.35, 0.35);
+        scale(bm, bm, -1, -1, 1);
+        translate(bm, bm, 0, hanging ? -1.2 : -1.0, 0);
+        this.drawModel('bat', 'bat', bm, pose, light, overlay);
         break;
       }
       case 'villager': {

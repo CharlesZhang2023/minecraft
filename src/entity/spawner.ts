@@ -28,6 +28,28 @@ export class Spawner {
     // passive animals: when new chunks come in, occasionally populate them
     if (g.ticks % 20 === 0 && animals < 40 && w.dimension === 'overworld') this.populateChunks();
     this.spawnerBlocks();
+    if (w.dimension === 'overworld' && g.ticks % 40 === 0) this.ambient(mobs);
+  }
+
+  /** Squid in deep water, bats in dark caves. */
+  private ambient(mobs: Mob[]) {
+    const g = this.game, p = g.player!, w = g.world!;
+    const squid = mobs.filter((m) => m.typeName === 'Squid').length;
+    const bats = mobs.filter((m) => m.typeName === 'Bat').length;
+    for (let i = 0; i < 4; i++) {
+      const a = this.rng.next() * Math.PI * 2, d = 20 + this.rng.next() * 40;
+      const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
+      if (!w.chunkAt(x, z)) continue;
+      if (squid < 8 && this.rng.int(2) === 0) {
+        const y = 45 + this.rng.int(17);
+        if (w.getId(x, y, z) === B.WATER && w.getId(x, y + 1, z) === B.WATER && w.getId(x, y - 1, z) === B.WATER) g.interact!.spawnMob('squid', x + 0.5, y, z + 0.5);
+      } else if (bats < 6) {
+        const y = 10 + this.rng.int(50);
+        if (w.getId(x, y, z) !== B.AIR || w.getId(x, y + 1, z) !== B.AIR) continue;
+        const [sky, blk] = w.getLight(x, y, z);
+        if (sky === 0 && blk < 4 && OPAQUE[w.getId(x, y - 1, z)]) g.interact!.spawnMob('bat', x + 0.5, y, z + 0.5);
+      }
+    }
   }
 
   private spawnable(x: number, y: number, z: number, h: number): boolean {

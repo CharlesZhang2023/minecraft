@@ -1,14 +1,14 @@
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import type { Entity } from './entity';
-import { Zombie, Skeleton, Creeper, Spider, Pig, Cow, Sheep, Chicken, ZombiePigman, Ghast, Villager, Enderman, Slime } from './mobs';
+import { Zombie, Skeleton, Creeper, Spider, Pig, Cow, Sheep, Chicken, ZombiePigman, Ghast, Villager, Enderman, Slime, Squid, Bat } from './mobs';
 import { ItemEntity } from './item';
 import { Boat } from './boat';
 
 type Ctor = new (w: World, g: Game) => Entity;
 export const MOB_TYPES: Record<string, Ctor> = {
   zombie: Zombie, skeleton: Skeleton, creeper: Creeper, spider: Spider, pig: Pig, cow: Cow, sheep: Sheep, chicken: Chicken,
-  zombie_pigman: ZombiePigman, 'zombie pigman': ZombiePigman, ghast: Ghast, villager: Villager, enderman: Enderman, slime: Slime,
+  zombie_pigman: ZombiePigman, 'zombie pigman': ZombiePigman, ghast: Ghast, villager: Villager, enderman: Enderman, slime: Slime, squid: Squid, bat: Bat,
 };
 
 export function createEntity(type: string, world: World, game: Game): Entity | null {

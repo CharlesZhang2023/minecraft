@@ -157,6 +157,26 @@ export function slimeOuterModel(): ModelDef {
   return { texW: 64, texH: 32, parts: [part('cube', 0, 0, 0, [box(-4, 16, -4, 8, 8, 8, 0, 0)])] };
 }
 
+export function squidModel(): ModelDef {
+  const t: ModelPart[] = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI * 2) / 8;
+    t.push(part('t' + i, Math.cos(a) * 5, 15, Math.sin(a) * 5, [box(-1, 0, -1, 2, 18, 2, 48, 0)], { ry: (i * Math.PI * -2) / 8 + Math.PI / 2 }));
+  }
+  return { texW: 64, texH: 32, parts: [part('body', 0, 8, 0, [box(-6, -8, -6, 12, 16, 12, 0, 0)]), ...t] };
+}
+export function batModel(): ModelDef {
+  return {
+    texW: 64, texH: 64,
+    parts: [
+      part('head', 0, 0, 0, [box(-3, -3, -3, 6, 6, 6, 0, 0), box(-4, -6, -2, 3, 4, 1, 24, 0), box(1, -6, -2, 3, 4, 1, 24, 0, { mirror: true })]),
+      part('body', 0, 0, 0, [box(-3, 4, -3, 6, 12, 6, 0, 16), box(-5, 16, 0, 10, 6, 1, 0, 34)]),
+      part('rightWing', 0, 0, 0, [box(-12, 1, 1.5, 10, 16, 1, 42, 0)]),
+      part('leftWing', 0, 0, 0, [box(2, 1, 1.5, 10, 16, 1, 42, 0, { mirror: true })]),
+    ],
+  };
+}
+
 export function ghastModel(): ModelDef {
   const tentacles: ModelPart[] = [];
   const r = new Random(1660);
@@ -438,6 +458,30 @@ export function slimeSkin(): Skin {
   s.paintBox(32, 0, 2, 2, 2, () => hx('#1a3a14'));
   s.paintBox(32, 4, 2, 2, 2, () => hx('#1a3a14'));
   s.paintBox(32, 8, 1, 1, 1, () => hx('#1a3a14'));
+  return s;
+}
+
+export function squidSkin(): Skin {
+  const s = new Skin();
+  const r = new Random(31);
+  const b = hx('#2a4a6a'), b2 = hx('#3a5a7e'), d = hx('#1a2e44');
+  s.paintBox(0, 0, 12, 16, 12, (f, x, y) => {
+    if (f === 'front' && y === 10 && (x === 3 || x === 8)) return [230, 230, 230];
+    if (f === 'front' && y === 11 && (x === 3 || x === 8)) return hx('#101010');
+    return vary(r.int(4) ? b : b2, r, 0.06);
+  });
+  s.paintBox(48, 0, 2, 18, 2, (f, x, y) => vary(y % 4 === 0 ? d : b, r, 0.06));
+  return s;
+}
+export function batSkin(): Skin {
+  const s = new Skin(64, 64);
+  const r = new Random(32);
+  const fur = hx('#4a3a2a'), dk = hx('#2a2018');
+  s.paintBox(0, 0, 6, 6, 6, (f, x, y) => (f === 'front' && y === 2 && (x === 1 || x === 4) ? hx('#101010') : vary(fur, r, 0.08)));
+  s.paintBox(24, 0, 3, 4, 1, () => vary(dk, r, 0.08));
+  s.paintBox(0, 16, 6, 12, 6, () => vary(fur, r, 0.08));
+  s.paintBox(0, 34, 10, 6, 1, () => vary(dk, r, 0.08));
+  s.paintBox(42, 0, 10, 16, 1, (f, x, y) => (y > 12 && x % 3 === 0 ? null : vary(dk, r, 0.06)));
   return s;
 }
 

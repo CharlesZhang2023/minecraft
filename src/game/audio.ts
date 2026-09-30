@@ -203,6 +203,20 @@ const GENS: Record<string, Gen> = {
   },
   'slime.jump': (r) => normalize(lowpass(env(grains(SR * 0.25, r, 6, 100, 900, 0.04), 0.005, 0.22, 2), 800), 0.7),
   'slime.squish': (r) => normalize(lowpass(env(grains(SR * 0.35, r, 10, 80, 700, 0.05), 0.005, 0.3, 1.5), 700), 0.7),
+  'bat.idle': (r) => {
+    const n = SR * 0.25;
+    const b = new Float32Array(n);
+    for (let k = 0; k < 3; k++) mixInto(b, env(tone(Math.floor(SR * 0.04), 3000 + r.next() * 1500, 2500, 'sine'), 0.002, 0.035, 2), 0.5, Math.floor(k * SR * 0.07));
+    return normalize(b, 0.4);
+  },
+  cave: (r) => {
+    const n = SR * 5;
+    const b = env(lowpass(noise(n, r), 180), 1.5, 3.5, 1);
+    mixInto(b, env(tone(n, 55 + r.next() * 30, 40 + r.next() * 40, 'sine', 0.03, 0.5), 1.2, 3.8, 1), 0.7);
+    const n2 = Math.floor(SR * 2.5);
+    mixInto(b, env(tone(n2, 300 + r.next() * 400, 150 + r.next() * 200, 'sine', 0.1, 3), 0.8, 1.6, 1.5), 0.25, Math.floor(SR * (0.5 + r.next() * 2)));
+    return normalize(b, 0.7);
+  },
   'villager.idle': (r) => {
     const n = SR * 0.45;
     const b = env(tone(n, 180 + r.next() * 40, 140 + r.next() * 60, 'saw', 0.06, 9), 0.03, 0.4, 1.5);

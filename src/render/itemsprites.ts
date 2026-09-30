@@ -745,6 +745,17 @@ sprite('blaze_powder', [
   '..yYYYYYYYYYy...',
 ], { y: hex('#c88a10'), Y: hex('#ffc830'), O: hex('#fff0a0') }, '#5a3a00');
 
+sprite('ink_sac', [
+  '', '', '', '',
+  '.......kk.......',
+  '......kKKk......',
+  '.....kKKKKk.....',
+  '....kKKLKKKk....',
+  '....kKKKKKKk....',
+  '.....kKKKKk.....',
+  '......kkkk......',
+], { k: hex('#101018'), K: hex('#262636'), L: hex('#4a4a60') }, '#050508');
+
 export function getItemSprite(name: string): Img | null {
   const f = sprites[name];
   return f ? f() : null;

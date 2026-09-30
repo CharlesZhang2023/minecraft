@@ -162,6 +162,7 @@ export const I2 = {
   SLIME_BALL: item('slime_ball', 'Slimeball'),
   ENDER_EYE: item('ender_eye', 'Eye of Ender'),
   BLAZE_POWDER: item('blaze_powder', 'Blaze Powder'),
+  INK_SAC: item('ink_sac', 'Ink Sac'),
 };
 
 export function itemByName(name: string): ItemDef | undefined {

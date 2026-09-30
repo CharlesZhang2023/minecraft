@@ -857,6 +857,103 @@ export class Slime extends Mob {
   override loadExtra(d: Record<string, unknown>) { this.setSize((d.size as number) ?? 1); }
 }
 
+// ------------------------------------------------------------------ ambient: squid & bat
+export class Squid extends Mob {
+  typeName = 'Squid';
+  override model = 'squid';
+  override skin = 'squid';
+  override canBreathe = true;
+  override xp = 1 + rng.int(3);
+  tentacle = 0;
+  tilt = 0;
+  private swim = 0;
+  private dir = { x: 0, y: 0, z: 0 };
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.width = this.height = 0.8;
+    this.maxHealth = this.health = 10;
+  }
+  override gravity() { return this.inWater ? 0 : 0.08; }
+  override ai() {
+    this.swim += 0.12 + rng.next() * 0.03;
+    if (this.swim > Math.PI * 2) { this.swim -= Math.PI * 2; if (rng.int(10) === 0) this.swim = 0; }
+    const burst = Math.sin(this.swim);
+    this.tentacle = Math.abs(burst) * 0.9 + 0.2;
+    if (rng.int(50) === 0 || (!this.dir.x && !this.dir.z)) {
+      const a = rng.next() * Math.PI * 2;
+      this.dir = { x: Math.cos(a) * 0.2, y: -0.1 + rng.next() * 0.2, z: Math.sin(a) * 0.2 };
+    }
+  }
+  override travel() {
+    this.updateFluidState();
+    if (this.inWater) {
+      const s = Math.max(0, Math.sin(this.swim));
+      this.vx = this.dir.x * s; this.vy = this.dir.y * s; this.vz = this.dir.z * s;
+      if (s > 0) this.yaw = this.bodyYaw = this.headYaw = (Math.atan2(this.dir.z, this.dir.x) * 180) / Math.PI - 90;
+      this.tilt += (-Math.atan2(this.dir.y, 0.2) * 57 * s - this.tilt) * 0.1;
+    } else {
+      this.vy -= 0.08;
+      this.vx *= 0.9; this.vz *= 0.9;
+      this.tilt += (90 - this.tilt) * 0.05;
+      if (this.onGround && rng.int(20) === 0) this.vy = 0.3;
+    }
+    this.move(this.vx, this.vy, this.vz);
+  }
+  override environment() {
+    if (!this.inWater && this.age % 20 === 0) this.damage(1, 'suffocate');
+  }
+  override drops(): ItemStack[] { return [stack(I2.INK_SAC, 1 + rng.int(3))]; }
+  override despawnCheck() {
+    const p = this.game.player;
+    if (p && this.distanceTo(p) > 96) this.removed = true;
+  }
+}
+
+export class Bat extends Mob {
+  typeName = 'Bat';
+  override model = 'bat';
+  override skin = 'bat';
+  override sayName = 'bat.idle';
+  override hurtName = 'bat.idle';
+  override deathName = 'bat.idle';
+  override xp = 0;
+  hanging = false;
+  private target2: { x: number; y: number; z: number } | null = null;
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.width = 0.5; this.height = 0.9;
+    this.maxHealth = this.health = 6;
+    this.soundPitch = 1.8;
+  }
+  override gravity() { return 0; }
+  override isFlying() { return true; }
+  override ai() {
+    const w = this.world, p = this.game.player;
+    const bx = Math.floor(this.x), by = Math.floor(this.y + 1), bz = Math.floor(this.z);
+    if (this.hanging) {
+      this.vx = this.vy = this.vz = 0;
+      if (!BLOCKS[w.getId(bx, by, bz)].opaque || (p && this.distanceTo(p) < 4 && !p.sneaking) || rng.int(400) === 0) this.hanging = false;
+      return;
+    }
+    if (!this.target2 || rng.int(30) === 0 || Math.hypot(this.target2.x - this.x, this.target2.z - this.z) < 2) {
+      this.target2 = { x: this.x + rng.int(7) - rng.int(7), y: this.y + rng.int(6) - 2, z: this.z + rng.int(7) - rng.int(7) };
+    }
+    const dx = this.target2.x + 0.5 - this.x, dy = this.target2.y + 0.1 - this.y, dz = this.target2.z + 0.5 - this.z;
+    this.vx += (Math.sign(dx) * 0.5 - this.vx) * 0.1;
+    this.vy += (Math.sign(dy) * 0.7 - this.vy) * 0.1;
+    this.vz += (Math.sign(dz) * 0.5 - this.vz) * 0.1;
+    this.yaw = this.bodyYaw = this.headYaw = (Math.atan2(this.vz, this.vx) * 180) / Math.PI - 90;
+    if (rng.int(100) === 0 && BLOCKS[w.getId(bx, by, bz)].opaque) { this.hanging = true; this.setPos(this.x, by - 0.9, this.z); }
+  }
+  override travel() {
+    this.move(this.vx * 0.1, this.vy * 0.1, this.vz * 0.1);
+  }
+  override despawnCheck() {
+    const p = this.game.player;
+    if (p && this.distanceTo(p) > 64) this.removed = true;
+  }
+}
+
 // ------------------------------------------------------------------ villagers
 export interface Trade { cost: [number, number]; cost2?: [number, number]; result: [number, number]; uses: number; max: number }
 
