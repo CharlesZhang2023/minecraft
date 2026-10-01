@@ -1,6 +1,6 @@
 // The End: a floating main island of end stone with ten obsidian pillars (crystals on top), the bedrock exit
 // fountain in the middle, and far-flung outer islands. Pure function of (seed, chunk); runs in workers.
-import { Octaves, Random, hash2 } from '../noise';
+import { Octaves, Random } from '../noise';
 import { B, CHUNK_H, pack } from './blocks';
 import { BIOME } from './biomes';
 import type { ChunkGenResult } from './worldgen';
@@ -73,10 +73,6 @@ export class EndGen {
       if (lx < 0 || lz < 0 || lx > 15 || lz > 15 || y < 1 || y >= CHUNK_H) return;
       blocks[idx(lx, y, lz)] = v;
     };
-    const get = (x: number, y: number, z: number) => {
-      const lx = x - X0, lz = z - Z0;
-      return lx < 0 || lz < 0 || lx > 15 || lz > 15 || y < 0 || y >= CHUNK_H ? 0 : blocks[idx(lx, y, lz)];
-    };
 
     // ---- obsidian pillars with a crystal on a bedrock cap, three of them caged
     for (const p of endPillars(this.seed)) {
@@ -111,8 +107,6 @@ export class EndGen {
       for (let h = 0; h <= 3; h++) set(0, F + h, 0, B.BEDROCK);
       set(1, F + 2, 0, pack(B.TORCH, 4)); set(-1, F + 2, 0, pack(B.TORCH, 2)); set(0, F + 2, 1, pack(B.TORCH, 1)); set(0, F + 2, -1, pack(B.TORCH, 3));
     }
-    void get;
-    void hash2;
     return { blocks, biomes, spawns };
   }
 }

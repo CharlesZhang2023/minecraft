@@ -14,8 +14,14 @@ export interface Room { gx: number; gz: number; kind: RoomKind; half: number; cx
 export interface Corridor { a: number; b: number }
 export interface Stronghold { site: Site; y: number; rooms: Room[]; links: Corridor[] }
 
-/** Three strongholds on the inner ring, six on the next. */
+/** Three strongholds on the inner ring, six on the next. (Cached: worldgen and loot ask for every chunk/chest.) */
+const sitesCache = new Map<number, Site[]>();
 export function strongholdSites(seed: number): Site[] {
+  let sites = sitesCache.get(seed);
+  if (!sites) { sites = computeSites(seed); sitesCache.set(seed, sites); }
+  return sites;
+}
+function computeSites(seed: number): Site[] {
   const r = new Random(hash2(seed, 0x57001, 0x4d));
   const out: Site[] = [];
   const ring = (count: number, lo: number, hi: number, first: number) => {
@@ -32,8 +38,9 @@ export function strongholdSites(seed: number): Site[] {
 }
 
 export function nearestSite(seed: number, x: number, z: number): Site {
-  let best = strongholdSites(seed)[0], bd = Infinity;
-  for (const s of strongholdSites(seed)) {
+  const sites = strongholdSites(seed);
+  let best = sites[0], bd = Infinity;
+  for (const s of sites) {
     const d = (s.x - x) ** 2 + (s.z - z) ** 2;
     if (d < bd) { bd = d; best = s; }
   }

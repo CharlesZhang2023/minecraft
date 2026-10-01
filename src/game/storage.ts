@@ -21,6 +21,8 @@ export interface WorldMeta {
   dimension?: 'overworld' | 'nether' | 'end';
   endEntities?: unknown[];
   dragonKilled?: boolean;
+  /** The first dragon died but the fountain wasn't loaded yet: the egg still has to be placed. */
+  dragonEggPending?: boolean;
   enderChest?: unknown[];
   endPoemSeen?: boolean;
   achievements?: string[];

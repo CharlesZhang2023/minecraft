@@ -33,6 +33,8 @@ export class Interaction {
   arrowId = I.ARROW;
   private rng = new Random(4321);
   private leftWasDown = false;
+  /** Position of the dragon egg last punched while the button is held (so holding doesn't re-teleport it). */
+  private eggKey = '';
   private rightWasDown = false;
 
   constructor(private game: Game) {}
@@ -58,12 +60,16 @@ export class Interaction {
     }
     if (clicks.includes(1)) this.pickBlock();
     // ------ left: attack / mine
+    // the dragon egg can't be mined in survival: punching it (or sweeping onto it with the button held) teleports it
+    const egg = !!g.target && !g.targetEntity && !p.creative && this.world.getId(g.target.x, g.target.y, g.target.z) === B.DRAGON_EGG;
     if (clicks.includes(0)) {
       if (g.targetEntity) this.attack(g.targetEntity);
       else if (!g.target) p.swing();
-      else if (!p.creative && this.world.getId(g.target.x, g.target.y, g.target.z) === B.DRAGON_EGG) { teleportEgg(g, g.target.x, g.target.y, g.target.z); p.swing(); }
     }
-    if (left && !g.targetEntity && g.target && !p.spectator && this.eating === 0 && !this.usingBow) this.mine(g.target);
+    const eggKey = egg ? `${g.target!.x},${g.target!.y},${g.target!.z}` : '';
+    if (egg && (clicks.includes(0) || (left && eggKey !== this.eggKey))) { teleportEgg(g, g.target!.x, g.target!.y, g.target!.z); p.swing(); }
+    this.eggKey = left ? eggKey : '';
+    if (left && !g.targetEntity && g.target && !egg && !p.spectator && this.eating === 0 && !this.usingBow) this.mine(g.target);
     else this.breaking = null;
     // ------ right: use
     if (right) {
@@ -856,6 +862,8 @@ export class Interaction {
     }
     if (p.spectator || !(e instanceof LivingEntity)) return;
     if (e instanceof EndCrystal) { e.damage(1, 'player', p); return; }
+    // the part under the crosshair is only meaningful for this hit; damage() consumes it
+    e.hitPart = e === g.targetEntity ? g.targetPart : null;
     const held = p.inventory.held();
     const item = held ? getItem(held.id) : undefined;
     let dmg = (item?.attack ?? 1) + level(held, 'sharpness') * 1.25 + p.attackBonus();

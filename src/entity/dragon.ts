@@ -8,7 +8,7 @@ import { Entity } from './entity';
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import type { AABB } from '../math';
-import { B, BLOCKS, pack } from '../world/blocks';
+import { B, BLOCKS } from '../world/blocks';
 import { XpOrb } from './item';
 import { Random } from '../noise';
 import { END_CENTER_Y } from '../world/endgen';
@@ -159,6 +159,16 @@ export class EnderDragon extends LivingEntity {
 
   /** Hit boxes of every body part (also used for ray casts and projectiles). */
   override hitBoxes(): (AABB & { part?: string })[] {
+    // the pose walks the whole flight path, so it's built once per state, not per caller (look ray, arrows, collisions)
+    const h = this.hist[0];
+    const key = `${this.x},${this.y},${this.z},${this.yaw},${this.pyaw},${this.vy},${this.animTime},${this.hist.length},${h?.x},${h?.y},${h?.z}`;
+    if (key !== this.boxKey) { this.boxKey = key; this.boxCache = this.buildHitBoxes(); }
+    return this.boxCache;
+  }
+  private boxKey = '';
+  private boxCache: (AABB & { part?: string })[] = [];
+
+  private buildHitBoxes(): (AABB & { part?: string })[] {
     const p = dragonPose(this, 1);
     const at = (name: string, mx: number, my: number, mz: number, hx: number, hy: number, hz: number) => {
       const [dx, dy, dz] = toWorld(this.yaw, mx, my, mz);
@@ -277,11 +287,12 @@ export class EnderDragon extends LivingEntity {
 
   /** Heals from the nearest crystal; the crystal draws a beam to the dragon. */
   private checkCrystals() {
-    if (this.crystal && (this.crystal.removed || this.crystal.dead)) this.crystal = null;
+    if (this.crystal && (this.crystal.removed || this.crystal.dead)) this.setCrystal(null);
     if (this.crystal) {
       this.crystal.beam = this;
       if (this.age % 10 === 0 && this.health < this.maxHealth) this.health++;
     }
+    // like 1.8: re-pick the nearest crystal within 32 blocks now and then, letting go when none is in range
     if (rng.int(10) === 0) {
       let best: EndCrystal | null = null, bd = 32 * 32;
       for (const e of this.game.entities) {
@@ -289,12 +300,18 @@ export class EnderDragon extends LivingEntity {
         const d = (e.x - this.x) ** 2 + (e.y - this.y) ** 2 + (e.z - this.z) ** 2;
         if (d < bd) { bd = d; best = e; }
       }
-      if (best) this.crystal = best;
+      this.setCrystal(best);
     }
   }
 
+  /** Switch the healing crystal, taking the beam away from the old one. */
+  private setCrystal(c: EndCrystal | null) {
+    if (this.crystal && this.crystal !== c && this.crystal.beam === this) this.crystal.beam = null;
+    this.crystal = c;
+  }
+
   crystalLost() {
-    this.crystal = null;
+    this.setCrystal(null);
     this.invulnerable = 0;
     this.hitPart = 'head';
     this.damage(10, 'explosion', null);
@@ -335,7 +352,7 @@ export class EnderDragon extends LivingEntity {
         for (let y = y0; y <= y1; y++)
           for (let z = z0; z <= z1; z++) {
             const id = w.getId(x, y, z);
-            if (id === 0 || id === B.OBSIDIAN || id === B.BEDROCK || id === B.END_STONE || id === B.END_PORTAL || id === B.IRON_BARS && false) continue;
+            if (id === 0 || id === B.OBSIDIAN || id === B.BEDROCK || id === B.END_STONE || id === B.END_PORTAL) continue;
             if (BLOCKS[id].hardness < 0) continue;
             w.set(x, y, z, B.AIR);
             if (rng.int(6) === 0) this.game.particles?.smoke(x + 0.5, y + 0.5, z + 0.5, true);
@@ -345,11 +362,12 @@ export class EnderDragon extends LivingEntity {
 
   // ---------------------------------------------------------------- damage & death
   override damage(amount: number, source: DamageSource, attacker?: Entity | null): boolean {
+    // the hit part only applies to the hit that set it
+    const part = this.hitPart;
+    this.hitPart = null;
     if (this.dead) return false;
     if (source === 'void' || source === 'fall' || source === 'drown' || source === 'suffocate' || source === 'cactus' || source === 'lava' || source === 'fire') return false;
     if (source === 'mob') return false;
-    const part = this.hitPart;
-    this.hitPart = null;
     if (part !== 'head' && source !== 'explosion') amount = amount / 4 + 1;
     const r = super.damage(amount, source, attacker);
     if (r) {
@@ -362,7 +380,7 @@ export class EnderDragon extends LivingEntity {
   override die(source: DamageSource, attacker: Entity | null) {
     super.die(source, attacker);
     this.deathTicks = 0;
-    this.crystal = null;
+    this.setCrystal(null);
     this.vx = this.vz = 0; this.vy = 0.02;
     this.game.audio.play('dragon.death', null, 3, 1);
   }
@@ -408,13 +426,33 @@ export class EnderDragon extends LivingEntity {
 export function finishDragonFight(g: Game) {
   const w = g.world;
   if (!w || w.dimension !== 'end') return;
-  const first = !g.meta?.dragonKilled;
-  if (g.meta) g.meta.dragonKilled = true;
-  const F = END_CENTER_Y;
-  for (let dx = -2; dx <= 2; dx++)
-    for (let dz = -2; dz <= 2; dz++) if (dx * dx + dz * dz <= 6) w.set(dx, F + 1, dz, B.END_PORTAL);
-  if (first) w.set(0, F + 4, 0, B.DRAGON_EGG);
+  if (g.meta) {
+    if (!g.meta.dragonKilled) g.meta.dragonEggPending = true;
+    g.meta.dragonKilled = true;
+  }
   g.achievements.unlock('theEnd2');
   g.ui.chat.add('§dThe Ender Dragon has been slain. The exit portal opens beneath you.');
-  void pack;
+  buildExitPortal(g);
+}
+
+/**
+ * Light the exit portal (and place a pending egg) once the fountain's chunks are loaded. The fight can end far
+ * from the origin, so this is retried every second while in the End; it also repairs a missing portal.
+ */
+export function buildExitPortal(g: Game) {
+  const w = g.world, meta = g.meta;
+  if (!w || w.dimension !== 'end' || !meta?.dragonKilled) return;
+  for (const [x, z] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) if (!w.chunkAt(x, z)) return;
+  const F = END_CENTER_Y;
+  for (let dx = -2; dx <= 2; dx++)
+    for (let dz = -2; dz <= 2; dz++) {
+      const r2 = dx * dx + dz * dz;
+      // the bedrock pillar stays in the middle of the portal
+      if (r2 === 0 || r2 > 6) continue;
+      if (w.getId(dx, F + 1, dz) !== B.END_PORTAL) w.set(dx, F + 1, dz, B.END_PORTAL);
+    }
+  if (meta.dragonEggPending) {
+    w.set(0, F + 4, 0, B.DRAGON_EGG);
+    meta.dragonEggPending = false;
+  }
 }

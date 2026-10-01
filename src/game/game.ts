@@ -40,7 +40,7 @@ import { Devices } from './devices';
 import { Brewing } from './brewing';
 import { LoadingScreen, CreditsScreen } from '../ui/menus';
 import { END_PLATFORM } from '../world/endgen';
-import { EnderDragon } from '../entity/dragon';
+import { EnderDragon, buildExitPortal } from '../entity/dragon';
 import { tickFurnaces } from './furnace';
 import { rainTexture, snowTexture } from './weather';
 
@@ -77,6 +77,8 @@ export class Game {
   partial = 0;
   target: BlockHit | null = null;
   targetEntity: Entity | null = null;
+  /** Which hit box of the targeted entity the crosshair is on (only multi-part entities name them). */
+  targetPart: string | null = null;
   thirdPerson = 0;
   hideHud = false;
   showDebug = false;
@@ -140,9 +142,14 @@ export class Game {
     this.audio.musicVolume = this.options.music;
   }
 
+  private lastSize = '';
   resize() {
     const dpr = device.ratio(), vp = device.viewport();
     const w = Math.max(1, Math.floor(vp.w * dpr)), h = Math.max(1, Math.floor(vp.h * dpr));
+    // visualViewport fires scroll/resize in bursts (iOS keyboard, pinch): resizing a canvas reallocates and clears it
+    const key = `${w},${h},${vp.x},${vp.y},${vp.w},${vp.h},${device.touch}`;
+    if (key === this.lastSize) return;
+    this.lastSize = key;
     // on touch devices the canvases follow the visual viewport (it shrinks when the soft keyboard opens)
     for (const c of [this.renderer.canvas, this.uiCanvas]) {
       c.style.left = device.touch ? vp.x + 'px' : '';
@@ -520,6 +527,7 @@ export class Game {
     }
     if (this.doDaylightCycle) this.time++;
     if (this.dimension === 'overworld') this.weather!.tick();
+    if (this.dimension === 'end' && this.meta?.dragonKilled && this.ticks % 20 === 0) buildExitPortal(this);
     this.portalTick();
 
     // ---------- player input
@@ -558,6 +566,8 @@ export class Game {
       if (!w.isLoaded(e.x, e.z)) { e.preTick(); continue; }
       e.preTick();
       e.tick();
+      // items, arrows, orbs and falling blocks that drop into the void (living things take void damage instead)
+      if (e.y < -64 && !(e instanceof LivingEntity)) e.removed = true;
       if (e.removed) this.entities.splice(i, 1);
     }
     // potion swirls around entities under status effects
@@ -695,13 +705,13 @@ export class Game {
 
   updateTarget() {
     const p = this.player!;
-    if (p.spectator || p.dead) { this.target = null; this.targetEntity = null; return; }
+    if (p.spectator || p.dead) { this.target = null; this.targetEntity = null; this.targetPart = null; return; }
     const eye = this.eyePos(1);
     const d = this.lookVec(p.yaw, p.pitch);
     const reach = this.reach();
     this.target = raycastBlocks(this.world!, eye.x, eye.y, eye.z, d.x, d.y, d.z, reach);
     // entities
-    let best: Entity | null = null;
+    let best: Entity | null = null, bestPart: string | null = null;
     let bestT = this.target ? this.target.t : Math.min(reach, 3.5);
     for (const e of this.entities) {
       if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat)) continue; }
@@ -709,10 +719,11 @@ export class Game {
       for (const b of e.hitBoxes()) {
         const g = 0.1;
         const r = rayAABB(eye.x, eye.y, eye.z, d.x, d.y, d.z, { x0: b.x0 - g, y0: b.y0 - g, z0: b.z0 - g, x1: b.x1 + g, y1: b.y1 + g, z1: b.z1 + g }, bestT);
-        if (r && r.t < bestT && r.t <= 3.5) { bestT = r.t; best = e; e.hitPart = b.part ?? null; }
+        if (r && r.t < bestT && r.t <= 3.5) { bestT = r.t; best = e; bestPart = b.part ?? null; }
       }
     }
     this.targetEntity = best;
+    this.targetPart = bestPart;
     if (best) this.target = null;
   }
 

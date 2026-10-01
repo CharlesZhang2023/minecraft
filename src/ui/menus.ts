@@ -468,7 +468,8 @@ export class DeathScreen extends Screen {
       await this.game.closeWorld(true);
       this.ui.open(new TitleScreen(this.ui));
     });
-    respawn.enabled = title.enabled = false;
+    // a short delay so a click meant for the game doesn't respawn instantly (init also runs again on relayout)
+    respawn.enabled = title.enabled = this.t >= 20;
     this.widgets = [respawn, title];
   }
   override tick() {

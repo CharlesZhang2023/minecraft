@@ -92,7 +92,8 @@ export class World {
   }
   /** Solid (unloaded chunks count as solid so entities don't fall into the void while loading). */
   getForPhysics(x: number, y: number, z: number): number {
-    if (y < 0) return B.BEDROCK;
+    // below the world is open void (the End has no bedrock floor), where living things take void damage
+    if (y < 0) return 0;
     if (y >= CHUNK_H) return 0;
     const c = this.chunks.get(chunkKey(x >> 4, z >> 4));
     if (!c || !c.ready) return B.BEDROCK;

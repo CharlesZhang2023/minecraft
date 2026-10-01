@@ -192,7 +192,7 @@ export class EntityRenderer {
     for (const e of list) {
       if (!(e instanceof EndCrystal) || !e.beam || e.removed || e.dead || (e.beam as EnderDragon).removed) continue;
       const d = e.beam as EnderDragon;
-      if (d.dead || (e.age & 1) < 0) continue;
+      if (d.dead) continue;
       this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + 1.2 - cam.y, e.lerpZ(t) - cam.z, d.lerpX(t) - cam.x, d.lerpY(t) - 0.5 - cam.y, d.lerpZ(t) - cam.z, e.age + t);
     }
     // blocks being moved by pistons

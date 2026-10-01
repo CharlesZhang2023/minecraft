@@ -154,6 +154,7 @@ export class TouchControls {
   private touches = new Map<number, Touch>();
   private keyboard: SoftKeyboard;
   private wasPlaying = false;
+  private wasTouch = false;
   private lastScreen: unknown = null;
   private sneak = false;
   private rightTool = false;
@@ -276,7 +277,7 @@ export class TouchControls {
     }
     const W = this.canvas.width, H = this.canvas.height;
     const hasStick = [...this.touches.values()].some((o) => o !== t && o.role === 'stick');
-    if (t.x < W * 0.42 && t.y > H * 0.2 && !hasStick && this.hotbarSlot(t.x, t.y) < 0) {
+    if (t.x < W * 0.42 && t.y > H * 0.2 && !hasStick) {
       t.role = 'stick';
       return;
     }
@@ -366,7 +367,7 @@ export class TouchControls {
     e.preventDefault();
     device.touched();
     this.touches.delete(e.pointerId);
-    const inp = this.game.input, k = this.k;
+    const inp = this.game.input;
     const x = t.x, y = t.y;
     switch (t.role) {
       case 'stick':
@@ -406,7 +407,6 @@ export class TouchControls {
         }
         break;
     }
-    void k;
     this.keyboard.sync();
   }
 
@@ -434,9 +434,11 @@ export class TouchControls {
   update() {
     const inp = this.game.input;
     if (!device.touch) {
-      if (this.touches.size || inp.stick) this.releaseAll();
+      // switched to mouse and keyboard: drop everything touch was holding, including the sneak and Shift toggles
+      if (this.wasTouch) this.leaveTouch();
       return;
     }
+    this.wasTouch = true;
     const playing = this.isPlaying();
     if (playing !== this.wasPlaying || this.ui.screen !== this.lastScreen) {
       if (playing !== this.wasPlaying) this.releaseAll();
@@ -476,8 +478,19 @@ export class TouchControls {
     inp.mouseDown.delete(2);
   }
 
-  /** The viewport changed: a keyboard may have opened or closed, so make sure focus follows the screen. */
-  onResize() { /* layout is rebuilt by UI.render when the GUI size changes */ }
+  private leaveTouch() {
+    const inp = this.game.input;
+    this.wasTouch = false;
+    this.sneak = this.rightTool = this.shiftTool = false;
+    // only let go of mouse buttons touch pressed: the click that switched modes may be a real one
+    const touchMouse = this.pulses.length > 0 || [...this.touches.values()].some((t) => t.holding || t.down || (t.role === 'btn' && (t.id2 === 'attack' || t.id2 === 'use')));
+    this.touches.clear();
+    this.pressed.clear();
+    this.pulses = [];
+    inp.stick = null;
+    inp.virtual.clear();
+    if (touchMouse) { inp.mouseDown.delete(0); inp.mouseDown.delete(2); }
+  }
 
   // ---------------------------------------------------------------- drawing
   render(ctx: CanvasRenderingContext2D) {
