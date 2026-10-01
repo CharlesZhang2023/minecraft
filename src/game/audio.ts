@@ -201,6 +201,30 @@ const GENS: Record<string, Gen> = {
     mixInto(b, env(bandpass(noise(n, r), 400, 3000), 0.005, 0.3, 2), 0.4);
     return normalize(b, 0.6);
   },
+  'silverfish.say': (r) => normalize(bandpass(env(tone(SR * 0.12, 3400 + r.next() * 600, 2600, 'square'), 0.002, 0.1, 2), 1500, 6000), 0.4),
+  'silverfish.hit': (r) => normalize(bandpass(env(tone(SR * 0.16, 2800 + r.next() * 400, 1400, 'square'), 0.002, 0.14, 2), 1200, 5000), 0.5),
+  'silverfish.kill': (r) => normalize(bandpass(env(tone(SR * 0.3, 2200, 500, 'saw'), 0.002, 0.28, 2), 600, 4000), 0.6),
+  'dragon.growl': (r) => {
+    const n = SR * 2.6;
+    const b = env(tone(n, 110 + r.next() * 30, 55, 'saw', 0.35, 6), 0.25, 2.2, 1.4);
+    mixInto(b, env(bandpass(noise(n, r), 150, 900), 0.2, 2.2, 1.5), 0.6);
+    mixInto(b, env(tone(n, 260, 120, 'saw', 0.5, 9), 0.4, 1.8, 1.5), 0.25);
+    return normalize(bandpass(b, 50, 1800), 0.8);
+  },
+  'dragon.flap': (r) => normalize(env(lowpass(noise(SR * 0.7, r), 260), 0.12, 0.55, 2), 0.7),
+  'dragon.hit': (r) => {
+    const n = SR * 0.7;
+    const b = env(tone(n, 340 + r.next() * 60, 120, 'saw', 0.2, 18), 0.005, 0.6, 1.8);
+    mixInto(b, env(bandpass(noise(n, r), 200, 2500), 0.003, 0.3, 2), 0.5);
+    return normalize(bandpass(b, 80, 2800), 0.75);
+  },
+  'dragon.death': (r) => {
+    const n = SR * 4.5;
+    const b = env(tone(n, 200, 28, 'saw', 0.3, 5), 0.05, 4.2, 1.2);
+    mixInto(b, env(lowpass(noise(n, r), 300), 0.4, 4, 1.2), 0.7);
+    mixInto(b, env(tone(n, 600, 90, 'saw', 0.4, 11), 0.1, 3.2, 1.6), 0.3);
+    return normalize(b, 0.85);
+  },
   'slime.jump': (r) => normalize(lowpass(env(grains(SR * 0.25, r, 6, 100, 900, 0.04), 0.005, 0.22, 2), 800), 0.7),
   'slime.squish': (r) => normalize(lowpass(env(grains(SR * 0.35, r, 10, 80, 700, 0.05), 0.005, 0.3, 1.5), 700), 0.7),
   'wolf.say': (r) => {

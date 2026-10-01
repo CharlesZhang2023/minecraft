@@ -33,6 +33,8 @@ export class Chunk {
 
 type Job = { type: 'gen' | 'mesh'; chunk: Chunk; version?: number };
 
+export type Dimension = 'overworld' | 'nether' | 'end';
+
 export class World {
   chunks = new Map<number, Chunk>();
   private workers: { w: Worker; busy: boolean; job: Job | null }[] = [];
@@ -48,7 +50,7 @@ export class World {
   frame = 0;
   readOnly = false;
 
-  constructor(public seed: number, public worldId: string, public dimension: 'overworld' | 'nether' = 'overworld') {
+  constructor(public seed: number, public worldId: string, public dimension: Dimension = 'overworld') {
     const n = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
     for (let i = 0; i < n; i++) {
       const w = new WorkerCtor();
@@ -97,7 +99,7 @@ export class World {
     return c.blocks[(x & 15) | ((z & 15) << 4) | (y << 8)];
   }
   get hasSky() {
-    return this.dimension !== 'nether';
+    return this.dimension === 'overworld';
   }
   getLight(x: number, y: number, z: number): [number, number] {
     if (y >= CHUNK_H) return [this.hasSky ? 15 : 0, 0];
@@ -292,7 +294,7 @@ export class World {
     c.urgent = false;
     slot.busy = true;
     slot.job = { type: 'mesh', chunk: c, version: c.version };
-    slot.w.postMessage({ type: 'mesh', id: ++this.jobId, cx: c.cx, cz: c.cz, chunks, biomes, sky: this.dimension !== 'nether' });
+    slot.w.postMessage({ type: 'mesh', id: ++this.jobId, cx: c.cx, cz: c.cz, chunks, biomes, sky: this.hasSky });
   }
 
   private acceptChunk(c: Chunk, blocks: Uint16Array, biomes: Uint8Array, tiles?: [number, TileEntity][], spawns?: { type: string; x: number; y: number; z: number; data?: Record<string, unknown> }[]) {

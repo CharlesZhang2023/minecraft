@@ -33,4 +33,5 @@ export const BIOME = {
   SAVANNA: b('Savanna', 0xbfb755, 0xaea42a, false, 0.06),
   FLOWER_FOREST: b('Flower Forest', 0x79c05a, 0x59ae30, false, 0.5),
   NETHER: b('Nether Wastes', 0xbfb755, 0xaea42a),
+  THE_END: b('The End', 0xbfb755, 0xaea42a),
 };

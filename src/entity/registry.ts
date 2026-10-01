@@ -1,14 +1,16 @@
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import type { Entity } from './entity';
-import { Zombie, Skeleton, Creeper, Spider, Pig, Cow, Sheep, Chicken, ZombiePigman, Ghast, Villager, Enderman, Slime, Squid, Bat, Wolf, Blaze } from './mobs';
+import { Zombie, Skeleton, Creeper, Spider, Pig, Cow, Sheep, Chicken, ZombiePigman, Ghast, Villager, Enderman, Slime, Squid, Bat, Wolf, Blaze, Silverfish } from './mobs';
 import { ItemEntity } from './item';
 import { Boat } from './boat';
+import { EnderDragon, EndCrystal } from './dragon';
 
 type Ctor = new (w: World, g: Game) => Entity;
 export const MOB_TYPES: Record<string, Ctor> = {
   zombie: Zombie, skeleton: Skeleton, creeper: Creeper, spider: Spider, pig: Pig, cow: Cow, sheep: Sheep, chicken: Chicken,
   zombie_pigman: ZombiePigman, 'zombie pigman': ZombiePigman, ghast: Ghast, villager: Villager, enderman: Enderman, slime: Slime, squid: Squid, bat: Bat, wolf: Wolf, blaze: Blaze,
+  silverfish: Silverfish, ender_dragon: EnderDragon, end_crystal: EndCrystal,
 };
 
 export function createEntity(type: string, world: World, game: Game): Entity | null {

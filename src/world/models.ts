@@ -184,7 +184,7 @@ const connectsFence = (self: number, v: number) => {
 };
 const connectsPane = (v: number) => {
   const id = idOf(v);
-  return id === B.GLASS_PANE || id === B.GLASS || OPAQUE[id] === 1;
+  return id === B.GLASS_PANE || id === B.GLASS || id === B.IRON_BARS || OPAQUE[id] === 1;
 };
 
 export function modelBoxes(v: number, nb?: Neighbor): Box[] {
@@ -212,6 +212,24 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
     case B.CHEST: {
       const b = box(1, 0, 1, 15, 14, 15, [T.chestSide, T.chestSide, T.chestTop, T.chestTop, T.chestFront, T.chestSide]);
       return [rotY(b, meta & 3)];
+    }
+    case B.ENDER_CHEST: {
+      const b = box(1, 0, 1, 15, 14, 15, [T.enderChestSide, T.enderChestSide, T.enderChestTop, T.enderChestTop, T.enderChestFront, T.enderChestSide]);
+      return [rotY(b, meta & 3)];
+    }
+    case B.END_PORTAL_FRAME: {
+      const t = T.endFrameSide;
+      const out = [box(0, 0, 0, 16, 13, 16, [t, t, T.endStone, T.endFrameTop, t, t])];
+      if (meta & 4) out.push(box(4, 13, 4, 12, 16, 12, T.endFrameEye));
+      return out;
+    }
+    case B.END_PORTAL:
+      return [box(0, 0, 0, 16, 12, 16, T.endPortal, { skip: 0b110111 })];
+    case B.DRAGON_EGG: {
+      // an egg built from stacked slices (widest near the bottom third)
+      const t = f[0];
+      const slices: [number, number, number][] = [[0, 1, 6], [1, 2, 8], [2, 3, 10], [3, 5, 14], [5, 8, 16], [8, 10, 14], [10, 12, 12], [12, 14, 10], [14, 15, 6], [15, 16, 4]];
+      return slices.map(([y0, y1, w]) => box(8 - w / 2, y0, 8 - w / 2, 8 + w / 2, y1, 8 + w / 2, t));
     }
     case B.LADDER: {
       // meta = direction of the supporting wall
@@ -252,8 +270,9 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
       }
       return boxes;
     }
-    case B.GLASS_PANE: {
-      const t = f[0], e = T.glassPaneTop;
+    case B.GLASS_PANE:
+    case B.IRON_BARS: {
+      const t = f[0], e = id === B.IRON_BARS ? T.ironBarsTop : T.glassPaneTop;
       const conn = [false, false, false, false];
       if (nb) HORIZ.forEach(([dx, dz], i) => (conn[i] = connectsPane(nb(dx, 0, dz))));
       if (!conn.some((c) => c)) conn.fill(true);

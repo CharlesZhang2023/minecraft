@@ -15,6 +15,9 @@ import { getTexture } from './textures';
 import { Player } from '../game/player';
 import { Boat } from '../entity/boat';
 import { FishingHook } from '../entity/fishing';
+import { EnderDragon, EndCrystal, dragonPose, DRAGON_SCALE } from '../entity/dragon';
+import { EyeOfEnder } from '../entity/eye';
+import { dragonModel, dragonSkin } from './dragonmodel';
 
 interface PartGPU { vao: WebGLVertexArrayObject; count: number; def: M.ModelPart }
 interface ModelGPU { parts: Map<string, PartGPU> }
@@ -36,12 +39,14 @@ export class EntityRenderer {
       biped: M.bipedModel(), bipedThin: M.bipedModel(true), creeper: M.creeperModel(), pig: M.pigModel(), cow: M.cowModel(),
       sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(), blaze: M.blazeModel(),
       armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(), enderman: M.endermanModel(), slimeInner: M.slimeInnerModel(), slimeOuter: M.slimeOuterModel(), squid: M.squidModel(), bat: M.batModel(), wolf: M.wolfModel(),
+      silverfish: M.silverfishModel(), crystal: M.crystalModel(), dragon: dragonModel(),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
       cow: M.cowSkin(), sheep: M.sheepSkin(), wool: M.woolSkin(), chicken: M.chickenSkin(), spider: M.spiderSkin(),
       ghast: M.ghastSkin(false), blaze: M.blazeSkin(), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(), wolf: M.wolfSkin('wild'), wolfTame: M.wolfSkin('tame'), wolfAngry: M.wolfSkin('angry'),
+      silverfish: M.silverfishSkin(), crystal: M.crystalSkin(), dragon: dragonSkin(),
     };
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
@@ -174,6 +179,7 @@ export class EntityRenderer {
       } else if (e instanceof Arrow) this.drawArrow(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof XpOrb) this.billboard(dyn, x, y + 0.25, z, 0.25, TEXTURES.indexOf('particle_spell'), 0x9ffc3a, 15, 15);
       else if (e instanceof Snowball) this.billboard(dyn, x, y + 0.125, z, 0.25, TEXTURES.indexOf('item/' + e.kind), 0xffffff, sky, blk);
+      else if (e instanceof EyeOfEnder) this.billboard(dyn, x, y + 0.12, z, 0.4, TEXTURES.indexOf('item/ender_eye'), 0xffffff, 15, 15);
       else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, e.small ? 0.35 : 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
       else if (e instanceof Boat) this.drawBoat(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof FishingHook) {
@@ -181,6 +187,13 @@ export class EntityRenderer {
         this.fishingLine(game, e, x, y, z, t);
       }
       else if (e instanceof LivingEntity) { if (!e.effects.has('invisibility')) this.drawLiving(game, e, x, y, z, t, sky, blk); }
+    }
+    // beams from healing crystals to the dragon
+    for (const e of list) {
+      if (!(e instanceof EndCrystal) || !e.beam || e.removed || e.dead || (e.beam as EnderDragon).removed) continue;
+      const d = e.beam as EnderDragon;
+      if (d.dead || (e.age & 1) < 0) continue;
+      this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + 1.2 - cam.y, e.lerpZ(t) - cam.z, d.lerpX(t) - cam.x, d.lerpY(t) - 0.5 - cam.y, d.lerpZ(t) - cam.z, e.age + t);
     }
     // blocks being moved by pistons
     for (const [bv, bx, by, bz] of game.pistons.renderList(t)) {
@@ -245,6 +258,126 @@ export class EntityRenderer {
     this.pickups.push({ e: Object.assign(Object.create(Object.getPrototypeOf(e)), e), p, age: 0, x: e.x, y: e.y, z: e.z });
   }
 
+  /** A camera-facing ribbon between two camera-relative points (end crystal healing beam). */
+  private beam(dyn: DynMesh, ax: number, ay: number, az: number, bx: number, by: number, bz: number, time: number) {
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    const mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
+    // side = dir x view
+    let sx = dy * mz - dz * my, sy = dz * mx - dx * mz, sz = dx * my - dy * mx;
+    const sl = Math.hypot(sx, sy, sz) || 1;
+    const w = 0.28;
+    sx = (sx / sl) * w; sy = (sy / sl) * w; sz = (sz / sl) * w;
+    const len = Math.hypot(dx, dy, dz);
+    const layer = TEXTURES.indexOf('end_beam');
+    const v0 = -time * 0.08, v1 = v0 + len * 0.25;
+    dyn.v(ax - sx, ay - sy, az - sz, 0, v0, layer, 0xffffff, 1, 15, 15);
+    dyn.v(ax + sx, ay + sy, az + sz, 1, v0, layer, 0xffffff, 1, 15, 15);
+    dyn.v(bx + sx, by + sy, bz + sz, 1, v1, layer, 0xffffff, 1, 15, 15);
+    dyn.v(bx - sx, by - sy, bz - sz, 0, v1, layer, 0xffffff, 1, 15, 15);
+  }
+
+  /** Draw one part of a model with an explicit, fully prepared matrix (already scaled by 1/16). */
+  private drawPart(model: string, skin: string, partName: string, mm: Mat4, light: [number, number], overlay: [number, number, number, number], alpha = 1) {
+    const gl = this.r.gl;
+    const part = this.models.get(model)!.parts.get(partName)!;
+    const p = this.r.entityProg;
+    gl.useProgram(p.prog);
+    gl.uniformMatrix4fv(p.u.u_viewProj, false, this.currentVP);
+    this.r.setCommonUniforms(p);
+    gl.uniform2f(p.u.u_light, light[0], light[1]);
+    gl.uniform4fv(p.u.u_overlay, overlay);
+    gl.uniform1f(p.u.u_alpha, alpha);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.skins.get(skin)!);
+    gl.uniform1i(p.u.u_skin, 0);
+    gl.uniformMatrix4fv(p.u.u_model, false, mm);
+    gl.bindVertexArray(part.vao);
+    gl.drawElements(gl.TRIANGLES, (part.count / 4) * 6, gl.UNSIGNED_INT, 0);
+    gl.bindVertexArray(null);
+  }
+
+  private drawDragon(e: EnderDragon, x: number, y: number, z: number, t: number, sky: number, blk: number) {
+    const pose = dragonPose(e, t);
+    const yaw = e.pyaw + wrapDelta(e.yaw - e.pyaw) * t;
+    const base = this.entityBase(this.tmp2, x, y, z, yaw, 0, DRAGON_SCALE, 1.501);
+    const light: [number, number] = [Math.max(sky, 11), Math.max(blk, 11)];
+    const flash = e.dead ? Math.min(0.85, e.deathTicks / 200) : 0;
+    const overlay: [number, number, number, number] = e.hurtTime > 0 ? [1, 0.2, 0.2, 0.35] : flash > 0 ? [1, 1, 1, flash] : [0, 0, 0, 0];
+    const m = mat4(), q = mat4();
+    const place = (name: string, px: number, py: number, pz: number, rx = 0, ry = 0, rz = 0, sc = 1, lt = light, flipX = false) => {
+      translate(m, base, px / 16, py / 16, pz / 16);
+      if (flipX) scale(m, m, -1, 1, 1);
+      if (rz) rotateZ(m, m, rz);
+      if (ry) rotateY(m, m, ry);
+      if (rx) rotateX(m, m, rx);
+      if (sc !== 1) scale(m, m, sc, sc, sc);
+      scale(q, m, 1 / 16, 1 / 16, 1 / 16);
+      this.drawPart('dragon', 'dragon', name, q, lt, overlay);
+    };
+    place('body', 0, 0, 0);
+    pose.neck.forEach((s, i) => place('neck', s.x, s.y, s.z, s.rx, s.ry, 0, 1 - i * 0.02));
+    pose.tail.forEach((s, i) => place('tail', s.x, s.y, s.z, s.rx, s.ry, 0, 1 - i * 0.045));
+    // head, eyes (glowing) and jaw
+    const h = pose.head;
+    place('head', h.x, h.y, h.z, h.rx, h.ry);
+    place('eyes', h.x, h.y, h.z, h.rx, h.ry, 0, 1, [15, 15]);
+    translate(m, base, h.x / 16, h.y / 16, h.z / 16);
+    if (h.ry) rotateY(m, m, h.ry);
+    rotateX(m, m, h.rx);
+    translate(m, m, 0, 4 / 16, -8 / 16);
+    rotateX(m, m, pose.jaw * 0.6);
+    scale(q, m, 1 / 16, 1 / 16, 1 / 16);
+    this.drawPart('dragon', 'dragon', 'jaw', q, light, overlay);
+    // legs tucked under the body
+    for (const side of [-1, 1]) {
+      place('foreLeg', side * 9, 10, -20, pose.legs + 0.35, 0, side * -0.12, 1, light, side > 0);
+      place('hindLeg', side * 11, 8, 18, pose.legs * 0.8 + 0.3, 0, side * -0.1, 1, light, side > 0);
+    }
+    // wings: bone + membrane, then the tip segment hinged at the end of the bone
+    for (const side of [-1, 1]) {
+      translate(m, base, (side * 12) / 16, -8 / 16, -10 / 16);
+      if (side > 0) scale(m, m, -1, 1, 1);
+      rotateY(m, m, 0.25 + pose.wing * 0.15);
+      rotateZ(m, m, pose.wing);
+      scale(q, m, 1 / 16, 1 / 16, 1 / 16);
+      this.drawPart('dragon', 'dragon', 'wing', q, light, overlay);
+      translate(m, m, -56 / 16, 0, 0);
+      rotateZ(m, m, pose.tip - pose.wing * 0.4);
+      scale(q, m, 1 / 16, 1 / 16, 1 / 16);
+      this.drawPart('dragon', 'dragon', 'wingTip', q, light, overlay);
+    }
+  }
+
+  private drawCrystal(e: EndCrystal, x: number, y: number, z: number, t: number, sky: number, blk: number) {
+    const gl = this.r.gl;
+    const age = e.age + t;
+    const bob = Math.sin(age * 0.2) * 0.12 + 0.2;
+    const spin = age * 0.05;
+    const light: [number, number] = [Math.max(sky, 10), Math.max(blk, 12)];
+    const overlay: [number, number, number, number] = [0, 0, 0, 0];
+    const base = this.entityBase(this.tmp2, x, y + 1.1 + bob, z, 0, 0, 1.4, 1.501);
+    const m = mat4(), q = mat4();
+    const cube = (name: string, k: number, alpha: boolean) => {
+      identity(m);
+      translate(m, base, 0, 0, 0);
+      rotateY(m, m, spin * k);
+      rotateZ(m, m, Math.PI / 4);
+      rotateX(m, m, 0.9553);
+      rotateY(m, m, spin * k * 0.7);
+      scale(q, m, 1 / 16, 1 / 16, 1 / 16);
+      if (alpha) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); }
+      this.drawPart('crystal', 'crystal', name, q, light, overlay);
+      if (alpha) gl.disable(gl.BLEND);
+    };
+    cube('inner', 1.3, false);
+    cube('outer', 1, true);
+    // bedrock slab under it
+    const bb = this.entityBase(this.tmp, x, y + 0.2, z, 0, 0, 1.4, 1.501);
+    scale(q, bb, 1 / 16, 1 / 16, 1 / 16);
+    translate(q, q, 0, 0, 0);
+    this.drawPart('crystal', 'crystal', 'base', q, [sky, blk], overlay);
+  }
+
   private drawLiving(game: Game, e: LivingEntity, x: number, y: number, z: number, t: number, sky: number, blk: number) {
     const gl = this.r.gl;
     const anyE = e as unknown as Record<string, unknown>;
@@ -283,6 +416,15 @@ export class EntityRenderer {
     const pose: Record<string, [number, number, number]> = {};
     const c = Math.cos;
     switch (model) {
+      case 'dragon': this.drawDragon(e as EnderDragon, x, y, z, t, sky, blk); return;
+      case 'crystal': this.drawCrystal(e as EndCrystal, x, y, z, t, sky, blk); return;
+      case 'silverfish': {
+        for (let i = 0; i < 7; i++) pose['s' + i] = [0, Math.cos(age * 0.9 + i * 0.35) * Math.PI * 0.05 * (1 + lsa * 3), 0];
+        const offs: Record<string, [number, number, number]> = {};
+        for (let i = 0; i < 7; i++) offs['s' + i] = [Math.cos(age * 0.9 + i * 0.35 + 1) * 0.5 * (0.5 + lsa * 2), 0, 0];
+        this.drawModel('silverfish', 'silverfish', base, pose, light, overlay, undefined, 1, offs);
+        break;
+      }
       case 'biped':
       case 'bipedThin': {
         const sneak = e.sneaking;

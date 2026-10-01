@@ -99,6 +99,7 @@ export class UI {
   openCrafting() { this.open(new Containers.CraftingScreen(this)); }
   openFurnace(x: number, y: number, z: number) { this.open(new Containers.FurnaceScreen(this, x, y, z)); }
   openChest(x: number, y: number, z: number) { this.open(new Containers.ChestScreen(this, x, y, z)); }
+  openEnderChest(x: number, y: number, z: number) { this.open(new Containers.EnderChestScreen(this, x, y, z)); }
   openInventory() {
     const p = this.game.player!;
     this.game.achievements.unlock('openInventory');

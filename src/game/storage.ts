@@ -18,7 +18,11 @@ export interface WorldMeta {
   difficulty?: number;
   entities?: unknown[];
   netherEntities?: unknown[];
-  dimension?: 'overworld' | 'nether';
+  dimension?: 'overworld' | 'nether' | 'end';
+  endEntities?: unknown[];
+  dragonKilled?: boolean;
+  enderChest?: unknown[];
+  endPoemSeen?: boolean;
   achievements?: string[];
 }
 

@@ -415,6 +415,7 @@ export const ANIMATED: Record<string, { frames: number; speed: number }> = {
   lava_flow: { frames: 16, speed: 2 },
   fire: { frames: 16, speed: 1 },
   nether_portal: { frames: 32, speed: 1 },
+  end_portal: { frames: 24, speed: 2 },
 };
 function waterFrame(frame: number, total: number, flow: boolean): Img {
   const img = newImg();
@@ -479,6 +480,7 @@ export function animatedFrame(name: string, frame: number): Img {
     case 'lava_flow': return lavaFrame(frame, a.frames, true);
     case 'fire': return fireFrame(frame);
     case 'nether_portal': return portalFrame(frame);
+    case 'end_portal': return endPortalFrame(frame);
   }
   return getTexture(name);
 }
@@ -1500,6 +1502,126 @@ gens.particle_spell = () => { const img = newImg(); art(img, [
   '......www.......',
   '.......w........',
 ], { w: G('#ffffff'), W: G('#ffffff') }); return img; };
+
+
+// ---------------------------------------------------------------- the End
+gens.end_stone = (r) => {
+  const img = newImg();
+  paletteNoise(img, r, P('#d9d99a', '#dfdfa4', '#e2e3a9', '#e6e6b0', '#ebecb8'), { jitter: 0.6 });
+  for (let i = 0; i < 18; i++) set(img, r.int(S), r.int(S), r.bool() ? hex('#c3c486') : hex('#b3b476'));
+  for (let i = 0; i < 6; i++) { const x = r.int(14), y = r.int(14); set(img, x, y, hex('#f4f5cc')); set(img, x + 1, y, hex('#ced08e')); }
+  return img;
+};
+gens.end_portal_frame_top = (r) => {
+  const img = newImg();
+  // outer rim, then a sunken socket for the eye
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+    let c: RGB;
+    if (d > 7) c = hex('#1f3d34');
+    else if (d > 6) c = hex('#2f5f4d');
+    else if (d > 4.5) c = hex('#3f7f63');
+    else if (d > 3.5) c = hex('#1b3a30');
+    else c = hex(['#123027', '#163529', '#102a22'][(x * 7 + y * 3) % 3]);
+    set(img, x, y, c);
+  }
+  for (let i = 0; i < 14; i++) { const x = 2 + r.int(12), y = 2 + r.int(12); if (Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5)) > 4.5) set(img, x, y, hex('#4f9a76')); }
+  return img;
+};
+gens.end_portal_frame_side = (r) => {
+  const img = gens.end_stone(new Random(77));
+  for (let y = 0; y < 3; y++) for (let x = 0; x < S; x++) set(img, x, y, y === 0 ? hex('#4f9a76') : y === 1 ? hex('#3f7f63') : hex('#2f5f4d'));
+  for (let x = 0; x < S; x++) set(img, x, 3, hex('#1f3d34'));
+  void r;
+  return img;
+};
+gens.end_portal_eye = () => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = x - 7.5, dy = y - 7.5, d = Math.hypot(dx, dy);
+    let c: RGB = hex('#12302a');
+    if (d < 7.2) c = hex('#1c4a3a');
+    if (d < 5.6) c = hex('#2f8f6a');
+    if (d < 4.2) c = hex('#6bd9a0');
+    if (d < 2.4) c = hex('#0a1f1a');
+    if (Math.hypot(dx + 1.6, dy + 1.6) < 1) c = hex('#d4ffe8');
+    set(img, x, y, c);
+  }
+  return img;
+};
+function endPortalFrame(frame: number): Img {
+  // a black void with drifting multi-coloured stars
+  const img = newImg();
+  const t = frame / 24;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const base = 8 + ((x * 31 + y * 17) % 7);
+    set(img, x, y, [base * 0.6, base * 0.8, base * 1.4].map((v) => Math.floor(v)) as RGB);
+  }
+  const r = new Random(4242);
+  for (let i = 0; i < 26; i++) {
+    const sx = r.int(S), sy = r.int(S), ph = r.next(), hue = r.int(4), size = r.int(3) === 0 ? 2 : 1;
+    const tw = 0.5 + 0.5 * Math.sin((t + ph) * Math.PI * 2);
+    const col: RGB = [[110, 255, 220], [190, 120, 255], [255, 255, 255], [120, 190, 255]][hue].map((v) => Math.floor(v * (0.35 + 0.65 * tw))) as RGB;
+    const ox = Math.floor(((t * 4 * (1 + (i % 3))) + sx) % S);
+    for (let k = 0; k < size; k++) set(img, (ox + k) % S, sy, col);
+  }
+  return img;
+}
+gens.end_portal = () => endPortalFrame(0);
+gens.end_beam = () => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const d = Math.abs(x - 7.5);
+    if (d < 1.2) set(img, x, y, [255, 255, 255]);
+    else if (d < 3.2) set(img, x, y, (y + (x >> 1)) % 4 === 0 ? [255, 150, 255] : [200, 90, 245]);
+    else if (d < 5.5 && (y * 3 + x) % 5 === 0) set(img, x, y, [160, 70, 220]);
+  }
+  return img;
+};
+gens.dragon_egg = (r) => {
+  const img = newImg();
+  paletteNoise(img, r, P('#0d0814', '#120a1c', '#170d24', '#1d122d'), { jitter: 0.6 });
+  for (let i = 0; i < 30; i++) {
+    const x = r.int(S), y = r.int(S);
+    set(img, x, y, r.int(3) === 0 ? hex('#c040ff') : hex('#7a2cc8'));
+  }
+  return img;
+};
+gens.iron_bars = () => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) {
+    set(img, 7, y, hex('#a9aaa8')); set(img, 8, y, hex('#7d7e7c'));
+    if (y === 0 || y === 15) { set(img, 6, y, hex('#7d7e7c')); set(img, 9, y, hex('#5c5d5b')); }
+    if (y === 1 || y === 14) set(img, 7, y, hex('#d0d1cf'));
+  }
+  return img;
+};
+gens.iron_bars_top = () => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) { set(img, 7, y, hex('#8f908e')); set(img, 8, y, hex('#6a6b69')); }
+  return img;
+};
+function enderChestBase(r: Random): Img {
+  const img = newImg();
+  paletteNoise(img, r, P('#10242a', '#142b32', '#183339', '#1c3a40'), { jitter: 0.6 });
+  for (let i = 0; i < S; i++) { set(img, i, 0, hex('#0a181c')); set(img, 0, i, hex('#0a181c')); set(img, i, 15, hex('#0a181c')); set(img, 15, i, hex('#0a181c')); }
+  return img;
+}
+gens.ender_chest_top = (r) => {
+  const img = enderChestBase(r);
+  for (let i = 1; i < 15; i++) { set(img, i, 1, hex('#2a5a52')); set(img, 1, i, hex('#2a5a52')); set(img, i, 14, hex('#0e2226')); set(img, 14, i, hex('#0e2226')); }
+  return img;
+};
+gens.ender_chest_side = (r) => {
+  const img = enderChestBase(r);
+  for (let x = 1; x < 15; x++) { set(img, x, 5, hex('#2a5a52')); set(img, x, 6, hex('#0e2226')); }
+  return img;
+};
+gens.ender_chest_front = (r) => {
+  const img = gens.ender_chest_side(r);
+  for (let y = 4; y < 9; y++) for (let x = 6; x < 10; x++) set(img, x, y, y === 4 || y === 8 ? hex('#a9aaa8') : x === 6 || x === 9 ? hex('#7d7e7c') : hex('#4fd9a0'));
+  return img;
+};
 
 /** Build all block textures in registry order. */
 export function buildBlockTextures(): Img[] {

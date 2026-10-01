@@ -332,6 +332,7 @@ export class Renderer {
     gl.uniform3f(u.u_sunDir, -Math.sin(a), Math.cos(a), 0);
     gl.uniform1f(u.u_stars, e.stars);
     gl.uniform1f(u.u_celestial, e.celestial);
+    gl.uniform1f(u.u_end, 0);
     gl.bindVertexArray(this.emptyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -368,6 +369,28 @@ export class Renderer {
       quad(-1, 20, this.moonTex, [mu, mv, mu + 0.25, mv + 0.5]);
     }
     gl.disable(gl.BLEND);
+  }
+
+  /** The End's sky: a dark mottled purple box with no sun, moon or stars. */
+  drawEndSky() {
+    const gl = this.gl, e = this.env;
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.CULL_FACE);
+    gl.disable(gl.BLEND);
+    gl.useProgram(this.skyProg.prog);
+    const u = this.skyProg.u;
+    gl.uniformMatrix4fv(u.u_invViewProj, false, this.invViewProj);
+    gl.uniform3fv(u.u_skyColor, e.skyColor);
+    gl.uniform3fv(u.u_fogColor, e.fogColor);
+    gl.uniform3fv(u.u_voidColor, e.voidColor);
+    gl.uniform4fv(u.u_sunrise, e.sunrise);
+    gl.uniform3f(u.u_sunDir, 0, 1, 0);
+    gl.uniform1f(u.u_stars, 0);
+    gl.uniform1f(u.u_celestial, 0);
+    gl.uniform1f(u.u_end, 1);
+    gl.bindVertexArray(this.emptyVao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.uniform1f(u.u_end, 0);
   }
 
   drawChunks(chunks: Iterable<Chunk>, pass: 'opaque' | 'trans') {

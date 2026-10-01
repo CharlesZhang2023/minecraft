@@ -88,9 +88,26 @@ export class Spawner {
     }
   }
 
+  /** The End: endermen wander the islands in small groups (and nothing else spawns). */
+  private tryEnd() {
+    const g = this.game, p = g.player!, w = g.world!;
+    if (g.entities.filter((e) => (e as { typeName?: string }).typeName === 'Enderman' && !(e as { dead?: boolean }).dead).length >= 12) return;
+    const a = this.rng.next() * Math.PI * 2, d = 24 + this.rng.next() * 40;
+    const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
+    if (!w.chunkAt(x, z)) return;
+    const y = w.topSolidY(x, z) + 1;
+    if (y < 2 || w.getId(x, y - 1, z) !== B.END_STONE || !this.spawnable(x, y, z, 3)) return;
+    const n = 1 + this.rng.int(3);
+    for (let i = 0; i < n; i++) {
+      const xx = x + this.rng.int(5) - 2, zz = z + this.rng.int(5) - 2;
+      if (w.getId(xx, y - 1, zz) === B.END_STONE && this.spawnable(xx, y, zz, 3)) g.interact!.spawnMob('enderman', xx + 0.5, y, zz + 0.5);
+    }
+  }
+
   private tryHostile() {
     const g = this.game, p = g.player!, w = g.world!;
     if (w.dimension === 'nether') { this.tryNether(); return; }
+    if (w.dimension === 'end') { this.tryEnd(); return; }
     const a = this.rng.next() * Math.PI * 2, d = 24 + this.rng.next() * 56;
     const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
     if (!w.chunkAt(x, z)) return;

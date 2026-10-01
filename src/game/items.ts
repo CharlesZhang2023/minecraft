@@ -225,6 +225,15 @@ for (const p of POTIONS) POTION_ITEMS[p.key] = item(`potion_${p.key}`, p.name, {
 for (const p of POTIONS) SPLASH_ITEMS[p.key] = item(`splash_potion_${p.key}`, p.key === 'water' ? 'Splash Water Bottle' : 'Splash ' + p.name, { maxStack: 1, potion: p.key, splash: true, sprite: `splash_potion_${p.sprite}` });
 getItem(I.MILK_BUCKET).drink = true;
 
+// The End (appended after the potions: ids must stay stable)
+export const EXTRA_EGGS: { mob: string; display: string; c1: number; c2: number }[] = [
+  { mob: 'silverfish', display: 'Silverfish', c1: 0x6e6e6e, c2: 0x303030 },
+];
+for (const e of EXTRA_EGGS) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
+export const I4 = {
+  END_CRYSTAL: item('end_crystal', 'End Crystal', { rarity: 'rare' }),
+};
+
 export function itemByName(name: string): ItemDef | undefined {
   return byName.get(name);
 }
@@ -300,6 +309,7 @@ export function blockDrops(blockId: number, meta: number, tool: ItemDef | undefi
     case B.CARROTS: return [stack(I3.CARROT, meta >= 7 ? 1 + rng.int(4) : 1)];
     case B.POTATOES: return meta >= 7 ? [stack(I3.POTATO, 1 + rng.int(4))] : [stack(I3.POTATO)];
     case B.NETHER_WART: return [stack(I3.NETHER_WART, meta >= 3 ? 2 + rng.int(3) : 1)];
+    case B.ENDER_CHEST: return silk ? [stack(blockId)] : [stack(B.OBSIDIAN, 8)];
     case B.GLASS: case B.GLASS_PANE: case B.ICE: return silk ? [stack(blockId)] : [];
   }
   if (isLeaves(blockId)) return [];

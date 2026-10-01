@@ -188,6 +188,7 @@ uniform vec4 u_sunrise;
 uniform vec3 u_sunDir;
 uniform float u_stars;
 uniform float u_celestial;
+uniform float u_end;
 in vec2 v_ndc;
 out vec4 o;
 float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -195,6 +196,21 @@ void main() {
   vec4 w = u_invViewProj * vec4(v_ndc, 1.0, 1.0);
   vec3 d = normalize(w.xyz / w.w);
   float up = d.y;
+  if (u_end > 0.5) {
+    // the End: a mottled dark purple box around the world (cube-map cells, vanilla style)
+    vec3 a = abs(d);
+    vec2 uv; float face;
+    if (a.x >= a.y && a.x >= a.z) { uv = d.zy / a.x; face = d.x > 0.0 ? 0.0 : 1.0; }
+    else if (a.y >= a.z) { uv = d.xz / a.y; face = d.y > 0.0 ? 2.0 : 3.0; }
+    else { uv = d.xy / a.z; face = d.z > 0.0 ? 4.0 : 5.0; }
+    vec2 cell = floor((uv * 0.5 + 0.5) * 22.0);
+    float h = hash(vec3(cell, face + 1.0)), h2 = hash(vec3(cell * 0.31 + 5.0, face + 9.0));
+    vec3 e = vec3(0.075, 0.055, 0.105) * (0.5 + 1.0 * h) + vec3(0.025, 0.0, 0.035) * h2;
+    // slightly lighter toward the horizon so the void under the island reads as depth
+    e += u_fogColor * smoothstep(0.35, -0.6, up) * 0.6;
+    o = vec4(e, 1.0);
+    return;
+  }
   vec3 c = mix(u_fogColor, u_skyColor, smoothstep(-0.02, 0.35, up));
   if (up < -0.02) c = mix(u_fogColor, u_voidColor, smoothstep(-0.02, -0.25, up));
   // sunrise/sunset glow

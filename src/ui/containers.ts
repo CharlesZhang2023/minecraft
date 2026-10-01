@@ -2,7 +2,7 @@
 import { Screen, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, POTION_ITEMS, itemByName } from '../game/items';
+import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, POTION_ITEMS, itemByName } from '../game/items';
 import { craft, SMELTING } from '../game/recipes';
 import { addToSlots } from '../game/inventory';
 import { BLOCKS, Render, B, isLeaves, isSapling, isStairs, isSlab } from '../world/blocks';
@@ -594,6 +594,34 @@ export class ChestScreen extends ContainerScreen {
   }
 }
 
+/** The Ender Chest: one 27-slot inventory shared by every ender chest in the world. */
+export class EnderChestScreen extends ContainerScreen {
+  title = 'Ender Chest';
+  constructor(ui: UI, public x: number, public y: number, public z: number) { super(ui); }
+  override buildSlots() {
+    const meta = this.game.meta!;
+    if (!meta.enderChest || meta.enderChest.length !== 27) meta.enderChest = new Array(27).fill(null);
+    const items = meta.enderChest as (ItemStack | null)[];
+    for (let r = 0; r < 3; r++)
+      for (let c = 0; c < 9; c++) {
+        const i = r * 9 + c;
+        this.slots.push({ x: 8 + c * 18, y: 18 + r * 18, get: () => items[i], set: (s) => (items[i] = s), group: 'chest' });
+      }
+    this.addPlayerSlots();
+  }
+  override quickTargets(s: Slot): string[] {
+    return s.group === 'chest' ? ['hotbar', 'main'] : ['chest'];
+  }
+  override drawForeground(ctx: Ctx) {
+    this.label(ctx, 'Ender Chest', 8, 6);
+    this.label(ctx, 'Inventory', 8, 72);
+  }
+  override onClose() {
+    this.game.audio.play('chestClose', { x: this.x + 0.5, y: this.y + 0.5, z: this.z + 0.5 }, 0.5, 0.9 + Math.random() * 0.1);
+    super.onClose();
+  }
+}
+
 // ------------------------------------------------------------------ creative
 type Tab = { name: string; icon: number; items: () => ItemStack[] };
 const one = (id: number): ItemStack => ({ id, count: 1 });
@@ -601,7 +629,7 @@ const defs = () => [...ITEMS.values()].filter((d) => d.id !== 0);
 const REDSTONE_IDS = [I.REDSTONE, B.REDSTONE_TORCH, I3.REPEATER, I3.COMPARATOR, B.REDSTONE_BLOCK, B.LEVER, B.STONE_BUTTON, B.STONE_PRESSURE_PLATE,
   B.PISTON, B.STICKY_PISTON, B.OBSERVER, B.DISPENSER, B.DROPPER, B.HOPPER, B.REDSTONE_LAMP, B.TNT, I.OAK_DOOR];
 const BREWING_IDS = [I3.GLASS_BOTTLE, I.GHAST_TEAR, I3.FERMENTED_SPIDER_EYE, I2.BLAZE_POWDER, I3.MAGMA_CREAM, I3.BREWING_STAND, I3.GLISTERING_MELON, I.SPIDER_EYE];
-const MISC_IDS = [I.BUCKET, I.WATER_BUCKET, I.LAVA_BUCKET, I.MILK_BUCKET, I.FIRE_CHARGE, I2.ENDER_EYE, I.PAPER, I.BOOK, I2.SLIME_BALL, I.BONE_MEAL, I.SNOWBALL];
+const MISC_IDS = [I.BUCKET, I.WATER_BUCKET, I.LAVA_BUCKET, I.MILK_BUCKET, I.FIRE_CHARGE, I2.ENDER_EYE, I4.END_CRYSTAL, I.PAPER, I.BOOK, I2.SLIME_BALL, I.BONE_MEAL, I.SNOWBALL];
 const TOOL_ENCH = ['efficiency', 'silk_touch', 'unbreaking', 'fortune', 'luck_of_the_sea', 'lure'];
 const special = new Set<number>([...REDSTONE_IDS, ...BREWING_IDS, ...MISC_IDS, I2.BOAT, I3.ENCHANTED_BOOK]);
 const isFood = (d: ItemDef) => !!d.food && !d.potion;

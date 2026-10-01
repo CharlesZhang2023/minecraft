@@ -1,3 +1,5 @@
+import { nearestSite } from '../world/stronghold';
+import type { Dimension } from '../world/world';
 import type { Game } from './game';
 import { GameMode } from './player';
 import { ITEMS, itemByName, stack, getItem, I3 } from './items';
@@ -20,7 +22,7 @@ export class Commands {
     try {
       switch (cmd) {
         case 'help':
-          out.push('§eAvailable commands:', '/gamemode <survival|creative|adventure|spectator>', '/time <set|add> <day|night|noon|midnight|value>', '/weather <clear|rain|thunder>', '/tp <x> <y> <z>', '/give <item> [count]', '/summon <mob> [x y z]', '/kill', '/difficulty <peaceful|easy|normal|hard>', '/seed', '/spawnpoint', '/setblock <x> <y> <z> <block>', '/clear', '/xp <amount>', '/gamerule doDaylightCycle <true|false>', '/effect <effect|clear> [seconds] [amplifier]', '/enchant <enchantment> [level]', '/heal');
+          out.push('§eAvailable commands:', '/gamemode <survival|creative|adventure|spectator>', '/time <set|add> <day|night|noon|midnight|value>', '/weather <clear|rain|thunder>', '/tp <x> <y> <z>', '/give <item> [count]', '/summon <mob> [x y z]', '/kill', '/difficulty <peaceful|easy|normal|hard>', '/seed', '/spawnpoint', '/setblock <x> <y> <z> <block>', '/clear', '/xp <amount>', '/gamerule doDaylightCycle <true|false>', '/effect <effect|clear> [seconds] [amplifier]', '/locate stronghold', '/dimension <overworld|nether|end>', '/enchant <enchantment> [level]', '/heal');
           break;
         case 'gamemode':
         case 'gm': {
@@ -100,6 +102,21 @@ export class Commands {
           g.options.difficulty = d;
           g.saveOptions();
           out.push(`The difficulty has been set to ${['Peaceful', 'Easy', 'Normal', 'Hard'][d]}`);
+          break;
+        }
+        case 'locate': {
+          if ((args[0] ?? '').toLowerCase() !== 'stronghold') throw new Error('Usage: /locate stronghold');
+          const seed = g.meta?.seed ?? 0;
+          const s = nearestSite(seed, p.x, p.z);
+          out.push(`The nearest stronghold is at [${s.x}, ~, ${s.z}] (${Math.round(Math.hypot(s.x - p.x, s.z - p.z))} blocks away)`);
+          break;
+        }
+        case 'dimension': case 'dim': {
+          const to = (args[0] ?? '').toLowerCase();
+          if (to !== 'overworld' && to !== 'nether' && to !== 'end') throw new Error('Usage: /dimension <overworld|nether|end>');
+          if (to === g.dimension) { out.push('Already there'); break; }
+          g.travel(to as Dimension, to === 'overworld');
+          out.push(`Travelling to the ${to}`);
           break;
         }
         case 'seed':

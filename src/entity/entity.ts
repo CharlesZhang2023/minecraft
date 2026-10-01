@@ -45,6 +45,13 @@ export class Entity {
     return { x0: this.x - w, y0: this.y, z0: this.z - w, x1: this.x + w, y1: this.y + this.height, z1: this.z + w };
   }
 
+  /** Name of the body part last hit by a ray or projectile (multi-part bosses). */
+  hitPart: string | null = null;
+  /** Boxes a ray / projectile can hit; multi-part bosses return one per body part. */
+  hitBoxes(): (AABB & { part?: string })[] {
+    return [this.box];
+  }
+
   lerpX(t: number) { return this.px + (this.x - this.px) * t; }
   lerpY(t: number) { return this.py + (this.y - this.py) * t; }
   lerpZ(t: number) { return this.pz + (this.z - this.pz) * t; }

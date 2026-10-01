@@ -288,6 +288,13 @@ export const B = {
   ANVIL: reg('anvil', 'Anvil', { render: Render.Model, tex: 'anvil', top: 'anvil_top', hardness: 5, tool: 'pickaxe', harvestLevel: 0, gravity: true, sound: 'metal', blastResistance: 6000, opaque: false, lightOpacity: 0 }),
   NETHER_BRICK_FENCE: reg('nether_brick_fence', 'Nether Brick Fence', { ...stone, hardness: 2, render: Render.Model, tex: 'nether_bricks', opaque: false, lightOpacity: 0 }),
   NETHER_BRICK_STAIRS: reg('nether_brick_stairs', 'Nether Brick Stairs', { ...stone, hardness: 2, render: Render.Model, tex: 'nether_bricks', opaque: false, lightOpacity: 15 }),
+  // the End (appended: ids must stay stable)
+  END_STONE: reg('end_stone', 'End Stone', { hardness: 3, tool: 'pickaxe', harvestLevel: 0, blastResistance: 45 }),
+  END_PORTAL_FRAME: reg('end_portal_frame', 'End Portal Frame', { render: Render.Model, top: 'end_portal_frame_top', side: 'end_portal_frame_side', bottom: 'end_stone', hardness: -1, blastResistance: 18000000, opaque: false, lightOpacity: 0, light: 1, drop: null }),
+  END_PORTAL: reg('end_portal', 'End Portal', { render: Render.Model, tex: 'end_portal', solid: false, opaque: false, lightOpacity: 0, light: 15, hardness: -1, blastResistance: 18000000, item: false, drop: null, selectable: false, sound: 'none' }),
+  DRAGON_EGG: reg('dragon_egg', 'Dragon Egg', { render: Render.Model, tex: 'dragon_egg', hardness: 3, gravity: true, opaque: false, lightOpacity: 0, light: 1, blastResistance: 45 }),
+  IRON_BARS: reg('iron_bars', 'Iron Bars', { render: Render.Model, tex: 'iron_bars', hardness: 5, tool: 'pickaxe', harvestLevel: 0, sound: 'metal', opaque: false, lightOpacity: 0, blastResistance: 30 }),
+  ENDER_CHEST: reg('ender_chest', 'Ender Chest', { render: Render.Model, top: 'ender_chest_top', side: 'ender_chest_side', front: 'ender_chest_front', hardness: 22.5, tool: 'pickaxe', harvestLevel: 0, opaque: false, lightOpacity: 0, light: 7, blastResistance: 3000, drop: 'obsidian' }),
 } as const;
 
 export const BLOCK_COUNT = BLOCKS.length;
@@ -320,7 +327,7 @@ export const isLog = (id: number) => id === B.OAK_LOG || id === B.SPRUCE_LOG || 
 export const isFlower = (id: number) => id >= B.DANDELION && id <= B.ALLIUM;
 export const isSapling = (id: number) => id === B.OAK_SAPLING || id === B.SPRUCE_SAPLING || id === B.BIRCH_SAPLING;
 export const isOriented = (id: number) =>
-  id === B.FURNACE || id === B.LIT_FURNACE || id === B.CHEST || id === B.PUMPKIN || id === B.JACK_O_LANTERN || id === B.CRAFTING_TABLE;
+  id === B.FURNACE || id === B.LIT_FURNACE || id === B.CHEST || id === B.ENDER_CHEST || id === B.PUMPKIN || id === B.JACK_O_LANTERN || id === B.CRAFTING_TABLE;
 
 /** Blocks that plants can grow on */
 export const isSoil = (id: number) => id === B.GRASS || id === B.DIRT || id === B.PODZOL || id === B.COARSE_DIRT || id === B.FARMLAND;
@@ -380,6 +387,15 @@ export const T = {
   anvilTopDamaged: tex('damaged_anvil_top'),
   netherBricks: tex('nether_bricks'),
   bedrock: tex('bedrock'),
+  endStone: tex('end_stone'),
+  endFrameTop: tex('end_portal_frame_top'),
+  endFrameSide: tex('end_portal_frame_side'),
+  endFrameEye: tex('end_portal_eye'),
+  endPortal: tex('end_portal'),
+  ironBarsTop: tex('iron_bars_top'),
+  enderChestTop: tex('ender_chest_top'),
+  enderChestSide: tex('ender_chest_side'),
+  enderChestFront: tex('ender_chest_front'),
 };
 // Wool texture names are the same as the block names already.
 

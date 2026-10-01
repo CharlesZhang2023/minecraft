@@ -1,13 +1,13 @@
 // Game orchestration: main loop, ticking, camera, interaction and rendering.
 import { Renderer, Camera } from '../render/renderer';
-import { World } from '../world/world';
+import { World, Dimension } from '../world/world';
 import { Player, GameMode } from './player';
 import { Input } from './input';
 import { device } from './device';
 import { Audio, SOUND_FOR } from './audio';
 import { Options, loadOptions, saveOptions } from './options';
 import { Particles } from './particles';
-import { computeEnv, netherEnv } from './env';
+import { computeEnv, netherEnv, endEnv } from './env';
 import { findPortal, buildPortal } from './portal';
 import { raycastBlocks, BlockHit } from './raycast';
 import { BLOCKS, B, idOf, metaOf, Render, CHUNK_H, TEXTURES, tex } from '../world/blocks';
@@ -38,7 +38,9 @@ import { Redstone } from './redstone';
 import { Pistons } from './pistons';
 import { Devices } from './devices';
 import { Brewing } from './brewing';
-import { LoadingScreen } from '../ui/menus';
+import { LoadingScreen, CreditsScreen } from '../ui/menus';
+import { END_PLATFORM } from '../world/endgen';
+import { EnderDragon } from '../entity/dragon';
 import { tickFurnaces } from './furnace';
 import { rainTexture, snowTexture } from './weather';
 
@@ -96,7 +98,7 @@ export class Game {
   lastHeldId = -1;
   lastHeldSlot = -1;
   sleepFade = 0;
-  dimension: 'overworld' | 'nether' = 'overworld';
+  dimension: Dimension = 'overworld';
   portalTime = 0;
   portalCooldown = 0;
   pendingArrival: { x: number; y: number; z: number; toSpawn: boolean } | null = null;
@@ -116,6 +118,7 @@ export class Game {
     extra.push({ name: 'weather_rain', img: rainTexture() }, { name: 'weather_snow', img: snowTexture() });
     extra.push({ name: 'grass_side_item', img: tintMasked(getTexture('grass_side'), 0x7cbd6b) });
     extra.push({ name: 'entity_shadow', img: shadowTexture() });
+    extra.push({ name: 'end_beam', img: getTexture('end_beam') });
     this.renderer.initAtlas(extra);
     this.gui = new Gui();
     this.input = new Input(uiCanvas);
@@ -160,8 +163,8 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ world lifecycle
-  private makeWorld(meta: WorldMeta, dim: 'overworld' | 'nether', panorama: boolean): World {
-    const world = new World(meta.seed, dim === 'nether' ? meta.id + '~nether' : meta.id, dim);
+  private makeWorld(meta: WorldMeta, dim: Dimension, panorama: boolean): World {
+    const world = new World(meta.seed, dim === 'overworld' ? meta.id : meta.id + '~' + dim, dim);
     world.readOnly = panorama;
     world.renderDistance = panorama ? Math.min(6, this.options.renderDistance) : this.options.renderDistance;
     return world;
@@ -198,6 +201,15 @@ export class Game {
   }
   private saveEntities() {
     return this.entities.filter((e) => (e as unknown as { persist?: boolean }).persist && !e.removed).map((e) => (e as unknown as { toJSON(): unknown }).toJSON());
+  }
+  private entitiesOf(meta: WorldMeta, dim: Dimension) {
+    return dim === 'nether' ? meta.netherEntities : dim === 'end' ? meta.endEntities : meta.entities;
+  }
+  private storeEntities(meta: WorldMeta, dim: Dimension) {
+    const list = this.saveEntities();
+    if (dim === 'nether') meta.netherEntities = list;
+    else if (dim === 'end') meta.endEntities = list;
+    else meta.entities = list;
   }
 
   async openWorld(meta: WorldMeta, panorama = false) {
@@ -244,24 +256,24 @@ export class Game {
       p.spawnY = -1; // resolved once the chunk loads
       p.setPos(sx + 0.5, 200, sz + 0.5);
     }
-    this.loadEntities(dim === 'nether' ? meta.netherEntities : meta.entities);
+    this.loadEntities(this.entitiesOf(meta, dim));
     this.achievements.load(meta.achievements);
     this.doDaylightCycle = true;
     this.lastSave = performance.now();
   }
 
-  /** Move the player to the other dimension through a portal (or back to spawn after death). */
-  async travel(to: 'overworld' | 'nether', toSpawn = false) {
+  /** Move the player to another dimension through a portal (or back to spawn after death / leaving the End). */
+  async travel(to: Dimension, toSpawn = false) {
     if (!this.world || !this.player || !this.meta || this.traveling) return;
     this.traveling = true;
     const p = this.player, meta = this.meta;
     const from = this.world;
-    const loading = new LoadingScreen(this.ui, to === 'nether' ? 'Entering the Nether' : 'Leaving the Nether');
+    const fromDim = from.dimension;
+    const loading = new LoadingScreen(this.ui, to === 'nether' ? 'Entering the Nether' : to === 'end' ? 'Entering the End' : fromDim === 'end' ? 'Leaving the End' : 'Leaving the Nether');
     loading.ready = true;
     this.ui.open(loading);
     // persist the dimension we're leaving
-    if (from.dimension === 'nether') meta.netherEntities = this.saveEntities();
-    else meta.entities = this.saveEntities();
+    this.storeEntities(meta, fromDim);
     await from.saveAll();
     for (const c of from.chunks.values()) this.renderer.freeChunk(c);
     from.destroy();
@@ -269,17 +281,23 @@ export class Game {
     await world.init();
     this.attachWorld(world);
     p.world = world;
-    this.loadEntities(to === 'nether' ? meta.netherEntities : meta.entities);
-    const scale = to === 'nether' ? 1 / 8 : 8;
-    let nx = p.x * scale, nz = p.z * scale;
-    if (toSpawn) { nx = p.spawnX + 0.5; nz = p.spawnZ + 0.5; }
-    p.setPos(nx, toSpawn ? p.spawnY : 70, nz);
+    this.loadEntities(this.entitiesOf(meta, to));
+    let nx: number, nz: number, ny = 70;
+    if (to === 'end') {
+      nx = END_PLATFORM.x + 0.5; nz = END_PLATFORM.z + 0.5; ny = END_PLATFORM.y + 1;
+    } else {
+      const scale = fromDim === 'end' ? 1 : to === 'nether' ? 1 / 8 : 8;
+      nx = p.x * scale; nz = p.z * scale;
+      if (toSpawn) { nx = p.spawnX + 0.5; nz = p.spawnZ + 0.5; }
+    }
+    p.setPos(nx, toSpawn ? p.spawnY : ny, nz);
     p.vx = p.vy = p.vz = 0;
     this.pendingArrival = { x: nx, y: p.y, z: nz, toSpawn };
     meta.dimension = to;
     if (to === 'nether' && !toSpawn) this.achievements.unlock('portal');
+    if (to === 'end') this.achievements.unlock('theEnd');
     this.portalTime = 0;
-    this.portalCooldown = 200;
+    this.portalCooldown = to === 'end' || fromDim === 'end' ? 60 : 200;
     this.traveling = false;
   }
 
@@ -288,6 +306,21 @@ export class Game {
     if (!w.chunkAt(Math.floor(a.x), Math.floor(a.z))) return false;
     if (w.loadProgress(a.x, a.z, Math.min(3, w.renderDistance)) < 0.99) return false;
     this.pendingArrival = null;
+    if (w.dimension === 'end') {
+      // the obsidian arrival platform (rebuilt every time, like the real game)
+      const c: [number, number, number, number][] = [];
+      for (let dx = -2; dx <= 2; dx++)
+        for (let dz = -2; dz <= 2; dz++) {
+          c.push([END_PLATFORM.x + dx, END_PLATFORM.y, END_PLATFORM.z + dz, B.OBSIDIAN]);
+          for (let h = 1; h <= 3; h++) c.push([END_PLATFORM.x + dx, END_PLATFORM.y + h, END_PLATFORM.z + dz, B.AIR]);
+        }
+      this.interact!.setAll(c);
+      p.setPos(END_PLATFORM.x + 0.5, END_PLATFORM.y + 1, END_PLATFORM.z + 0.5);
+      p.yaw = p.pyaw = 90; p.pitch = p.ppitch = 0;
+      this.audio.play('portalTravel', null, 0.6, 1);
+      this.ensureDragon();
+      return true;
+    }
     if (a.toSpawn) {
       const y = w.topSolidY(Math.floor(a.x), Math.floor(a.z)) + 1;
       p.setPos(a.x, Math.max(a.y, y), a.z);
@@ -303,6 +336,26 @@ export class Game {
     }
     this.audio.play('portalTravel', null, 0.6, 1);
     return true;
+  }
+
+  /** The Ender Dragon lives in the End until it has been killed. */
+  ensureDragon() {
+    if (!this.world || this.world.dimension !== 'end' || this.meta?.dragonKilled) return;
+    if (this.entities.some((e) => e instanceof EnderDragon && !e.removed)) return;
+    const d = new EnderDragon(this.world, this);
+    d.setPos(0.5, 100, 0.5);
+    this.addEntity(d);
+  }
+
+  /** Walking into the exit portal: the first time, the credits roll before returning to the overworld. */
+  leaveEnd() {
+    if (this.traveling || this.pendingArrival) return;
+    if (this.meta && this.meta.dragonKilled && !this.meta.endPoemSeen) {
+      this.meta.endPoemSeen = true;
+      this.ui.open(new CreditsScreen(this.ui, () => this.travel('overworld', true)));
+      return;
+    }
+    this.travel('overworld', true);
   }
 
   /** Pick a spawn column on land near the origin using the worldgen noise directly. */
@@ -359,8 +412,7 @@ export class Game {
     this.meta.difficulty = this.options.difficulty;
     this.meta.dimension = this.dimension;
     this.meta.achievements = this.achievements.toJSON();
-    if (this.dimension === 'nether') this.meta.netherEntities = this.saveEntities();
-    else this.meta.entities = this.saveEntities();
+    this.storeEntities(this.meta, this.dimension);
     try {
       await this.world.saveAll();
       await Storage.saveWorld(this.meta);
@@ -555,7 +607,19 @@ export class Game {
     for (let x = Math.floor(b.x0); x <= Math.floor(b.x1) && !inPortal; x++)
       for (let y = Math.floor(b.y0); y <= Math.floor(b.y1) && !inPortal; y++)
         for (let z = Math.floor(b.z0); z <= Math.floor(b.z1) && !inPortal; z++) if (w.getId(x, y, z) === B.NETHER_PORTAL) inPortal = true;
-    if (inPortal && !p.dead) {
+    // End portals work at once
+    let inEndPortal = false;
+    if (this.dimension !== 'nether' && this.portalCooldown === 0 && !p.dead)
+      for (let x = Math.floor(b.x0); x <= Math.floor(b.x1) && !inEndPortal; x++)
+        for (let y = Math.floor(b.y0); y <= Math.floor(b.y1) && !inEndPortal; y++)
+          for (let z = Math.floor(b.z0); z <= Math.floor(b.z1) && !inEndPortal; z++) if (w.getId(x, y, z) === B.END_PORTAL) inEndPortal = true;
+    if (inEndPortal) {
+      this.portalCooldown = 60;
+      if (this.dimension === 'overworld') this.travel('end');
+      else this.leaveEnd();
+      return;
+    }
+    if (inPortal && !p.dead && this.dimension !== 'end') {
       if (this.portalTime === 0 && this.portalCooldown === 0) this.audio.play('portalTrigger', null, 0.5, 0.8 + Math.random() * 0.4);
       this.portalTime = Math.min(90, this.portalTime + 1);
       if (this.portalCooldown === 0 && (this.portalTime >= 80 || (p.creative && this.portalTime >= 2))) {
@@ -642,10 +706,11 @@ export class Game {
     for (const e of this.entities) {
       if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat)) continue; }
       if (e === this.player?.riding) continue;
-      const b = e.box;
-      const g = 0.1;
-      const r = rayAABB(eye.x, eye.y, eye.z, d.x, d.y, d.z, { x0: b.x0 - g, y0: b.y0 - g, z0: b.z0 - g, x1: b.x1 + g, y1: b.y1 + g, z1: b.z1 + g }, bestT);
-      if (r && r.t < bestT && r.t <= 3.5) { bestT = r.t; best = e; }
+      for (const b of e.hitBoxes()) {
+        const g = 0.1;
+        const r = rayAABB(eye.x, eye.y, eye.z, d.x, d.y, d.z, { x0: b.x0 - g, y0: b.y0 - g, z0: b.z0 - g, x1: b.x1 + g, y1: b.y1 + g, z1: b.z1 + g }, bestT);
+        if (r && r.t < bestT && r.t <= 3.5) { bestT = r.t; best = e; e.hitPart = b.part ?? null; }
+      }
     }
     this.targetEntity = best;
     if (best) this.target = null;
@@ -782,9 +847,9 @@ export class Game {
     const underwater = idOf(camBlock) === B.WATER && cam.y < Math.floor(cam.y) + 1 - ((metaOf(camBlock) & 7) + 1) / 9 + 0.12;
     const inLava = idOf(camBlock) === B.LAVA;
     const biome = this.biomeAt(Math.floor(p.x), Math.floor(p.z));
-    const nether = w.dimension === 'nether';
-    const rain = nether ? 0 : this.weather!.rain;
-    const env = nether ? netherEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : computeEnv({
+    const nether = w.dimension === 'nether', end = w.dimension === 'end';
+    const rain = nether || end ? 0 : this.weather!.rain;
+    const env = nether ? netherEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : end ? endEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : computeEnv({
       time: this.time, renderDistance: w.renderDistance, underwater, inLava, blind: 0, rain, thunder: this.weather!.thunder,
       cameraY: cam.y, gamma: this.options.gamma, clouds: this.options.clouds, skyTemp: biome.cold ? -0.5 : biome.name === 'Desert' ? 2 : 0.8,
       flicker: 1.5 + this.torchFlicker * 0.1, ticks: this.ticks + t,
@@ -792,7 +857,8 @@ export class Game {
     const nv = p.effects.get('night_vision');
     env.nightVision = nv ? (nv.dur > 200 ? 1 : 0.7 + Math.sin(((nv.dur - t) * Math.PI) * 0.2) * 0.3) : 0;
     r.beginFrame(env);
-    if (!nether) r.drawSky();
+    if (end) r.drawEndSky();
+    else if (!nether) r.drawSky();
     r.drawChunks(w.chunks.values(), 'opaque');
     this.entityRenderer.render(this, t);
     this.drawSelection();
@@ -801,7 +867,7 @@ export class Game {
     this.particles!.build(pm, cam.x, cam.y, cam.z, t, yaw, pitch);
     r.drawDyn(pm, { blend: false, cull: false, alphaCut: 0.1 });
     r.drawChunks(w.chunks.values(), 'trans');
-    if (!nether) {
+    if (!nether && !end) {
       r.drawClouds(192.33);
       this.weather!.render(t);
     }

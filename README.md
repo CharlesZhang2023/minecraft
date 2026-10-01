@@ -89,6 +89,17 @@ Click the game to capture the mouse. Worlds save automatically to IndexedDB.
   - Tameable wolves: feed them bones, then they sit, follow, teleport to you and defend you. Wild packs turn
     angry when attacked.
   - Ambient: squid in oceans and bats in caves. Villagers have professions and trade.
+- **The End**: find a stronghold (underground stone-brick complexes on rings around the origin, with libraries,
+  prison cells, fountains and loot chests) and throw Eyes of Ender (blaze powder + ender pearl) to track one
+  down; `/locate stronghold` also works. Slot eyes into the twelve portal frames in the portal room (lava well,
+  silverfish spawner) to open the End portal.
+  - A floating end-stone island under a purple void sky, ten obsidian pillars topped with End Crystals (three
+    caged in iron bars), the bedrock exit fountain, outer islands far away, and endermen.
+  - The **Ender Dragon**: 200 HP, a flying boss with a multi-part body (only head hits do full damage), wings that
+    shove, a bite that hurts, block smashing (but not obsidian, bedrock or end stone), and healing beams from the
+    crystals — destroy a crystal and the dragon takes 10. A boss bar, a spinning death with experience rain,
+    the exit portal, a dragon egg that teleports when poked, and a credits scroll on the first trip home.
+  - Also: Ender Chests (one shared inventory), End Crystals, iron bars, silverfish, and `/dimension end`.
 - Rideable boats, 1.8-style achievements with popups, and chat commands.
 
 **Interface**
@@ -117,12 +128,13 @@ Click the game to capture the mouse. Worlds save automatically to IndexedDB.
 | Perspective · debug · hide HUD · screenshot | F5 · F3 · F1 · F2 |
 
 **Commands:** `/gamemode`, `/time set|add`, `/weather`, `/tp`, `/give`, `/summon`, `/kill`, `/difficulty`, `/seed`,
-`/spawnpoint`, `/setblock`, `/fill`, `/clear`, `/xp`, `/gamerule doDaylightCycle`, `/heal`, `/help`.
+`/spawnpoint`, `/setblock`, `/fill`, `/clear`, `/xp`, `/gamerule doDaylightCycle`, `/heal`, `/effect`, `/enchant`,
+`/locate stronghold`, `/dimension overworld|nether|end`, `/help`.
 
 ## Architecture
 
 ```
-src/world    blocks registry, worldgen (overworld, nether, villages), mesher + lighting (worker), chunk streaming
+src/world    blocks registry, worldgen (overworld, nether, the End, villages, strongholds), mesher + lighting (worker), chunk streaming
 src/render   WebGL2 renderer, shaders, texture array, procedural textures & sprites, entity models & renderer
 src/game     game loop (20 TPS), player, interaction, block ticks, items, recipes, audio synth, storage, portals
 src/entity   entity physics (vanilla collision), living entities, mobs & AI, pathfinding, spawning, boats

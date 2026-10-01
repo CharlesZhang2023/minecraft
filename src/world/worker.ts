@@ -2,9 +2,11 @@
 import { WorldGen } from './worldgen';
 import { buildChunk } from './mesher';
 import { NetherGen } from './nethergen';
+import { EndGen } from './endgen';
 
 let gen: WorldGen | null = null;
 let nether: NetherGen | null = null;
+let end: EndGen | null = null;
 
 export type WorkerRequest =
   | { type: 'gen'; id: number; seed: number; cx: number; cz: number; dim: string }
@@ -17,6 +19,9 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
     if (msg.dim === 'nether') {
       if (!nether || nether.seed !== msg.seed) nether = new NetherGen(msg.seed);
       r = nether.generate(msg.cx, msg.cz);
+    } else if (msg.dim === 'end') {
+      if (!end || end.seed !== msg.seed) end = new EndGen(msg.seed);
+      r = end.generate(msg.cx, msg.cz);
     } else {
       if (!gen || gen.seed !== msg.seed) gen = new WorldGen(msg.seed);
       r = gen.generate(msg.cx, msg.cz);

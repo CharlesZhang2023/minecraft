@@ -4,6 +4,7 @@ import { B, CHUNK_H, SEA_LEVEL, pack, BLOCKS, OPAQUE, isLeaves } from './blocks'
 import { BIOME, BIOMES } from './biomes';
 import { smoothstep, lerp } from '../math';
 import { villagesNear, placeVillage, Spawn } from './village';
+import { buildStrongholds } from './stronghold';
 
 const GX = 5, GY = 33; // density grid: 4-block horizontal cells, 8-block vertical cells
 const idx = (x: number, y: number, z: number) => x | (z << 4) | (y << 8);
@@ -283,6 +284,7 @@ export class WorldGen {
     const spawns: Spawn[] = [];
     for (const v of villagesNear(this, cx, cz)) placeVillage(this, v, cx, cz, blocks, spawns);
     this.snowAndIce(blocks, biomes);
+    buildStrongholds(this.seed, cx, cz, (x, y, z) => blocks[idx(x - wx0, y, z - wz0)], (x, y, z, v) => { blocks[idx(x - wx0, y, z - wz0)] = v; });
     return { blocks, biomes, spawns };
   }
 

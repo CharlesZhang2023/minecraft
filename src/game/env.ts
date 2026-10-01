@@ -143,6 +143,17 @@ export function netherEnv(renderDistance: number, gamma: number, flicker: number
   };
 }
 
+/** The End: a dim purple void with a fixed, softly lit world and no sun. */
+export function endEnv(renderDistance: number, gamma: number, flicker: number, underLava: boolean): EnvState {
+  const fog: [number, number, number] = underLava ? [0.6, 0.1, 0] : [0.094, 0.075, 0.094];
+  const far = renderDistance * 16;
+  return {
+    skyColor: fog, fogColor: fog, voidColor: fog, sunrise: [0, 0, 0, 0], celestial: 0.5, sunBright: 1, skyLightCol: [1, 1, 1], stars: 0,
+    fogStart: underLava ? 0 : far * 0.7, fogEnd: underLava ? 2 : far, gamma, flicker, cloudColor: [0, 0, 0], clouds: false,
+    cloudOffset: 0, moonPhase: 0, rain: 0, ambient: 0.32, ambientCol: [0.04, 0.02, 0.05], noSky: true,
+  };
+}
+
 export function hsbToRgb(h: number, s: number, v: number): [number, number, number] {
   h = ((h % 1) + 1) % 1;
   const i = Math.floor(h * 6);

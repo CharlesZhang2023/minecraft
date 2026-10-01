@@ -2,7 +2,7 @@
 import type { Game } from './game';
 import { B, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater } from '../world/blocks';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, I2, I3, stack, ItemDef, POTION_ITEMS } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, I3, I4, stack, ItemDef, POTION_ITEMS } from './items';
 import { ThrownPotion } from '../entity/potion';
 import { POTION_BY_KEY } from './potiondata';
 import { newBrewingTile } from './brewing';
@@ -11,6 +11,7 @@ import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { PrimedTnt, Arrow, Snowball, XpOrb, ItemEntity, FallingBlock, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
+import { EndCrystal } from '../entity/dragon';
 import { FishingHook } from '../entity/fishing';
 import { createEntity } from '../entity/registry';
 import { aabbIntersects } from '../math';
@@ -18,6 +19,7 @@ import { Random } from '../noise';
 import { GameMode } from './player';
 import { findFrameAt, frameBlocks } from './portal';
 import { level } from './enchant';
+import { eyeOnFrame, throwEye, teleportEgg, placeCrystal } from './endstuff';
 
 export interface Breaking { x: number; y: number; z: number; progress: number; face: number; sound: number }
 
@@ -59,6 +61,7 @@ export class Interaction {
     if (clicks.includes(0)) {
       if (g.targetEntity) this.attack(g.targetEntity);
       else if (!g.target) p.swing();
+      else if (!p.creative && this.world.getId(g.target.x, g.target.y, g.target.z) === B.DRAGON_EGG) { teleportEgg(g, g.target.x, g.target.y, g.target.z); p.swing(); }
     }
     if (left && !g.targetEntity && g.target && !p.spectator && this.eating === 0 && !this.usingBow) this.mine(g.target);
     else this.breaking = null;
@@ -347,6 +350,13 @@ export class Interaction {
         g.audio.play('chestOpen', { x: t.x + 0.5, y: t.y + 0.5, z: t.z + 0.5 }, 0.5, 0.9 + Math.random() * 0.1);
         return true;
       }
+      case B.ENDER_CHEST: {
+        if (OPAQUE[w.getId(t.x, t.y + 1, t.z)]) return true;
+        g.ui.openEnderChest(t.x, t.y, t.z);
+        g.audio.play('chestOpen', { x: t.x + 0.5, y: t.y + 0.5, z: t.z + 0.5 }, 0.5, 0.7);
+        return true;
+      }
+      case B.DRAGON_EGG: teleportEgg(g, t.x, t.y, t.z); return true;
       case B.OAK_DOOR: {
         const lowerY = meta & 8 ? t.y - 1 : t.y;
         const lower = w.get(t.x, lowerY, t.z);
@@ -372,7 +382,7 @@ export class Interaction {
 
   private sleep(x: number, y: number, z: number): boolean {
     const g = this.game, p = this.player;
-    if (this.world.dimension === 'nether') {
+    if (this.world.dimension !== 'overworld') {
       // beds explode outside the overworld
       this.removeBlockAndPartner(x, y, z, this.world.get(x, y, z));
       this.explode(x + 0.5, y + 0.5, z + 0.5, 5, true, null);
@@ -417,6 +427,16 @@ export class Interaction {
         if (held.name) (m as unknown as { customName: string }).customName = held.name;
         this.consume(1);
       }
+      return true;
+    }
+    if (held.id === I2.ENDER_EYE && id === B.END_PORTAL_FRAME) {
+      if (!eyeOnFrame(g, t.x, t.y, t.z)) return false;
+      this.consume(1);
+      return true;
+    }
+    if (held.id === I4.END_CRYSTAL) {
+      if (t.face !== 3 || !placeCrystal(g, t.x, t.y, t.z)) return false;
+      this.consume(1);
       return true;
     }
     switch (held.id) {
@@ -511,6 +531,12 @@ export class Interaction {
     }
     if (held.id === I.BOW) {
       if (p.creative || p.inventory.count(I.ARROW) > 0) { this.usingBow = true; this.bowTicks = 0; }
+      return;
+    }
+    if (held.id === I2.ENDER_EYE) {
+      throwEye(g);
+      this.consume(1);
+      p.swing();
       return;
     }
     if (held.id === I.SNOWBALL || held.id === I.EGG || held.id === I.ENDER_PEARL) {
@@ -829,6 +855,7 @@ export class Interaction {
       return;
     }
     if (p.spectator || !(e instanceof LivingEntity)) return;
+    if (e instanceof EndCrystal) { e.damage(1, 'player', p); return; }
     const held = p.inventory.held();
     const item = held ? getItem(held.id) : undefined;
     let dmg = (item?.attack ?? 1) + level(held, 'sharpness') * 1.25 + p.attackBonus();
@@ -866,8 +893,9 @@ export class Interaction {
     for (const e of targets) {
       if (!(e instanceof LivingEntity) || e.dead || e === a.shooter && a.age < 5) continue;
       if (e === g.player && g.player!.spectator) continue;
-      const b = e.box;
-      if (nx > b.x0 - 0.3 && nx < b.x1 + 0.3 && ny > b.y0 - 0.3 && ny < b.y1 + 0.3 && nz > b.z0 - 0.3 && nz < b.z1 + 0.3) {
+      const hb = e.hitBoxes().find((b) => nx > b.x0 - 0.3 && nx < b.x1 + 0.3 && ny > b.y0 - 0.3 && ny < b.y1 + 0.3 && nz > b.z0 - 0.3 && nz < b.z1 + 0.3);
+      if (hb) {
+        e.hitPart = hb.part ?? null;
         const speed = Math.hypot(a.vx, a.vy, a.vz);
         let dmg = Math.ceil(speed * a.damageBase);
         if ((a as unknown as { crit?: boolean }).crit) dmg += this.rng.int(Math.floor(dmg / 2) + 2);
@@ -893,8 +921,9 @@ export class Interaction {
     const g = this.game;
     for (const e of g.entities) {
       if (!(e instanceof LivingEntity) || e.dead || e === s.shooter) continue;
-      const b = e.box;
-      if (nx > b.x0 - 0.2 && nx < b.x1 + 0.2 && ny > b.y0 - 0.2 && ny < b.y1 + 0.2 && nz > b.z0 - 0.2 && nz < b.z1 + 0.2) {
+      const hb = e.hitBoxes().find((b) => nx > b.x0 - 0.2 && nx < b.x1 + 0.2 && ny > b.y0 - 0.2 && ny < b.y1 + 0.2 && nz > b.z0 - 0.2 && nz < b.z1 + 0.2);
+      if (hb) {
+        e.hitPart = hb.part ?? null;
         e.damage(0.01, 'generic', s.shooter);
         return e;
       }

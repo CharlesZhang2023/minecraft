@@ -642,3 +642,48 @@ export function armorSkin(mat: string, layer: 1 | 2): Skin {
   return s;
 }
 export const ARMOR_MATERIALS = Object.keys(ARMOR_COLORS);
+
+// ------------------------------------------------------------------ The End
+export function crystalModel(): ModelDef {
+  return {
+    texW: 64, texH: 32,
+    parts: [
+      part('outer', 0, 0, 0, [box(-4, -4, -4, 8, 8, 8, 0, 0)]),
+      part('inner', 0, 0, 0, [box(-3, -3, -3, 6, 6, 6, 32, 0)]),
+      part('base', 0, 0, 0, [box(-6, 6, -6, 12, 4, 12, 0, 16)]),
+    ],
+  };
+}
+export function crystalSkin(): Skin {
+  const s = new Skin();
+  const r = new Random(808);
+  const glass1 = hx('#e8b0ff'), glass2 = hx('#c070ff'), edge = hx('#f8e8ff');
+  s.paintBox(0, 0, 8, 8, 8, (_f, x, y, fw, fh) => {
+    const e = x === 0 || y === 0 || x === fw - 1 || y === fh - 1;
+    const c = e ? edge : vary(r.int(3) === 0 ? glass1 : glass2, r, 0.06);
+    return [c[0], c[1], c[2], e ? 235 : 150];
+  });
+  s.paintBox(32, 0, 6, 6, 6, (_f, x, y) => vary(((x + y) & 1) === 0 ? hx('#ff90ff') : hx('#c040e0'), r, 0.08));
+  s.paintBox(0, 16, 12, 4, 12, () => vary(hx('#1c1c1c'), r, 0.2));
+  return s;
+}
+
+/** Silverfish: seven body blocks laid end to end. */
+const SILVER = [[3, 2, 2, 0, 0], [4, 3, 2, 0, 4], [6, 4, 3, 0, 9], [3, 3, 3, 0, 16], [2, 2, 3, 0, 22], [2, 1, 2, 11, 0], [1, 1, 2, 13, 4]];
+export function silverfishModel(): ModelDef {
+  const parts: ModelPart[] = [];
+  let z = -3.5;
+  SILVER.forEach(([w, h, d, u, v], i) => {
+    parts.push(part('s' + i, 0, 24 - h, z, [box(-w / 2, 0, -d / 2, w, h, d, u, v)]));
+    if (i < SILVER.length - 1) z += (d + SILVER[i + 1][2]) * 0.5;
+  });
+  return { texW: 64, texH: 32, parts };
+}
+export function silverfishSkin(): Skin {
+  const s = new Skin();
+  const r = new Random(66);
+  const a = hx('#7a7a82'), b = hx('#5e5e66'), c = hx('#9a9aa2');
+  for (const [w, h, d, u, v] of SILVER) s.paintBox(u, v, w, h, d, (f, x, y) => vary(f === 'top' ? c : (y + x) % 2 ? a : b, r, 0.08));
+  s.set(13, 6, hx('#101010')); s.set(14, 6, hx('#101010'));
+  return s;
+}

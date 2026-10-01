@@ -4,6 +4,8 @@ import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { getItem, ItemStack } from '../game/items';
 import { B } from '../world/blocks';
+import { EnderDragon } from '../entity/dragon';
+import { device } from '../game/device';
 
 export class Hud {
   private itemNameTimer = 0;
@@ -178,7 +180,29 @@ export class Hud {
       ctx.globalAlpha = 1;
     }
     if (!this.ui.screen && !g.hideHud) drawEffectsHud(ctx, this.ui);
+    this.bossBar(ctx);
     this.renderChatAndText(ctx);
+  }
+
+  /** The Ender Dragon's health bar across the top of the screen. */
+  private bossBar(ctx: Ctx) {
+    const g = this.ui.game, gui = this.ui.gui;
+    if (g.hideHud || !g.world || g.world.dimension !== 'end') return;
+    const d = g.entities.find((e) => e instanceof EnderDragon && !e.removed) as EnderDragon | undefined;
+    if (!d) return;
+    const x = Math.floor(gui.w / 2) - 91;
+    // on touch screens the menu buttons sit along the top edge
+    const y = device.touch ? Math.ceil((56 * device.ratio()) / gui.scale) : 12;
+    gui.textCenter(ctx, 'Ender Dragon', gui.w / 2, y - 9, '#FFFFFF');
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(x - 1, y - 1, 184, 7);
+    ctx.fillStyle = '#4a2060';
+    ctx.fillRect(x, y, 182, 5);
+    const f = Math.max(0, d.health / d.maxHealth);
+    ctx.fillStyle = '#c040ff';
+    ctx.fillRect(x, y, Math.round(182 * f), 5);
+    ctx.fillStyle = '#e8a0ff';
+    ctx.fillRect(x, y, Math.round(182 * f), 1);
   }
 
   private renderChatAndText(ctx: Ctx) {

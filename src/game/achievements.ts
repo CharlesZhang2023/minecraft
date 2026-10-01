@@ -1,7 +1,7 @@
 // Classic achievements with the 1.8-style "Achievement get!" popup.
 import type { Game } from './game';
 import { B, isLog } from '../world/blocks';
-import { I, TOOLS } from './items';
+import { I, I2, TOOLS } from './items';
 import type { Ctx } from '../ui/gui';
 
 interface Ach { id: string; name: string; desc: string; icon: number }
@@ -25,6 +25,8 @@ const LIST: Ach[] = [
   { id: 'ghast', name: 'Return to Sender', desc: 'Destroy a Ghast with a fireball', icon: I.GHAST_TEAR },
   { id: 'bookcase', name: 'Librarian', desc: 'Build some bookshelves to improve your enchantment table', icon: B.BOOKSHELF },
   { id: 'onFire', name: 'Hot Stuff', desc: 'Get a lava bucket', icon: I.LAVA_BUCKET },
+  { id: 'theEnd', name: 'The End?', desc: 'Step through an End portal', icon: 0 },
+  { id: 'theEnd2', name: 'The End.', desc: 'Defeat the Ender Dragon', icon: B.DRAGON_EGG },
 ];
 
 export class Achievements {
@@ -37,6 +39,7 @@ export class Achievements {
     fix('buildHoe', TOOLS.wooden_hoe);
     fix('buildBetterPickaxe', TOOLS.stone_pickaxe);
     fix('buildSword', TOOLS.wooden_sword);
+    fix('theEnd', I2.ENDER_EYE);
   }
 
   load(list: string[] | undefined) {

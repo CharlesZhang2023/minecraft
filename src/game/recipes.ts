@@ -1,6 +1,6 @@
 // Crafting & smelting recipes.
 import { B, WOOL_COLORS } from '../world/blocks';
-import { I, I2, I3, TOOLS, ARMOR, ItemStack, stack, getItem } from './items';
+import { I, I2, I3, I4, TOOLS, ARMOR, ItemStack, stack, getItem } from './items';
 
 interface Shaped { pattern: string[]; key: Record<string, number | number[]>; out: ItemStack }
 interface Shapeless { ingredients: (number | number[])[]; out: ItemStack }
@@ -160,6 +160,10 @@ S(['NNN', 'NCN', 'NNN'], { N: I.GOLD_NUGGET, C: I3.CARROT }, I3.GOLDEN_CARROT);
 L([I.GOLD_INGOT], I.GOLD_NUGGET, 9);
 S(['###', '###', '###'], { '#': I.GOLD_NUGGET }, I.GOLD_INGOT);
 L([I2.BLAZE_POWDER, I.ENDER_PEARL], I2.ENDER_EYE);
+// the End
+S(['OOO', 'OEO', 'OOO'], { O: B.OBSIDIAN, E: I2.ENDER_EYE }, B.ENDER_CHEST);
+S(['GGG', 'GEG', 'GTG'], { G: B.GLASS, E: I2.ENDER_EYE, T: I.GHAST_TEAR }, I4.END_CRYSTAL);
+S(['###', '###'], { '#': I.IRON_INGOT }, B.IRON_BARS, 16);
 // nether bricks
 S(['##', '##'], { '#': I3.NETHER_BRICK }, B.NETHER_BRICKS);
 S(['###', '###'], { '#': B.NETHER_BRICKS }, B.NETHER_BRICK_FENCE, 6);

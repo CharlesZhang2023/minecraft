@@ -1321,6 +1321,36 @@ export class Blaze extends Monster {
   }
 }
 
+/** Silverfish: tiny, fast, and they call their friends when hurt. */
+export class Silverfish extends Monster {
+  typeName = 'Silverfish';
+  override model = 'silverfish';
+  override skin = 'silverfish';
+  override sayName = 'silverfish.say';
+  override hurtName = 'silverfish.hit';
+  override deathName = 'silverfish.kill';
+  override arthropod = true;
+  override canBreathe = false;
+  override xp = 5;
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.width = 0.4; this.height = 0.3;
+    this.maxHealth = this.health = 8;
+    this.attackDamage = 1;
+    this.aggroRange = 8;
+    this.followRange = 12;
+    this.chaseSpeed = 0.2;
+  }
+  override eyeHeight() { return 0.1; }
+  override onDamaged(attacker: Entity | null) {
+    if (!(attacker instanceof LivingEntity)) return;
+    this.target = attacker;
+    // wake nearby silverfish
+    for (const e of this.game.entities) if (e instanceof Silverfish && e !== this && !e.dead && this.distanceTo(e) < 10) e.target = attacker;
+  }
+  override drops(): ItemStack[] { return []; }
+}
+
 function goldSword(): number {
   return TOOLS.golden_sword ?? 0;
 }

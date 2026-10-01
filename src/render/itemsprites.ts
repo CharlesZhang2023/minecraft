@@ -1,7 +1,7 @@
 // 16x16 item sprites as hand-authored pixel art. Outlines are added automatically.
 import { Img, RGB, newImg, hex, set, get, art, shade, S } from './pixels';
 import { POTION_SPRITES } from '../game/potiondata';
-import { SPAWN_EGGS } from '../game/items';
+import { SPAWN_EGGS, EXTRA_EGGS } from '../game/items';
 
 type Pal = Record<string, RGB | [number, number, number, number]>;
 const sprites: Record<string, () => Img> = {};
@@ -728,6 +728,18 @@ sprite('slime_ball', [
   '.....gGGGGg.....',
   '......gggg......',
 ], { g: hex('#4a9a2a'), G: hex('#7ad04a'), L: hex('#c8ffa8') }, '#1a4a0a');
+sprite('end_crystal', [
+  '', '',
+  '.......ww.......',
+  '......wPPw......',
+  '.....wPppPw.....',
+  '....wPpWWpPw....',
+  '....wPWppWPw....',
+  '....wPpWWpPw....',
+  '.....wPppPw.....',
+  '......wPPw......',
+  '.......ww.......',
+], { w: hex('#f4e8ff'), P: hex('#d890ff'), p: hex('#a040e0'), W: hex('#ffffff') }, '#3a1058');
 sprite('ender_eye', [
   '', '', '', '', '',
   '......gggg......',
@@ -855,7 +867,7 @@ sprite('glass_bottle', [
   '....g......g....',
   '.....gggggg.....',
 ], { c: hex('#8a6035'), g: GLASS, w: hex('#ffffff') }, '#4a5a6a');
-for (const e of SPAWN_EGGS) {
+for (const e of [...SPAWN_EGGS, ...EXTRA_EGGS]) {
   const E = rgb(e.c1), sp = rgb(e.c2);
   sprite(`${e.mob}_spawn_egg`, [
     '',

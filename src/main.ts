@@ -7,6 +7,7 @@ import { WorldGen } from './world/worldgen';
 import { BIOMES } from './world/biomes';
 import { regionVillage } from './world/village';
 import { regionFortress } from './world/fortress';
+import { strongholdSites, layoutStronghold, nearestSite } from './world/stronghold';
 
 const gl = document.getElementById('gl') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLCanvasElement;
@@ -18,7 +19,7 @@ function fail(msg: string) {
 try {
   const game = new Game(gl, ui);
   (window as unknown as { game: Game }).game = game;
-  (window as unknown as { __mc: unknown }).__mc = { BLOCKS, ITEMS, WorldGen, BIOMES, regionVillage, regionFortress };
+  (window as unknown as { __mc: unknown }).__mc = { BLOCKS, ITEMS, WorldGen, BIOMES, regionVillage, regionFortress, strongholdSites, layoutStronghold, nearestSite };
   game.start();
   // never lose progress: save when the tab is hidden or closed
   document.addEventListener('visibilitychange', () => {
