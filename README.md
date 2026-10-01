@@ -70,6 +70,14 @@ Click the game to capture the mouse. Worlds save automatically to IndexedDB.
 - **Enchanting**: an enchanting table powered by nearby bookshelves, with the 1.8 cost formula and lapis.
   Enchantments show a glint and have real effects: Efficiency, Unbreaking, Fortune, Sharpness, Knockback,
   Fire Aspect, Power, Punch, Flame, Infinity, Protection and Feather Falling.
+- **Redstone devices**: repeaters (delay, locking), comparators (compare/subtract, container reading), observers,
+  pistons and sticky pistons (12-block push limit, slime-block chains, moving-block animation), dispensers, droppers,
+  hoppers, slime blocks (bounce) and torch burnout, built on vanilla weak/strong power rules.
+- **Brewing and potions**: brewing stand with blaze-powder fuel, nether wart, 30+ potion types (extended, strengthened,
+  splash), status effects with HUD icons, particles and night vision. Blazes and Nether fortresses supply the ingredients.
+- **Anvils and books**: enchanted books (loot, librarians, enchanting table), anvil combining, repair and renaming,
+  plus 25 enchantments including Silk Touch, Looting, Respiration and Depth Strider.
+- **Creative**: 1.8-style tabs (Redstone, Transportation, Brewing, ...), spawn eggs for 17 mobs, `/effect` and `/enchant`.
 - **Fishing**: the bobber waits, then bubbles approach and the fish bites. Loot is fish, junk or treasure, and cod
   and salmon can be cooked.
 - Mobs with A* pathfinding:
