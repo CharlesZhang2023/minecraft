@@ -11,6 +11,8 @@ import { TradeScreen } from './trade';
 import { EnchantScreen } from './enchant';
 import { HopperScreen, DispenserScreen, BrewingScreen, AnvilScreen } from './devices';
 import type { Villager } from '../entity/mobs';
+import { TouchControls } from './touch';
+import { device } from '../game/device';
 
 export class UI {
   gui: Gui;
@@ -20,6 +22,9 @@ export class UI {
   mx = 0;
   my = 0;
   suppressChar = false;
+  touch: TouchControls;
+  private lastGuiW = 0;
+  private lastGuiH = 0;
   previewBox: { x: number; y: number; w: number; h: number; yaw: number; pitch: number } | null = null;
 
   constructor(public game: Game) {
@@ -27,6 +32,7 @@ export class UI {
     this.hud = new Hud(this);
     this.chat = new Chat(this);
     const inp = game.input;
+    this.touch = new TouchControls(game, this, inp.el);
     inp.onKeyDown = (e) => this.keyDown(e);
     inp.onChar = (ch) => {
       // the key that opened a screen must not also be typed into it
@@ -67,9 +73,11 @@ export class UI {
     if (s) {
       s.init();
       this.game.input.unlock();
+      if (device.touch) this.touch.syncKeyboard();
     } else if (this.game.world && !this.game.panorama) {
       this.game.input.lock();
     }
+    if (!s && device.touch) this.touch.syncKeyboard();
   }
 
   close() {
@@ -125,15 +133,22 @@ export class UI {
       case 'F3': g.showDebug = !g.showDebug; return true;
       case 'F5': g.thirdPerson = (g.thirdPerson + 1) % 3; return true;
       case 'F2': this.screenshot(); return true;
-      case 'F11':
-        if (document.fullscreenElement) document.exitFullscreen();
-        else document.documentElement.requestFullscreen().then(() => {
-          // lets Ctrl+W sprint without closing the tab (Chromium keyboard lock)
-          (navigator as unknown as { keyboard?: { lock?: (k: string[]) => Promise<void> } }).keyboard?.lock?.(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ']).catch(() => {});
-        }).catch(() => {});
-        return true;
+      case 'F11': this.toggleFullscreen(); return true;
     }
     return false;
+  }
+
+  toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+      return;
+    }
+    document.documentElement.requestFullscreen().then(() => {
+      // lets Ctrl+W sprint without closing the tab (Chromium keyboard lock)
+      (navigator as unknown as { keyboard?: { lock?: (k: string[]) => Promise<void> } }).keyboard?.lock?.(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ']).catch(() => {});
+      // phones: the game wants landscape
+      if (device.touch) (screen.orientation as unknown as { lock?: (o: string) => Promise<void> }).lock?.('landscape').catch(() => {});
+    }).catch(() => {});
   }
 
   screenshot() {
@@ -156,6 +171,14 @@ export class UI {
     const g = this.game;
     g.icons.setScale(this.gui.scale);
     this.gui.setup(ctx, g.renderer.width, g.renderer.height, g.options.guiScale);
+    if (this.gui.w !== this.lastGuiW || this.gui.h !== this.lastGuiH) {
+      // rotation, window resize or the soft keyboard changed the GUI size: lay the open screen out again
+      const first = this.lastGuiW === 0;
+      this.lastGuiW = this.gui.w;
+      this.lastGuiH = this.gui.h;
+      if (this.screen) this.screen.relayout();
+      if (!first) this.previewBox = null;
+    }
     const [mx, my] = this.toGui(g.input.mouseX, g.input.mouseY);
     if (g.world && g.player && !g.panorama) this.hud.render(ctx);
     if (g.world && !g.panorama && !this.screen && !g.input.locked && !g.hideHud) {
@@ -169,6 +192,7 @@ export class UI {
       this.screen.render(ctx, mx, my);
     }
     if (g.world && !g.panorama) g.achievements.render(ctx);
+    this.touch.render(ctx);
   }
 
   /** Draw an item icon with count / durability overlays at GUI position. */

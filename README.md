@@ -129,3 +129,12 @@ src/entity   entity physics (vanilla collision), living entities, mobs & AI, pat
 src/ui       bitmap font, GUI primitives, isometric item icons, HUD, menus, containers, trading
 tools/       headless Playwright scenario runner used for visual regression screenshots
 ```
+
+## Mobile / touch
+
+The game detects phones and tablets (or `?touch=1`) and switches to touch controls; a mouse or keyboard switches it back.
+
+- **World**: floating stick on the left (push past the rim to sprint), drag the right side to look, tap to use/place, long-press to mine. Buttons for Jump, Sneak (toggle), Attack, Use, plus Pause / Chat / Inventory / Drop / Camera / Fullscreen. Tap the hotbar to select a slot.
+- **Menus and containers**: taps are clicks, dragging scrolls lists, sliders drag. **Split** acts as right-click and **Shift** as shift-click; **X** closes.
+- **Text fields** raise the soft keyboard; the layout follows the visual viewport and re-flows on rotation.
+- Phones default to a shorter render distance and cap the pixel ratio at 2. A web manifest and icons let you "Add to Home Screen" for fullscreen landscape play.

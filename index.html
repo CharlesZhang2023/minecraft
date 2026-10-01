@@ -2,13 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,interactive-widget=resizes-content">
 <title>Minecraft</title>
+<meta name="description" content="A fan-made, procedurally generated block-building sandbox that runs in the browser. Works with keyboard and mouse, or touch on phones and tablets.">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Minecraft">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
-  html,body{margin:0;height:100%;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none}
-  canvas{position:fixed;left:0;top:0;width:100%;height:100%;display:block}
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none;
+    -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
+  canvas{position:fixed;left:0;top:0;width:100%;height:100%;display:block;touch-action:none}
   #ui{image-rendering:pixelated;image-rendering:crisp-edges}
-  #hidden-input{position:fixed;left:-1000px;top:0;opacity:0}
 </style>
 </head>
 <body>

@@ -87,6 +87,8 @@ export abstract class Screen {
   hidesSelection = true;
   darkens = true;
   showsChat = false; // the screen draws the chat itself
+  touchTools = false; // touch: show the Split / Shift / close helper buttons (container screens)
+  touchScrolls = false; // touch: vertical drags scroll the screen (via wheel) instead of clicking
   widgets: Widget[] = [];
   constructor(public ui: UI) {}
   get game() { return this.ui.game; }
@@ -108,6 +110,23 @@ export abstract class Screen {
     for (const w of this.widgets) w.mouseMove?.(mx, my);
   }
   wheel(_d: number) {}
+  /** Touch: should a press here act immediately even though the screen scrolls on drag (scrollbars)? */
+  touchImmediate(_mx: number, _my: number): boolean { return false; }
+  /** Is a text field waiting for typing? Drives the soft keyboard. */
+  wantsKeyboard(): boolean {
+    return this.widgets.some((w) => w instanceof TextField && w.focused && w.visible !== false);
+  }
+  /** The GUI size changed (rotation, window resize, soft keyboard): rebuild the layout, keeping typed text. */
+  relayout() {
+    const fields = () => this.widgets.filter((w) => w instanceof TextField) as TextField[];
+    const saved = fields().map((t) => [t.value, t.focused] as const);
+    this.init();
+    fields().forEach((t, i) => {
+      if (!saved[i]) return;
+      t.value = saved[i][0];
+      t.focused = saved[i][1];
+    });
+  }
   key(e: KeyboardEvent): boolean {
     for (const w of this.widgets) if (w.key?.(e)) return true;
     if (e.code === 'Escape') { this.close(); return true; }

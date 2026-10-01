@@ -3,6 +3,7 @@ import { Renderer, Camera } from '../render/renderer';
 import { World } from '../world/world';
 import { Player, GameMode } from './player';
 import { Input } from './input';
+import { device } from './device';
 import { Audio, SOUND_FOR } from './audio';
 import { Options, loadOptions, saveOptions } from './options';
 import { Particles } from './particles';
@@ -128,13 +129,24 @@ export class Game {
     this.ui = new UI(this);
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 120));
+    window.visualViewport?.addEventListener('resize', () => this.resize());
+    window.visualViewport?.addEventListener('scroll', () => this.resize());
+    device.onChange(() => this.resize());
     this.audio.volume = this.options.volume;
     this.audio.musicVolume = this.options.music;
   }
 
   resize() {
-    const dpr = window.devicePixelRatio || 1;
-    const w = Math.floor(window.innerWidth * dpr), h = Math.floor(window.innerHeight * dpr);
+    const dpr = device.ratio(), vp = device.viewport();
+    const w = Math.max(1, Math.floor(vp.w * dpr)), h = Math.max(1, Math.floor(vp.h * dpr));
+    // on touch devices the canvases follow the visual viewport (it shrinks when the soft keyboard opens)
+    for (const c of [this.renderer.canvas, this.uiCanvas]) {
+      c.style.left = device.touch ? vp.x + 'px' : '';
+      c.style.top = device.touch ? vp.y + 'px' : '';
+      c.style.width = device.touch ? vp.w + 'px' : '';
+      c.style.height = device.touch ? vp.h + 'px' : '';
+    }
     this.renderer.resize(w, h);
     this.uiCanvas.width = w;
     this.uiCanvas.height = h;
@@ -389,6 +401,7 @@ export class Game {
     if (n >= 10) this.acc = 0;
     this.ui.tick(dt);
     this.partial = paused ? 1 : this.acc / TICK_MS;
+    this.ui.touch.update();
     this.updateLook();
     this.render();
     this.frames++;
@@ -561,6 +574,11 @@ export class Game {
     if (i.isDown('KeyS')) forward -= 1;
     if (i.isDown('KeyA')) strafe += 1;
     if (i.isDown('KeyD')) strafe -= 1;
+    if (i.stick) {
+      // analog stick overrides the keys: up is forward, left is +strafe
+      forward = -i.stick.y;
+      strafe = -i.stick.x;
+    }
     return {
       forward: forward * 0.98, strafe: strafe * 0.98,
       jump: i.isDown('Space'), sneak: i.isDown('ShiftLeft') || i.isDown('ShiftRight'),

@@ -1,4 +1,6 @@
-// Keyboard / mouse state with per-tick edge detection.
+// Keyboard / mouse state with per-tick edge detection. On-screen touch controls feed the same state
+// (virtual keys, an analog stick and synthetic mouse buttons), so gameplay code never needs to know.
+import { device } from './device';
 
 export class Input {
   down = new Set<string>();
@@ -10,7 +12,14 @@ export class Input {
   wheel = 0;
   mouseX = 0;
   mouseY = 0;
-  locked = false;
+  /** Real pointer lock (desktop). */
+  pointerLocked = false;
+  /** Keys held by on-screen controls. */
+  virtual = new Set<string>();
+  /** Analog movement stick, x right / y down in -1..1. */
+  stick: { x: number; y: number } | null = null;
+  /** True while the touch layer should behave like a locked pointer (in the world with no screen open). */
+  touchPlaying: () => boolean = () => false;
   onKeyDown: (e: KeyboardEvent) => boolean = () => false; // return true if consumed by UI
   onChar: (ch: string) => void = () => {};
   onMouseDown: (x: number, y: number, button: number, e: MouseEvent) => void = () => {};
@@ -19,8 +28,14 @@ export class Input {
   onLockChange: (locked: boolean) => void = () => {};
   private lastUnlock = 0;
 
-  constructor(public el: HTMLElement) {
+  get locked() {
+    return this.pointerLocked || (device.touch && this.touchPlaying());
+  }
+
+  constructor(public el: HTMLCanvasElement) {
     window.addEventListener('keydown', (e) => {
+      // text typed on a soft keyboard is delivered through the bridge in ui/touch.ts
+      if ((e.target as HTMLElement | null)?.id === 'hidden-input' && !['Escape', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.code)) return;
       if (e.code === 'Tab' || e.code === 'F3' || e.code === 'F1' || e.code === 'F2' || e.code === 'F5' || e.code === 'Space' || (e.ctrlKey && e.code !== 'KeyV' && e.code !== 'KeyC')) e.preventDefault();
       if (e.code.startsWith('Arrow') || e.code === 'Slash' || e.code === 'Quote') e.preventDefault();
       const consumed = this.onKeyDown(e);
@@ -38,41 +53,46 @@ export class Input {
     });
     el.addEventListener('mousedown', (e) => {
       e.preventDefault();
+      if (device.recentTouch()) return;
+      device.touch = false;
       this.mouseDown.add(e.button);
-      if (this.locked) this.mousePressedQ.push(e.button);
+      if (this.pointerLocked) this.mousePressedQ.push(e.button);
       this.onMouseDown(this.mouseX, this.mouseY, e.button, e);
     });
     window.addEventListener('mouseup', (e) => {
+      if (device.recentTouch()) return;
       this.mouseDown.delete(e.button);
       this.onMouseUp(this.mouseX, this.mouseY, e.button);
     });
     window.addEventListener('mousemove', (e) => {
-      if (this.locked) {
+      if (device.recentTouch()) return;
+      if (this.pointerLocked) {
         this.dx += e.movementX;
         this.dy += e.movementY;
       }
-      this.mouseX = e.clientX * devicePixelRatio;
-      this.mouseY = e.clientY * devicePixelRatio;
+      const k = this.el.width / Math.max(1, this.el.clientWidth || window.innerWidth);
+      this.mouseX = e.clientX * k;
+      this.mouseY = e.clientY * k;
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
       const d = Math.sign(e.deltaY);
-      if (this.locked) this.wheel += d;
+      if (this.pointerLocked) this.wheel += d;
       this.onWheel(d);
     }, { passive: false });
     document.addEventListener('pointerlockchange', () => {
-      this.locked = document.pointerLockElement === this.el;
-      if (!this.locked) {
+      this.pointerLocked = document.pointerLockElement === this.el;
+      if (!this.pointerLocked) {
         this.lastUnlock = performance.now();
         this.mouseDown.clear();
       }
-      this.onLockChange(this.locked);
+      this.onLockChange(this.pointerLocked);
     });
   }
 
   lock() {
-    if (this.locked) return;
+    if (device.touch || this.pointerLocked) return;
     // browsers refuse re-locking for ~1s after an Esc unlock
     if (performance.now() - this.lastUnlock < 1100) {
       setTimeout(() => this.lock(), 1150 - (performance.now() - this.lastUnlock));
@@ -110,6 +130,23 @@ export class Input {
     return w;
   }
   isDown(code: string) {
-    return this.down.has(code);
+    return this.down.has(code) || this.virtual.has(code);
+  }
+
+  /** Deliver a key press that did not come from a physical keyboard (soft keyboard bridge). */
+  synthKey(code: string, key: string) {
+    this.onKeyDown(new KeyboardEvent('keydown', { code, key }));
+  }
+
+  /** Touch: press/release a mouse button at a device-pixel position, routed like a real click. */
+  touchDown(x: number, y: number, button: number) {
+    this.mouseX = x;
+    this.mouseY = y;
+    this.mouseDown.add(button);
+    this.onMouseDown(x, y, button, null as unknown as MouseEvent);
+  }
+  touchUp(x: number, y: number, button: number) {
+    this.mouseDown.delete(button);
+    this.onMouseUp(x, y, button);
   }
 }

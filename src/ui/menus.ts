@@ -1,4 +1,5 @@
 // Menu screens: title, world selection/creation, loading, pause, options, death, chat, sleep.
+import { device } from '../game/device';
 import { Screen, Button, Slider, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
@@ -155,6 +156,7 @@ export async function playWorld(ui: UI, meta: WorldMeta) {
 
 // ------------------------------------------------------------------ world selection
 export class SelectWorldScreen extends Screen {
+  override touchScrolls = true;
   worlds: WorldMeta[] = [];
   selected = -1;
   scroll = 0;
@@ -580,6 +582,11 @@ export class ChatScreen extends Screen {
   }
   override wheel(d: number) {
     this.ui.chat.scroll = Math.max(0, Math.min(this.ui.chat.lines.length - 1, this.ui.chat.scroll - d));
+  }
+  override mouseDown(mx: number, my: number, b: number) {
+    if (device.touch && my < this.gui.h - 16) { this.ui.close(); return true; } // tap the world to dismiss
+    this.input.focused = true;
+    return super.mouseDown(mx, my, b);
   }
   override onClose() { this.ui.chat.scroll = 0; }
 }

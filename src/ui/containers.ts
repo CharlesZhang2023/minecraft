@@ -34,6 +34,7 @@ export abstract class ContainerScreen extends Screen {
   slots: Slot[] = [];
   cursor: ItemStack | null = null;
   override hidesSelection = true;
+  override touchTools = true;
   private drag: { button: number; slots: Slot[]; start: ItemStack } | null = null;
   private lastClick = { t: 0, slot: null as Slot | null };
   abstract title: string;
@@ -791,6 +792,12 @@ export class CreativeScreen extends ContainerScreen {
   }
   override wheel(d: number) {
     this.scroll = Math.max(0, Math.min(this.maxScroll(), this.scroll + d));
+  }
+  override touchScrolls = true;
+  override touchImmediate(mx: number, my: number) {
+    // the scrollbar and tabs are pressed immediately; the item grid scrolls when dragged
+    const L = this.left, T = this.top;
+    return (mx >= L + 174 && mx < L + 188 && my >= T + 18 && my < T + 108) || my < T + 4 || my >= T + this.ph - 4;
   }
   override key(e: KeyboardEvent): boolean {
     if (this.tab === SEARCH && this.search.focused) {

@@ -1,3 +1,5 @@
+import { device } from './device';
+
 export interface Options {
   fov: number;
   renderDistance: number;
@@ -32,6 +34,9 @@ export const DEFAULT_OPTIONS: Options = {
   fancyLeaves: true,
 };
 
+/** Phones get lighter defaults: a shorter view distance, plain leaves, and a bit more look sensitivity. */
+const TOUCH_DEFAULTS: Partial<Options> = { renderDistance: 5, fancyLeaves: false, particles: 1, sensitivity: 0.6 };
+
 export function loadOptions(): Options {
   try {
     const s = localStorage.getItem('webcraft.options');
@@ -39,7 +44,7 @@ export function loadOptions(): Options {
   } catch {
     /* storage unavailable */
   }
-  return { ...DEFAULT_OPTIONS };
+  return { ...DEFAULT_OPTIONS, ...(device.touch ? TOUCH_DEFAULTS : {}) };
 }
 
 export function saveOptions(o: Options) {
