@@ -32,6 +32,10 @@ const LIST: Ach[] = [
 export class Achievements {
   unlocked = new Set<string>();
   private queue: { a: Ach; t: number }[] = [];
+  /** Server side: a player earned one (their client shows it). */
+  onUnlock: ((id: string, name: string) => void) | null = null;
+  /** Client side: only the server awards achievements; the client just shows them. */
+  passive = false;
   constructor(private game: Game) {
     const fix = (id: string, icon: number) => { const a = LIST.find((x) => x.id === id); if (a) a.icon = icon; };
     fix('openInventory', I.BOOK);
@@ -51,12 +55,19 @@ export class Achievements {
   }
 
   unlock(id: string) {
-    if (this.unlocked.has(id) || this.game.panorama) return;
+    if (this.passive || this.unlocked.has(id) || this.game.panorama) return;
+    const a = LIST.find((x) => x.id === id);
+    if (!a) return;
+    this.unlocked.add(id);
+    this.onUnlock?.(id, a.name);
+  }
+
+  /** Client: the server says we earned one. */
+  show(id: string) {
     const a = LIST.find((x) => x.id === id);
     if (!a) return;
     this.unlocked.add(id);
     this.queue.push({ a, t: performance.now() });
-    this.game.ui.chat.add(`Player has just earned the achievement §a[${a.name}]`);
     this.game.audio.play('levelup', null, 0.35, 1.3);
   }
 
@@ -88,7 +99,8 @@ export class Achievements {
   // ------------------------------------------------------------------ popup
   render(ctx: Ctx) {
     if (!this.queue.length) return;
-    const gui = this.game.gui;
+    const c = this.game as unknown as import('../client/client').Client;
+    const gui = c.gui;
     const cur = this.queue[0];
     const age = (performance.now() - cur.t) / 3000;
     if (age > 1) { this.queue.shift(); if (this.queue[0]) this.queue[0].t = performance.now(); return; }
@@ -109,7 +121,7 @@ export class Achievements {
     ctx.fillRect(x + 158, y + 1, 1, 30);
     ctx.fillStyle = '#3a3a3a';
     ctx.fillRect(x + 4, y + 4, 24, 24);
-    ctx.drawImage(this.game.icons.get(cur.a.icon || I.BOOK), x + 8, y + 8, 16, 16);
+    ctx.drawImage(c.icons.get(cur.a.icon || I.BOOK), x + 8, y + 8, 16, 16);
     gui.text(ctx, 'Achievement get!', x + 30, y + 7, '#FFFF00', false);
     gui.text(ctx, cur.a.name, x + 30, y + 18, '#FFFFFF', false);
   }

@@ -1,7 +1,7 @@
 // UI manager: screen stack, HUD, chat, input routing, item drawing.
 import type { Horse } from '../entity/horse';
 import type { Entity } from '../entity/entity';
-import type { Game } from '../game/game';
+import type { Client } from '../client/client';
 import { Gui, Ctx } from './gui';
 import { Hud, drawDurability } from './hud';
 import { Chat } from './chat';
@@ -29,7 +29,9 @@ export class UI {
   private lastGuiH = 0;
   previewBox: { x: number; y: number; w: number; h: number; yaw: number; pitch: number; entity?: Entity } | null = null;
 
-  constructor(public game: Game) {
+  private buttons = 0;
+
+  constructor(public game: Client) {
     this.gui = game.gui;
     this.hud = new Hud(this);
     this.chat = new Chat(this);
@@ -39,19 +41,32 @@ export class UI {
     inp.onChar = (ch) => {
       // the key that opened a screen must not also be typed into it
       if (this.suppressChar) { this.suppressChar = false; return; }
+      this.forward('char', { ch });
       this.screen?.char(ch);
     };
     inp.onMouseDown = (x, y, b) => {
       game.audio.init();
       const [mx, my] = this.toGui(x, y);
-      if (this.screen) this.screen.mouseDown(mx, my, b);
-      else if (game.world && !inp.locked) inp.lock();
+      this.mx = mx;
+      this.my = my;
+      this.buttons++;
+      if (this.screen) {
+        this.forward('down', { b });
+        this.screen.mouseDown(mx, my, b);
+      } else if (game.world && !inp.locked) inp.lock();
     };
     inp.onMouseUp = (x, y, b) => {
       const [mx, my] = this.toGui(x, y);
+      this.mx = mx;
+      this.my = my;
+      this.buttons = Math.max(0, this.buttons - 1);
+      this.forward('up', { b });
       this.screen?.mouseUp(mx, my, b);
     };
-    inp.onWheel = (d) => this.screen?.wheel(d);
+    inp.onWheel = (d) => {
+      this.forward('wheel', { d });
+      this.screen?.wheel(d);
+    };
     inp.onLockChange = (locked) => {
       // Esc released the pointer while playing -> open the pause menu
       if (!locked && !this.screen && game.world && !game.panorama) this.open(new Menus.PauseScreen(this));
@@ -63,12 +78,29 @@ export class UI {
     return [x / this.gui.scale, y / this.gui.scale];
   }
 
+  /** Clock for double-click detection (the server's copy of a window uses the client's). */
+  now() { return performance.now(); }
+
   pausesGame() {
     return !!this.screen?.pausesGame;
   }
 
+  /**
+   * Container windows also exist on the server, which replays our clicks and keys on its copy (in coordinates
+   * relative to the window, so screen size doesn't matter) and sends back what really happened.
+   */
+  private forward(e: string, extra: Record<string, unknown>) {
+    const s = this.screen, conn = this.game.conn;
+    if (!(s instanceof Containers.ContainerScreen) || !conn) return;
+    const inp = this.game.input;
+    const kd = ['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft'].filter((k) => inp.isDown(k));
+    conn.send({ t: 'ui', e, x: this.mx - s.left, y: this.my - s.top, kd, ms: Math.round(performance.now()), ...extra });
+  }
+
   open(s: Screen | null) {
     const prev = this.screen;
+    // our window closed (or another replaced it): the server's copy closes too
+    if (prev instanceof Containers.ContainerScreen && prev !== s && !this.game.serverOpening) this.game.conn?.send({ t: 'close' });
     this.screen = s;
     if (prev) prev.onClose();
     this.previewBox = null;
@@ -93,6 +125,8 @@ export class UI {
     if (mx !== this.mx || my !== this.my) {
       this.mx = mx;
       this.my = my;
+      // only drags matter to the server's copy of a window
+      if (this.buttons > 0) this.forward('move', {});
       this.screen?.mouseMove(mx, my);
     }
   }
@@ -107,9 +141,15 @@ export class UI {
     const p = this.game.player!;
     // on a tame horse, E opens the horse's inventory
     const h = p.riding as Horse | null;
-    if (h && (h as Partial<Horse>).chestItems && h.tame) { this.openHorse(h); return; }
+    if (h && (h as Partial<Horse>).chestItems && h.tame) {
+      this.openHorse(h);
+      if (!this.game.serverOpening) this.game.conn?.send({ t: 'open', m: 'openInventory' });
+      return;
+    }
     this.game.achievements.unlock('openInventory');
     this.open(p.creative ? new Containers.CreativeScreen(this) : new Containers.InventoryScreen(this));
+    // opened from our side: the server opens its copy (it decides the same way: creative or not, on a horse or not)
+    if (!this.game.serverOpening) this.game.conn?.send({ t: 'open', m: 'openInventory' });
   }
   openDeath(msg: string) { this.open(new Menus.DeathScreen(this, msg)); }
   openTrade(v: Villager) { this.open(new TradeScreen(this, v)); }
@@ -127,6 +167,7 @@ export class UI {
     g.audio.init();
     if (this.screen) {
       if (e.code === 'F3' && g.world) { g.showDebug = !g.showDebug; return true; }
+      if (e.code !== 'Escape') this.forward('key', { code: e.code, key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, shift: e.shiftKey });
       return this.screen.key(e) || true;
     }
     if (!g.world || g.panorama) return false;

@@ -12,7 +12,7 @@
 //
 // Everything feeds the ordinary Input object (virtual keys and synthetic mouse buttons), so gameplay and
 // UI code don't care whether the player has a mouse or a finger.
-import type { Game } from '../game/game';
+import type { Client as Game } from '../client/client';
 import type { UI } from './ui';
 import type { Input } from '../game/input';
 import { device } from '../game/device';
@@ -441,9 +441,9 @@ export class TouchControls {
   /** Tap on the world: hit a mob unless it has a use for the held item; anywhere else, use / place. */
   private tap() {
     const g = this.game;
-    if (g.targetEntity) {
-      if (!g.interact?.interactEntity()) this.pulse(0);
-    } else this.pulse(2);
+    // a mob: the server decides (use the held item on it, or else hit it) — button 3 asks it to
+    if (g.targetEntity) this.pulse(3);
+    else this.pulse(2);
   }
 
   /** A short synthetic click that survives until the next game tick. */

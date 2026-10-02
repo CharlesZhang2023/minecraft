@@ -30,6 +30,10 @@ export interface WorldMeta {
   /** Islands made for gateways that pointed into empty void, built once their chunk loads. */
   endIslands?: { x: number; y: number; z: number; seed: number; built?: boolean }[];
   achievements?: string[];
+  /** Everyone else who has played here (multiplayer), by name: position, inventory, dimension, achievements. */
+  players?: Record<string, Record<string, unknown>>;
+  /** Let players other than the host use commands. */
+  cheatsForAll?: boolean;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;

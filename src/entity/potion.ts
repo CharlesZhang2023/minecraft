@@ -18,12 +18,11 @@ export class ThrownPotion extends Entity {
 
   override tick() {
     const nx = this.x + this.vx, ny = this.y + this.vy, nz = this.z + this.vz;
-    const ent = this.game.interact!.projectileHitEntity(this as unknown as Snowball, nx, ny, nz);
-    const p = this.game.player!;
-    const hitPlayer = this.shooter !== p && this.age > 2 && !p.dead && !p.spectator && Math.abs(nx - p.x) < 0.5 && ny > p.y && ny < p.y + 1.8 && Math.abs(nz - p.z) < 0.5;
+    // players are among the entities, so a potion can hit any of them (but not its thrower right away)
+    const ent = this.age > 2 || !this.shooter ? this.game.interact!.projectileHitEntity(this as unknown as Snowball, nx, ny, nz) : null;
     const id = this.world.getId(Math.floor(nx), Math.floor(ny), Math.floor(nz));
-    if (ent || hitPlayer || BLOCKS[id].solid) {
-      this.shatter(ent ?? (hitPlayer ? p : null));
+    if (ent || BLOCKS[id].solid) {
+      this.shatter(ent);
       return;
     }
     this.x = nx; this.y = ny; this.z = nz;
@@ -40,9 +39,9 @@ export class ThrownPotion extends Entity {
     const d = getItem(this.item.id);
     const type = POTION_BY_KEY.get(d.potion ?? 'water')!;
     const col = potionColor(type.effects);
-    const targets: LivingEntity[] = [g.player!, ...(g.entities.filter((e) => e instanceof LivingEntity) as LivingEntity[])];
+    const targets = g.entities.filter((e) => e instanceof LivingEntity) as LivingEntity[];
     for (const e of targets) {
-      if (e.dead || e.removed || (e === g.player && g.player!.spectator)) continue;
+      if (e.dead || e.removed || (e as { spectator?: boolean }).spectator) continue;
       const dist = Math.hypot(e.x - this.x, e.y + e.height / 2 - this.y, e.z - this.z);
       if (dist > 4 && e !== direct) continue;
       const scale = e === direct ? 1 : 1 - dist / 4;

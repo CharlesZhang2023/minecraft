@@ -125,6 +125,8 @@ export function dragonPose(d: EnderDragon, t: number): DragonPose {
 
 // ---------------------------------------------------------------- the dragon
 export class EnderDragon extends LivingEntity {
+  /** The player it's after when chasing. */
+  prey: LivingEntity | null = null;
   typeName = 'Ender Dragon';
   persist = true;
   boss = true;
@@ -208,7 +210,7 @@ export class EnderDragon extends LivingEntity {
     this.checkCrystals();
     this.collideWithEntities();
     this.destroyBlocks();
-    this.jawOpen += ((this.chasing && this.distanceTo(this.game.player!) < 30 ? 0.8 : 0.15 + 0.1 * Math.sin(this.age * 0.05)) - this.jawOpen) * 0.1;
+    this.jawOpen += ((this.chasing && this.prey && this.distanceTo(this.prey) < 30 ? 0.8 : 0.15 + 0.1 * Math.sin(this.age * 0.05)) - this.jawOpen) * 0.1;
     if (--this.growl <= 0) {
       this.growl = 150 + rng.int(300);
       this.game.audio.play('dragon.growl', this, 8, 0.9 + rng.next() * 0.2);
@@ -220,7 +222,7 @@ export class EnderDragon extends LivingEntity {
 
   /** Port of the 1.8 flight controller: steer toward a target with limited turn rate. */
   private fly() {
-    const p = this.game.player;
+    const p = this.prey;
     let dx = this.tx - this.x, dy = this.ty - this.y, dz = this.tz - this.z;
     let d3 = dx * dx + dy * dy + dz * dz;
     if (this.chasing && p && !p.dead) {
@@ -270,8 +272,11 @@ export class EnderDragon extends LivingEntity {
 
   private newTarget() {
     this.forceNew = false;
-    const p = this.game.player;
-    if (rng.int(2) === 0 && p && !p.dead && !p.spectator) {
+    // half the time, go after one of the players in the End
+    const ps = this.game.playerEntities().filter((q) => !q.dead && !q.spectator);
+    const p = ps.length ? ps[rng.int(ps.length)] : null;
+    this.prey = p;
+    if (rng.int(2) === 0 && p) {
       this.chasing = true;
       this.tx = p.x; this.tz = p.z; this.ty = p.y;
       return;
@@ -323,8 +328,7 @@ export class EnderDragon extends LivingEntity {
     const boxes = this.hitBoxes();
     const g = this.game;
     const targets: LivingEntity[] = [];
-    if (g.player && !g.player.dead && !g.player.spectator) targets.push(g.player);
-    for (const e of g.entities) if (e instanceof LivingEntity && !(e instanceof EnderDragon) && !(e instanceof EndCrystal) && !e.dead) targets.push(e);
+    for (const e of g.entities) if (e instanceof LivingEntity && !(e instanceof EnderDragon) && !(e instanceof EndCrystal) && !e.dead && !(e as { spectator?: boolean }).spectator) targets.push(e);
     for (const e of targets) {
       const b = e.box;
       for (const pb of boxes) {

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { WorldGen } from './worldgen';
-import { buildChunk } from './mesher';
+import { buildChunk, lightChunk } from './mesher';
 import { NetherGen } from './nethergen';
 import { EndGen } from './endgen';
 
@@ -10,7 +10,8 @@ let end: EndGen | null = null;
 
 export type WorkerRequest =
   | { type: 'gen'; id: number; seed: number; cx: number; cz: number; dim: string }
-  | { type: 'mesh'; id: number; cx: number; cz: number; chunks: Uint16Array[]; biomes: Uint8Array[]; sky: boolean };
+  | { type: 'mesh'; id: number; cx: number; cz: number; chunks: Uint16Array[]; biomes: Uint8Array[]; sky: boolean }
+  | { type: 'light'; id: number; cx: number; cz: number; chunks: Uint16Array[]; sky: boolean };
 
 self.onmessage = (e: MessageEvent<WorkerRequest>) => {
   const msg = e.data;
@@ -27,6 +28,9 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       r = gen.generate(msg.cx, msg.cz);
     }
     (self as unknown as Worker).postMessage({ type: 'gen', id: msg.id, cx: msg.cx, cz: msg.cz, blocks: r.blocks, biomes: r.biomes, spawns: r.spawns ?? [] }, [r.blocks.buffer, r.biomes.buffer]);
+  } else if (msg.type === 'light') {
+    const r = lightChunk(msg.chunks, msg.sky);
+    (self as unknown as Worker).postMessage({ type: 'light', id: msg.id, cx: msg.cx, cz: msg.cz, ...r }, [r.light.buffer, r.heightmap.buffer]);
   } else if (msg.type === 'mesh') {
     const r = buildChunk(msg.chunks, msg.biomes, msg.sky);
     (self as unknown as Worker).postMessage(

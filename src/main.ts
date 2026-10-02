@@ -1,4 +1,4 @@
-import { Game } from './game/game';
+import { Client } from './client/client';
 import { playWorld } from './ui/menus';
 import type { WorldMeta } from './game/storage';
 import { BLOCKS } from './world/blocks';
@@ -17,9 +17,20 @@ function fail(msg: string) {
 }
 
 try {
-  const game = new Game(gl, ui);
-  (window as unknown as { game: Game }).game = game;
+  const game = new Client(gl, ui);
+  // tests and the console: `game` is what you see; `game.server` is the simulation (single-player / hosting)
+  (window as unknown as { game: Client }).game = game;
   (window as unknown as { __mc: unknown }).__mc = { BLOCKS, ITEMS, WorldGen, BIOMES, regionVillage, regionFortress, strongholdSites, layoutStronghold, nearestSite };
+  // tests: run code inside the simulation as the first player (their dimension, `g.player`, `g.world`...)
+  (window as unknown as { sim: unknown }).sim = <T>(fn: (g: NonNullable<Client['server']>, p: NonNullable<Client['player']>) => T): T | undefined => {
+    const s = game.server, sp = s?.players[0];
+    return s && sp ? s.asActor(sp, () => fn(s, sp.entity)) : undefined;
+  };
+  // tests: the server, its first player, their dimension and world
+  (window as unknown as { S: unknown }).S = () => {
+    const g = game.server!, sp = g.players[0], d = g.dims.get(sp.dim);
+    return { g, sp, p: sp.entity, d, w: d?.world };
+  };
   game.start();
   // never lose progress: save when the tab is hidden or closed
   document.addEventListener('visibilitychange', () => {

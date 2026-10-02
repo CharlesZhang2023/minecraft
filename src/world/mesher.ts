@@ -244,6 +244,37 @@ function fluidCornerHeight(i: number, fluid: number, cx: number, cz: number): nu
 }
 
 // ------------------------------------------------------------------ main entry
+/** Light of the centre chunk (sky << 4 | block), without building any geometry (the server needs light, not meshes). */
+export function lightChunk(chunks: Uint16Array[], hasSky = true): { light: Uint8Array; heightmap: Uint8Array } {
+  for (let k = 0; k < 9; k++) {
+    const ox = (k % 3) * 16, oz = ((k / 3) | 0) * 16;
+    const c = chunks[k];
+    for (let y = 0; y < H; y++)
+      for (let z = 0; z < 16; z++) {
+        const src = (z << 4) | (y << 8);
+        rb.set(c.subarray(src, src + 16), ox + (oz + z) * R + y * RA);
+      }
+  }
+  computeLight(hasSky);
+  // top non-air block of each column (random ticks only visit sections below it)
+  const heightmap = new Uint8Array(256);
+  const c = chunks[4];
+  for (let i = 0; i < 256; i++)
+    for (let y = H - 1; y >= 0; y--) if (c[i | (y << 8)]) { heightmap[i] = y; break; }
+  return { light: centreLight(), heightmap };
+}
+
+function centreLight() {
+  const light = new Uint8Array(16 * 16 * H);
+  for (let y = 0; y < H; y++)
+    for (let z = 0; z < 16; z++)
+      for (let x = 0; x < 16; x++) {
+        const i = x + 16 + (z + 16) * R + y * RA;
+        light[x | (z << 4) | (y << 8)] = (sky[i] << 4) | blk[i];
+      }
+  return light;
+}
+
 export function buildChunk(chunks: Uint16Array[], biomes: Uint8Array[], hasSky = true): MeshResult {
   // assemble region
   for (let k = 0; k < 9; k++) {
@@ -318,14 +349,7 @@ export function buildChunk(chunks: Uint16Array[], biomes: Uint8Array[], hasSky =
   opaqueSections[16] = opaqueBuf.verts >> 2;
   transSections[16] = transBuf.verts >> 2;
 
-  // extract centre light
-  const light = new Uint8Array(16 * 16 * H);
-  for (let y = 0; y < H; y++)
-    for (let z = 0; z < 16; z++)
-      for (let x = 0; x < 16; x++) {
-        const i = x + 16 + (z + 16) * R + y * RA;
-        light[x | (z << 4) | (y << 8)] = (sky[i] << 4) | blk[i];
-      }
+  const light = centreLight();
   return { light, opaque: opaqueBuf.take(), opaqueSections, trans: transBuf.take(), transSections, heightmap };
 }
 

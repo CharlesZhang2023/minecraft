@@ -1,6 +1,6 @@
 // Renders entities (mobs, dropped items, projectiles) and the first-person hand.
 import type { Renderer } from './renderer';
-import type { Game } from '../game/game';
+import type { Client as Game } from '../client/client';
 import { Mat4, mat4, identity, translate, rotateX, rotateY, rotateZ, scale, multiply } from '../math';
 import * as M from './models';
 import { Entity } from '../entity/entity';

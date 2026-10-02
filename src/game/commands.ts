@@ -100,7 +100,7 @@ export class Commands {
           const d = ({ peaceful: 0, easy: 1, normal: 2, hard: 3, p: 0, e: 1, n: 2, h: 3, '0': 0, '1': 1, '2': 2, '3': 3 } as Record<string, number>)[args[0]?.toLowerCase() ?? ''];
           if (d === undefined) throw new Error('Unknown difficulty');
           g.options.difficulty = d;
-          g.saveOptions();
+          for (const sp of g.players) sp.entity.difficulty = d;
           out.push(`The difficulty has been set to ${['Peaceful', 'Easy', 'Normal', 'Hard'][d]}`);
           break;
         }
@@ -115,7 +115,7 @@ export class Commands {
           const to = (args[0] ?? '').toLowerCase();
           if (to !== 'overworld' && to !== 'nether' && to !== 'end') throw new Error('Usage: /dimension <overworld|nether|end>');
           if (to === g.dimension) { out.push('Already there'); break; }
-          g.travel(to as Dimension, to === 'overworld');
+          if (g.ctx) g.travel(g.ctx, to as Dimension, to === 'overworld');
           out.push(`Travelling to the ${to}`);
           break;
         }
@@ -124,7 +124,6 @@ export class Commands {
           break;
         case 'spawnpoint':
           p.spawnX = Math.floor(p.x); p.spawnY = Math.floor(p.y); p.spawnZ = Math.floor(p.z);
-          if (g.meta) g.meta.spawn = [p.spawnX, p.spawnY, p.spawnZ];
           out.push(`Set Player's spawn point to ${p.spawnX}, ${p.spawnY}, ${p.spawnZ}`);
           break;
         case 'setblock': {

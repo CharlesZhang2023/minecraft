@@ -49,6 +49,13 @@ export class Player extends LivingEntity {
   portalCooldown = 0;
   score = 0;
   riding: Mount | null = null;
+  /**
+   * The client's copy of its own player: it walks, jumps and collides here for instant response, but health,
+   * hunger, damage and effects are the server's (they arrive with the player's status every tick).
+   */
+  clientSide = false;
+  /** Jumps since the client last reported in (the server charges hunger for them). */
+  jumps = 0;
   fishHook: { reel(): number; discard(): void; x: number; y: number; z: number } | null = null;
 
   constructor(world: World) {
@@ -151,7 +158,7 @@ export class Player extends LivingEntity {
 
   /** Vanilla body turning: the head looks where you look, the body eases toward the way you walk (or
    * where you look when swinging) and never lets the head twist more than 75° from it. */
-  private turnBody(dx: number, dz: number) {
+  protected turnBody(dx: number, dz: number) {
     this.headYaw = this.yaw;
     let target = this.bodyYaw;
     if (dx * dx + dz * dz > 0.0025) {
@@ -168,11 +175,12 @@ export class Player extends LivingEntity {
   }
 
   exhaust(n: number) {
-    if (this.canFly) return;
+    if (this.canFly || this.clientSide) return;
     this.exhaustion = Math.min(40, this.exhaustion + n);
   }
 
   foodTick() {
+    if (this.clientSide) return;
     if (this.exhaustion > 4) {
       this.exhaustion -= 4;
       if (this.saturation > 0) this.saturation = Math.max(0, this.saturation - 1);
@@ -213,10 +221,16 @@ export class Player extends LivingEntity {
 
   override jump() {
     super.jump();
+    this.jumps++;
     this.exhaust(this.sprinting ? 0.2 : 0.05);
   }
 
+  override environment() { if (!this.clientSide) super.environment(); }
+  override tickEffects() { if (!this.clientSide) super.tickEffects(); }
+  override onLand(fall: number) { if (!this.clientSide) super.onLand(fall); }
+
   override damage(amount: number, source: DamageSource, attacker?: Entity | null): boolean {
+    if (this.clientSide) return false;
     if (this.canFly && source !== 'void' && source !== 'kill') return false;
     if (this.dead) return false;
     if (this.difficulty === 0 && (source === 'mob')) return false;

@@ -328,7 +328,7 @@ export class LoadingScreen extends Screen {
     if (!this.ready || g.panorama) return;
     const p = g.loadProgress();
     this.shown = Math.max(this.shown, p);
-    if (p >= 0.99 && g.player && (g.player.spawnY >= 0 || g.dimension !== 'overworld') && !g.pendingArrival && !g.traveling) {
+    if (p >= 0.99 && g.player && g.arrived) {
       const first = this.title === 'Loading world';
       this.ui.close();
       if (first) this.ui.chat.add(`§eWelcome! Press §fE§e for inventory, §fT§e to chat, §f/help§e for commands.`);
@@ -490,17 +490,15 @@ export class DeathScreen extends Screen {
   override init() {
     const W = this.gui.w, H = this.gui.h;
     const hardcore = !!this.game.meta?.hardcore;
+    // the server brings us back (and moves us home from another dimension)
     const respawn = new Button(this.ui, W / 2 - 100, H / 4 + 72, 200, 20, hardcore ? 'Spectate World' : 'Respawn', () => {
-      const p = this.game.player!;
-      if (hardcore) { p.dead = false; p.health = 20; p.setGameMode(GameMode.Spectator); this.ui.close(); return; }
-      p.respawn();
-      if (this.game.dimension !== 'overworld') this.game.travel('overworld', true);
-      else this.ui.close();
+      this.game.conn?.send({ t: 'respawn' });
+      this.ui.close();
     });
-    const title = new Button(this.ui, W / 2 - 100, H / 4 + 96, 200, 20, 'Title Screen', async () => {
-      this.ui.open(new LoadingScreen(this.ui, 'Saving world'));
-      const p = this.game.player!;
-      if (!hardcore) p.respawn();
+    const title = new Button(this.ui, W / 2 - 100, H / 4 + 96, 200, 20, this.game.remote ? 'Disconnect' : 'Title Screen', async () => {
+      this.game.conn?.send({ t: 'respawn' });
+      if (this.game.server) this.game.server.tick();
+      this.ui.open(new LoadingScreen(this.ui, this.game.remote ? 'Disconnecting' : 'Saving world'));
       await this.game.closeWorld(true);
       this.ui.open(new TitleScreen(this.ui));
     });
@@ -530,6 +528,7 @@ export class DeathScreen extends Screen {
   override key() { return true; }
 }
 
+/** In bed: the screen fades while the server waits for everyone in the world to be asleep. */
 export class SleepScreen extends Screen {
   override darkens = false;
   private t = 0;
@@ -540,24 +539,37 @@ export class SleepScreen extends Screen {
   wake() {
     this.game.player!.sleeping = false;
     this.game.sleepFade = 0;
+    this.game.conn?.send({ t: 'wake' });
     this.ui.close();
   }
   override tick() {
     const g = this.game;
     this.t++;
     g.sleepFade = Math.min(1, this.t / 100);
-    if (this.t >= 100) {
-      g.time = Math.ceil(g.time / 24000) * 24000;
-      g.weather?.setWeather('clear', 12000 + Math.floor(Math.random() * 100000));
-      this.wake();
-    }
   }
   override render(ctx: Ctx, mx: number, my: number) {
+    const others = this.game.server ? this.game.server.players.length > 1 : this.game.remote;
+    if (others && this.t > 100) this.gui.textCenter(ctx, 'Waiting for everyone to sleep...', this.gui.w / 2, this.gui.h - 60, '#FFFFFF');
     super.render(ctx, mx, my);
   }
   override key(e: KeyboardEvent) {
     if (e.code === 'Escape') { this.wake(); return true; }
     return true;
+  }
+}
+
+/** The connection to someone else's game ended. */
+export class DisconnectedScreen extends Screen {
+  constructor(ui: UI, public reason: string) { super(ui); }
+  override init() {
+    const W = this.gui.w, H = this.gui.h;
+    this.widgets = [new Button(this.ui, W / 2 - 100, H / 2 + 20, 200, 20, 'Back to Title Screen', () => this.ui.open(new TitleScreen(this.ui)))];
+  }
+  override render(ctx: Ctx, mx: number, my: number) {
+    this.gui.dirtBackground(ctx);
+    this.gui.textCenter(ctx, 'Disconnected', this.gui.w / 2, this.gui.h / 2 - 30, '#AAAAAA');
+    this.gui.textCenter(ctx, this.reason, this.gui.w / 2, this.gui.h / 2 - 10, '#FFFFFF');
+    super.render(ctx, mx, my);
   }
 }
 
@@ -587,13 +599,13 @@ export class ChatScreen extends Screen {
     this.gui.text(ctx, t + (Math.floor(performance.now() / 300) % 2 ? '_' : ''), 4, this.gui.h - 12, '#FFFFFF');
   }
   override key(e: KeyboardEvent) {
-    const cmds = this.game.commands;
+    const cmds = this.game.chatHistory;
     if (e.code === 'Enter') {
       const v = this.input.value.trim();
       if (v) {
         cmds.history.push(v);
-        if (v.startsWith('/')) for (const l of cmds.run(v)) this.ui.chat.add(l);
-        else this.ui.chat.add(`<Player> ${v}`);
+        // commands and messages both go to the server (it answers in the chat)
+        this.game.conn?.send({ t: 'chat', msg: v });
       }
       this.ui.close();
       return true;

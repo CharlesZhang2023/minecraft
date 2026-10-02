@@ -91,6 +91,14 @@ export class Particles {
     return p;
   }
 
+  /** Bits of food flying from a mouth (eating). */
+  crumbs(x: number, y: number, z: number, dx: number, dz: number, layer: number) {
+    for (let i = 0; i < 5; i++) {
+      const u0 = Math.random() * 0.7, v0 = Math.random() * 0.7;
+      this.add({ x, y, z, vx: (Math.random() - 0.5) * 0.1 + dx * 0.05, vy: 0.1, vz: (Math.random() - 0.5) * 0.1 + dz * 0.05, layer, u0, v0, u1: u0 + 0.25, v1: v0 + 0.25, size: 0.05, life: 10 + Math.floor(Math.random() * 10) });
+    }
+  }
+
   smoke(x: number, y: number, z: number, big = false) {
     this.add({
       x, y, z, vx: (rng.next() - 0.5) * 0.02, vy: 0.02 + rng.next() * 0.02, vz: (rng.next() - 0.5) * 0.02, kind: 'smoke',

@@ -269,8 +269,8 @@ export class Pistons {
     const bx = p[0] - d[0] * off, by = p[1] - d[1] * off, bz = p[2] - d[2] * off;
     const step = t.progress - (t.prev ?? 0);
     const slime = idOf(t.block) === B.SLIME_BLOCK;
-    for (const e of [g.player!, ...g.entities]) {
-      if (e.removed || (e === g.player && g.player!.spectator)) continue;
+    for (const e of g.entities) {
+      if (e.removed || (e as { spectator?: boolean }).spectator) continue;
       const b = e.box;
       if (b.x1 <= bx || b.x0 >= bx + 1 || b.y1 <= by || b.y0 >= by + 1 || b.z1 <= bz || b.z0 >= bz + 1) continue;
       e.move(d[0] * step, d[1] * step, d[2] * step);
@@ -281,6 +281,20 @@ export class Pistons {
       }
       if (d[1] > 0) { e.vy = Math.max(e.vy, 0); e.fallDistance = 0; }
     }
+  }
+
+  /** What's moving this tick, for clients to draw: [packed block, x, y, z, dir, prev, progress, kind (0 block, 1 head)]. */
+  snapshot(): number[][] {
+    const w = this.game.world;
+    const out: number[][] = [];
+    if (!w) return out;
+    for (const p of this.moving.values()) {
+      const tile = w.getTile(p[0], p[1], p[2]) as MovingTile | undefined;
+      if (!tile || tile.type !== 'moving') continue;
+      out.push([tile.block, p[0], p[1], p[2], tile.dir, tile.prev ?? tile.progress, tile.progress, 0]);
+    }
+    for (const a of this.anims) out.push([a.block, a.x, a.y, a.z, a.dir, a.prev, a.progress, 1]);
+    return out;
   }
 
   /** Blocks to draw this frame: [packed block, x, y, z] with interpolated offsets. */
@@ -304,4 +318,20 @@ export class Pistons {
     }
     return out;
   }
+}
+
+/** Client side: where to draw what a server's piston snapshot says is moving (same maths as renderList). */
+export function pistonDrawList(list: number[][], t: number): [number, number, number, number][] {
+  const out: [number, number, number, number][] = [];
+  for (const [block, x, y, z, dir, prev, progress, kind] of list) {
+    const prog = prev + (progress - prev) * t;
+    if (kind === 0) {
+      const d = FACING6[dir], off = 1 - prog;
+      out.push([block, x - d[0] * off, y - d[1] * off, z - d[2] * off]);
+    } else {
+      const hf = FACING6[dir ^ 1];
+      out.push([block, x + hf[0] * (1 - prog), y + hf[1] * (1 - prog), z + hf[2] * (1 - prog)]);
+    }
+  }
+  return out;
 }

@@ -45,6 +45,7 @@ export class Weather {
     this.thunderTime = duration;
   }
 
+  /** Server: the weather clock, thunder, and snow / ice forming around each player. */
   tick() {
     if (--this.rainTime <= 0) {
       this.raining = !this.raining;
@@ -54,29 +55,17 @@ export class Weather {
       this.thundering = !this.thundering;
       this.thunderTime = this.thundering ? 3600 + this.rng.int(12000) : 12000 + this.rng.int(168000);
     }
-    this.rain += (this.raining ? 0.01 : -0.01);
-    this.rain = Math.max(0, Math.min(1, this.rain));
-    this.thunder += (this.thundering && this.raining ? 0.01 : -0.01);
-    this.thunder = Math.max(0, Math.min(1, this.thunder));
-    if (this.flash > 0) this.flash--;
-    const g = this.game, p = g.player!;
+    this.smooth();
+    const g = this.game, w = g.world!;
     if (this.thunder > 0.9 && this.rng.int(3000) === 0) {
-      this.flash = 4;
+      // the flash and its rumble are drawn and played by each client
       const d = 30 + this.rng.next() * 120;
-      setTimeout(() => g.audio.play('thunder', null, Math.max(0.2, 1 - d / 200) * 1.5, 0.8 + this.rng.next() * 0.2), d * 3);
+      for (const p of g.playersHere()) p.event(['thunder', d]);
     }
     if (this.rain <= 0) return;
-    // splash particles & sound
-    const w = g.world!;
-    const n = Math.floor(this.rain * this.rain * 60);
-    for (let i = 0; i < n; i++) {
-      const x = Math.floor(p.x) + this.rng.int(21) - 10, z = Math.floor(p.z) + this.rng.int(21) - 10;
-      const top = w.topSolidY(x, z);
-      if (top < 0 || Math.abs(top - p.y) > 10 || this.isCold(x, z) || !this.canRainIn(x, z)) continue;
-      g.particles!.rain(x + this.rng.next(), top + 1.05, z + this.rng.next());
-    }
     // snow accumulates / water freezes in cold biomes
-    if (this.rng.int(4) === 0) {
+    for (const p of g.playerEntities()) {
+      if (this.rng.int(4) !== 0) continue;
       const x = Math.floor(p.x) + this.rng.int(64) - 32, z = Math.floor(p.z) + this.rng.int(64) - 32;
       if (this.isCold(x, z)) {
         const y = w.topSolidY(x, z);
@@ -84,6 +73,43 @@ export class Weather {
         if (id === B.WATER && w.meta(x, y, z) === 0) w.set(x, y, z, B.ICE);
         else if ((OPAQUE[id] || isLeaves(id)) && w.getId(x, y + 1, z) === B.AIR && w.getLight(x, y + 1, z)[1] < 10) w.set(x, y + 1, z, B.SNOW);
       }
+    }
+  }
+
+  private smooth() {
+    this.rain += (this.raining ? 0.01 : -0.01);
+    this.rain = Math.max(0, Math.min(1, this.rain));
+    this.thunder += (this.thundering && this.raining ? 0.01 : -0.01);
+    this.thunder = Math.max(0, Math.min(1, this.thunder));
+  }
+
+  /** Client: what the server says (every second or so). */
+  sync(s: { raining: boolean; thundering: boolean; rain: number; thunder: number }) {
+    this.raining = s.raining;
+    this.thundering = s.thundering;
+    this.rain = s.rain;
+    this.thunder = s.thunder;
+  }
+
+  /** Client: lightning (the server picks when). */
+  strike(delayTicks: number) {
+    this.flash = 4;
+    const g = this.game as unknown as import('../client/client').Client;
+    setTimeout(() => g.audio.play('thunder', null, Math.max(0.2, 1 - delayTicks / 200) * 1.5, 0.8 + this.rng.next() * 0.2), delayTicks * 3);
+  }
+
+  /** Client: ease the rain in and out and splash it on the ground around us. */
+  clientTick() {
+    this.smooth();
+    if (this.flash > 0) this.flash--;
+    if (this.rain <= 0) return;
+    const g = this.game as unknown as import('../client/client').Client, p = g.player!, w = g.world!;
+    const n = Math.floor(this.rain * this.rain * 60);
+    for (let i = 0; i < n; i++) {
+      const x = Math.floor(p.x) + this.rng.int(21) - 10, z = Math.floor(p.z) + this.rng.int(21) - 10;
+      const top = w.topSolidY(x, z);
+      if (top < 0 || Math.abs(top - p.y) > 10 || this.isCold(x, z) || !this.canRainIn(x, z)) continue;
+      g.particles!.rain(x + this.rng.next(), top + 1.05, z + this.rng.next());
     }
   }
 
@@ -104,7 +130,7 @@ export class Weather {
 
   render(t: number) {
     if (this.rain <= 0) return;
-    const g = this.game, r = g.renderer, cam = g.cam, w = g.world!;
+    const g = this.game as unknown as import('../client/client').Client, r = g.renderer, cam = g.cam, w = g.world!;
     const m = r.dyn;
     m.reset();
     const R = 10;

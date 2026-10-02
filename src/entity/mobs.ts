@@ -10,6 +10,7 @@ import { level, ENCHANTS } from '../game/enchant';
 import { Arrow, XpOrb, Fireball } from './item';
 import { Random } from '../noise';
 import { raycastBlocks } from '../game/raycast';
+import { Player } from '../game/player';
 
 const rng = new Random(Date.now() & 0xfff);
 
@@ -193,13 +194,12 @@ export abstract class Mob extends LivingEntity {
     super.die(source, attacker);
     this.deathTime = 0;
     if (this.deathName) this.game.audio.play(this.deathName, this, 1, (this.baby ? 1.5 : 1) * this.soundPitch);
-    const byPlayer = attacker === this.game.player || (attacker as unknown as { shooter?: Entity })?.shooter === this.game.player;
-    if (byPlayer) {
-      const p = this.game.player!;
-      this.game.achievements.onKill(this.typeName, source === 'arrow' ? this.distanceTo(p) : undefined, source === 'explosion');
-    }
+    const shooter = (attacker as unknown as { shooter?: Entity })?.shooter;
+    const killer = attacker instanceof Player ? attacker : shooter instanceof Player ? shooter : null;
+    const byPlayer = !!killer;
+    if (killer) this.game.playerOf(killer)?.achievements.onKill(this.typeName, source === 'arrow' ? this.distanceTo(killer) : undefined, source === 'explosion');
     if (!this.baby) {
-      const looting = byPlayer ? level(this.game.player!.inventory.held(), 'looting') : 0;
+      const looting = killer ? level(killer.inventory.held(), 'looting') : 0;
       for (const s of this.drops(this.fireTicks > 0)) {
         if (looting && getItem(s.id).maxStack > 1) s.count += rng.int(looting + 1);
         this.game.dropItem(this.x, this.y + 0.5, this.z, s);
@@ -221,20 +221,30 @@ export abstract class Mob extends LivingEntity {
 
   despawnCheck() {
     if (!this.hostile) return;
-    const p = this.game.player;
-    if (!p) return;
-    const d = this.distanceTo(p);
+    const d = this.playerDistance();
+    if (d === Infinity) return;
     if (d > 128) this.removed = true;
     else if (d > 32 && ++this.despawnTimer > 600 && rng.int(800) === 0) this.removed = true;
     else if (d < 32) this.despawnTimer = 0;
   }
 
-  nearestPlayer(range: number): LivingEntity | null {
-    const p = this.game.player;
-    if (!p || p.dead || p.creative || p.spectator) return null;
-    // invisible players are only noticed up close (vanilla: 7% of the range without armour)
-    if (p.effects.has('invisibility')) range *= Math.max(0.07, p.inventory.armor.filter(Boolean).length / 4) * 0.7;
-    return this.distanceTo(p) < range ? p : null;
+  /** The closest player this mob would go after (not in creative or spectating; invisibility shortens the range). */
+  nearestPlayer(range: number): Player | null {
+    let best: Player | null = null, bd = Infinity;
+    for (const p of this.game.playerEntities()) {
+      if (p.dead || p.creative || p.spectator) continue;
+      // invisible players are only noticed up close (vanilla: 7% of the range without armour)
+      const r = p.effects.has('invisibility') ? range * Math.max(0.07, p.inventory.armor.filter(Boolean).length / 4) * 0.7 : range;
+      const d = this.distanceTo(p);
+      if (d < r && d < bd) { bd = d; best = p; }
+    }
+    return best;
+  }
+  /** How far the nearest player (of any kind) is: despawning. */
+  playerDistance(): number {
+    let d = Infinity;
+    for (const p of this.game.playerEntities()) d = Math.min(d, this.distanceTo(p));
+    return d;
   }
 
   toJSON() {
@@ -478,7 +488,13 @@ export abstract class Animal extends Mob {
   override xp = 1 + rng.int(3);
 
   override ai() {
-    const p = this.game.player;
+    // follow whoever is closest holding something tasty (or just glance at the nearest player)
+    let p: Player | null = null;
+    for (const q of this.game.playerEntities()) {
+      if (q.dead || q.spectator || this.distanceTo(q) >= 10) continue;
+      const h = q.inventory.held();
+      if (!p || (h && this.temptItems.includes(h.id))) p = q;
+    }
     if (this.panicTicks > 0) {
       if (!this.path || rng.int(20) === 0) {
         const tx = this.x + rng.int(11) - 5, tz = this.z + rng.int(11) - 5;
@@ -714,12 +730,16 @@ export class Enderman extends Monster {
   }
   override eyeHeight() { return 2.55; }
   /** Is the player looking at our head? */
-  private stared(): boolean {
-    const p = this.game.player;
-    if (!p || p.dead || p.creative || p.spectator) return false;
+  /** A player looking straight at this enderman (without a pumpkin on), if any. */
+  private stared(): Player | null {
+    for (const p of this.game.playerEntities()) if (this.staredBy(p)) return p;
+    return null;
+  }
+  private staredBy(p: Player): boolean {
+    if (p.dead || p.creative || p.spectator) return false;
     const held = p.inventory.armor[0];
     if (held && held.id === B.PUMPKIN) return false;
-    const eye = this.game.eyePos(1);
+    const eye = { x: p.x, y: p.y + p.eyeHeight(), z: p.z };
     const d = this.game.lookVec(p.yaw, p.pitch);
     const tx = this.x - eye.x, ty = this.y + this.eyeHeight() - eye.y, tz = this.z - eye.z;
     const dist = Math.hypot(tx, ty, tz);
@@ -728,8 +748,8 @@ export class Enderman extends Monster {
     return dot > 1 - 0.025 / dist && this.canSee(p);
   }
   override ai() {
-    const p = this.game.player;
-    if (!this.target && this.stared()) {
+    const p = this.target ? null : this.stared();
+    if (p) {
       if (++this.stareTicks > 5) { this.target = p; this.game.audio.play('enderman.stare', this, 1.5, 1); }
     } else this.stareTicks = 0;
     if (this.target) {
@@ -826,8 +846,7 @@ export class Slime extends Mob {
   override eyeHeight() { return 0.625 * this.height; }
   override preTick() { super.preTick(); this.pSquish = this.squish; }
   override ai() {
-    const p = this.game.player;
-    const target = p && !p.dead && !p.creative && !p.spectator && this.distanceTo(p) < 16 ? p : null;
+    const target = this.nearestPlayer(16);
     if (target) this.yaw = this.bodyYaw = this.headYaw = (Math.atan2(target.z - this.z, target.x - this.x) * 180) / Math.PI - 90;
     else if (rng.int(80) === 0) this.yaw = rng.next() * 360;
     if (this.onGround && --this.jumpDelay <= 0) {
@@ -885,6 +904,8 @@ export class Wolf extends Animal {
   override deathName = 'wolf.hurt';
   override temptItems = [I.BONE];
   owner = false;
+  /** Who tamed it ('' = the world's owner, for wolves tamed before multiplayer). */
+  ownerName = '';
   sitting = false;
   angry = false;
   override xp = 1 + rng.int(3);
@@ -895,8 +916,14 @@ export class Wolf extends Animal {
     this.speedAttr = 0.3;
   }
   override eyeHeight() { return 0.68; }
+  /** The player who tamed this wolf (wolves tamed before multiplayer belong to the world's owner). */
+  ownerPlayer(): Player | null {
+    if (!this.owner) return null;
+    const sp = this.game.players.find((q) => (this.ownerName ? q.name === this.ownerName : q.owner));
+    return sp && sp.entity.world === this.world ? sp.entity : null;
+  }
   override ai() {
-    const p = this.game.player;
+    const p = this.ownerPlayer();
     if (this.target && (this.target.dead || this.target.removed)) { this.target = null; this.angry = false; }
     if (this.target) {
       this.sitting = false;
@@ -932,7 +959,7 @@ export class Wolf extends Animal {
   override onDamaged(attacker: Entity | null) {
     this.sitting = false;
     const who = (attacker as unknown as { shooter?: Entity })?.shooter ?? attacker;
-    if (who instanceof LivingEntity && !(this.owner && who === this.game.player)) {
+    if (who instanceof LivingEntity && !(this.owner && who === this.ownerPlayer())) {
       this.target = who;
       this.angry = !this.owner;
       if (!this.owner) for (const e of this.game.entities) if (e instanceof Wolf && !e.owner && e !== this && e.distanceTo(this) < 16) { e.target = who; e.angry = true; }
@@ -955,6 +982,7 @@ export class Wolf extends Animal {
       game.interact!.consume(1);
       if (rng.int(3) === 0) {
         this.owner = true;
+        this.ownerName = game.ctx?.name ?? '';
         this.sitting = true;
         this.maxHealth = this.health = 20;
         for (let i = 0; i < 7; i++) game.particles?.heart(this.x + rng.next() - 0.5, this.y + 0.8, this.z + rng.next() - 0.5);
@@ -965,9 +993,9 @@ export class Wolf extends Animal {
     return false;
   }
   override despawnCheck() {}
-  override extraJSON() { return { owner: this.owner, sitting: this.sitting }; }
+  override extraJSON() { return { owner: this.owner, ownerName: this.ownerName, sitting: this.sitting }; }
   override loadExtra(d: Record<string, unknown>) {
-    this.owner = !!d.owner; this.sitting = !!d.sitting;
+    this.owner = !!d.owner; this.sitting = !!d.sitting; this.ownerName = (d.ownerName as string) ?? '';
     if (this.owner) this.maxHealth = 20;
   }
 }
@@ -1019,8 +1047,8 @@ export class Squid extends Mob {
   }
   override drops(): ItemStack[] { return [stack(I2.INK_SAC, 1 + rng.int(3))]; }
   override despawnCheck() {
-    const p = this.game.player;
-    if (p && this.distanceTo(p) > 96) this.removed = true;
+    const d = this.playerDistance();
+    if (d !== Infinity && d > 96) this.removed = true;
   }
 }
 
@@ -1043,11 +1071,12 @@ export class Bat extends Mob {
   override gravity() { return 0; }
   override isFlying() { return true; }
   override ai() {
-    const w = this.world, p = this.game.player;
+    const w = this.world;
     const bx = Math.floor(this.x), by = Math.floor(this.y + 1), bz = Math.floor(this.z);
     if (this.hanging) {
       this.vx = this.vy = this.vz = 0;
-      if (!BLOCKS[w.getId(bx, by, bz)].opaque || (p && this.distanceTo(p) < 4 && !p.sneaking) || rng.int(400) === 0) this.hanging = false;
+      const startled = this.game.playerEntities().some((p) => this.distanceTo(p) < 4 && !p.sneaking);
+      if (!BLOCKS[w.getId(bx, by, bz)].opaque || startled || rng.int(400) === 0) this.hanging = false;
       return;
     }
     if (!this.target2 || rng.int(30) === 0 || Math.hypot(this.target2.x - this.x, this.target2.z - this.z) < 2) {
@@ -1064,8 +1093,8 @@ export class Bat extends Mob {
     this.move(this.vx * 0.1, this.vy * 0.1, this.vz * 0.1);
   }
   override despawnCheck() {
-    const p = this.game.player;
-    if (p && this.distanceTo(p) > 64) this.removed = true;
+    const d = this.playerDistance();
+    if (d !== Infinity && d > 64) this.removed = true;
   }
 }
 
@@ -1095,7 +1124,7 @@ export class Villager extends Mob {
   }
   override eyeHeight() { return 1.62; }
   override ai() {
-    const p = this.game.player;
+    const p = this.game.nearestPlayer(this, 8, true);
     if (this.tradingWith) {
       this.path = null;
       this.lookTarget = { x: this.tradingWith.x, y: this.tradingWith.y + this.tradingWith.eyeHeight(), z: this.tradingWith.z };
@@ -1166,7 +1195,7 @@ export class ZombiePigman extends Monster {
   override ai() {
     if (this.anger > 0) {
       this.anger--;
-      if (!this.target || this.target.dead) { const p = this.game.player; if (p && !p.creative && !p.dead && this.distanceTo(p) < 40) this.target = p; }
+      if (!this.target || this.target.dead) { const p = this.nearestPlayer(40); if (p) this.target = p; }
       if (this.target) this.chase(this.target);
       return;
     }
@@ -1221,8 +1250,7 @@ export class Ghast extends Mob {
     } else {
       this.vx += (dx / d) * 0.1 * 0.1; this.vy += (dy / d) * 0.1 * 0.1; this.vz += (dz / d) * 0.1 * 0.1;
     }
-    const p = this.game.player;
-    const target = p && !p.dead && !p.creative && !p.spectator && this.distanceTo(p) < 64 ? p : null;
+    const target = this.nearestPlayer(64);
     if (target) {
       this.lookTarget = { x: target.x, y: target.y + target.eyeHeight(), z: target.z };
       this.bodyYaw = this.yaw = (Math.atan2(target.z - this.z, target.x - this.x) * 180) / Math.PI - 90;
@@ -1325,7 +1353,7 @@ export class Blaze extends Monster {
   override landed() {}
   override onLand() {}
   override drops(): ItemStack[] {
-    return this.lastAttacker === this.game.player ? [stack(I3.BLAZE_ROD, rng.int(2))].filter((s) => s.count > 0) : [];
+    return this.lastAttacker instanceof Player ? [stack(I3.BLAZE_ROD, rng.int(2))].filter((s) => s.count > 0) : [];
   }
 }
 

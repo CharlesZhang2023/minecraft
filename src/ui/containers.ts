@@ -50,6 +50,9 @@ export abstract class ContainerScreen extends Screen {
     this.buildSlots();
   }
   abstract buildSlots(): void;
+  /** Extra window state a client copy can't work out from the slots (see the server's window sync). */
+  syncState(): unknown { return null; }
+  applySyncState(_s: unknown) {}
 
   addPlayerSlots(x0 = 8, y0 = 84, hotY = 142) {
     const m = this.inv.main;
@@ -127,7 +130,7 @@ export abstract class ContainerScreen extends Screen {
     }
     if (shift && (button === 0 || button === 2)) { this.quickMove(s); this.changed(); return true; }
     // double click: collect all of this item
-    const now = performance.now();
+    const now = this.ui.now();
     if (button === 0 && this.lastClick.slot === s && now - this.lastClick.t < 250 && this.cursor && !s.output) {
       this.collect();
       this.lastClick.t = 0;

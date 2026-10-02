@@ -1,4 +1,5 @@
 import { enterGateway } from '../game/gateways';
+import { Player } from '../game/player';
 import { Entity } from './entity';
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
@@ -64,22 +65,24 @@ export class ItemEntity extends Entity {
     this.tryPickup();
   }
 
+  /** Any player standing on it picks it up (as much as fits). */
   tryPickup() {
-    const p = this.game.player;
-    if (!p || p.dead || this.pickupDelay > 0 || p.spectator) return;
-    const pb = p.box;
-    const b = this.box;
-    if (b.x1 < pb.x0 - 1 || b.x0 > pb.x1 + 1 || b.y1 < pb.y0 - 0.5 || b.y0 > pb.y1 + 0.5 || b.z1 < pb.z0 - 1 || b.z0 > pb.z1 + 1) return;
-    const before = this.item.count;
-    const left = p.inventory.add(this.item);
-    if (left < before) {
-      this.game.achievements.onPickup(this.item.id);
-      this.game.audio.play('pop', this, 0.2, ((Math.random() - Math.random()) * 0.7 + 1) * 2);
-      this.game.ui.hud.pickupAnim(this.item.id);
-      this.game.entityRenderer.pickup(this, p);
+    if (this.pickupDelay > 0) return;
+    for (const p of this.game.playerEntities()) {
+      if (p.dead || p.spectator) continue;
+      const pb = p.box;
+      const b = this.box;
+      if (b.x1 < pb.x0 - 1 || b.x0 > pb.x1 + 1 || b.y1 < pb.y0 - 0.5 || b.y0 > pb.y1 + 0.5 || b.z1 < pb.z0 - 1 || b.z0 > pb.z1 + 1) continue;
+      const before = this.item.count;
+      const left = p.inventory.add(this.item);
+      if (left < before) {
+        this.game.playerOf(p)?.achievements.onPickup(this.item.id);
+        this.game.audio.play('pop', this, 0.2, ((Math.random() - Math.random()) * 0.7 + 1) * 2);
+        this.game.pickedUp(this, p, this.item.id);
+      }
+      if (left <= 0) { this.removed = true; return; }
+      this.item.count = left;
     }
-    if (left <= 0) this.removed = true;
-    else this.item.count = left;
   }
 
   toJSON() {
@@ -107,8 +110,8 @@ export class XpOrb extends Entity {
   }
   override tick() {
     this.vy -= 0.03;
-    const p = this.game.player;
-    if (p && !p.dead && !p.spectator) {
+    const p = this.game.nearestPlayer(this, 8, true);
+    if (p) {
       const dx = p.x - this.x, dy = p.y + p.eyeHeight() / 2 - this.y, dz = p.z - this.z;
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz) / 8;
       if (d < 1) {
@@ -151,7 +154,7 @@ export class FallingBlock extends Entity {
     if (id === B.ANVIL && this.vy < 0) {
       // falling anvils hurt whatever they land on: 2 per block fallen, up to 40
       const fell = this.startY - this.y;
-      for (const e of [this.game.player!, ...this.game.entities]) {
+      for (const e of this.game.entities) {
         const le = e as unknown as { damage?: (n: number, s: string) => boolean; dead?: boolean };
         if (e === this || !le.damage || le.dead) continue;
         if (Math.abs(e.x - this.x) < 0.8 && Math.abs(e.z - this.z) < 0.8 && e.y + e.height > this.y && e.y <= this.y) le.damage(Math.min(40, Math.max(0, Math.ceil((fell - 1) * 2))), 'anvil');
@@ -238,11 +241,13 @@ export class Arrow extends Entity {
       // falls if the block is removed
       const id = this.world.getId(Math.floor(this.x), Math.floor(this.y), Math.floor(this.z));
       if (!BLOCKS[id].solid) { this.inGround = false; this.vx = this.vy = this.vz = 0; }
-      const p = this.game.player;
-      if (p && this.pickup && this.shooter === p && p.distanceTo(this) < 1.5 && !p.dead) {
+      // players can pick up arrows players shot
+      if (this.pickup && this.shooter instanceof Player) for (const p of this.game.playerEntities()) {
+        if (p.distanceTo(this) >= 1.5 || p.dead || p.spectator) continue;
         if (p.inventory.add({ id: this.game.interact!.arrowId, count: 1 }) === 0) {
           this.game.audio.play('pop', this, 0.2, 2);
           this.removed = true;
+          break;
         }
       }
       return;
@@ -291,17 +296,18 @@ export class Snowball extends Entity {
     const nx = this.x + this.vx, ny = this.y + this.vy, nz = this.z + this.vz;
     const ent = this.game.interact!.projectileHitEntity(this, nx, ny, nz);
     const id = this.world.getId(Math.floor(nx), Math.floor(ny), Math.floor(nz));
-    if (id === B.END_GATEWAY && this.kind === 'ender_pearl' && this.shooter === this.game.player) {
+    const thrower = this.game.playerOf(this.shooter);
+    if (id === B.END_GATEWAY && this.kind === 'ender_pearl' && thrower) {
       // a pearl thrown through an End gateway takes its thrower along
-      enterGateway(this.game, Math.floor(nx), Math.floor(ny), Math.floor(nz));
+      this.game.asActor(thrower, () => enterGateway(this.game, Math.floor(nx), Math.floor(ny), Math.floor(nz)));
       this.removed = true;
       return;
     }
     if (ent || BLOCKS[id].solid) {
       for (let i = 0; i < 8; i++) this.game.particles?.add({ x: this.x, y: this.y, z: this.z, vx: (Math.random() - 0.5) * 0.15, vy: Math.random() * 0.15, vz: (Math.random() - 0.5) * 0.15, layer: this.game.interact!.spriteLayer(this.kind), u0: 0.3, v0: 0.3, u1: 0.55, v1: 0.55, size: 0.06, life: 10 });
       if (this.kind === 'egg' && Math.random() < 0.125) this.game.interact!.spawnMob('chicken', this.x, this.y, this.z, true);
-      if (this.kind === 'ender_pearl' && this.shooter === this.game.player) {
-        const p = this.game.player!;
+      if (this.kind === 'ender_pearl' && thrower && thrower.entity.world === this.world) {
+        const p = thrower.entity;
         p.setPos(this.x, this.y, this.z);
         p.damage(5, 'fall');
       }
@@ -332,14 +338,12 @@ export class Fireball extends Entity {
     if (this.age > 400) { this.removed = true; return; }
     const nx = this.x + this.vx, ny = this.y + this.vy, nz = this.z + this.vz;
     const hitBlock = BLOCKS[this.world.getId(Math.floor(nx), Math.floor(ny + 0.5), Math.floor(nz))].solid;
+    // players are entities too, so this finds them as well
     const hitEnt = this.game.interact!.projectileHitEntity(this as unknown as Snowball, nx, ny + 0.5, nz);
-    const p = this.game.player!;
-    const hitPlayer = this.shooter !== p && p.distanceTo({ x: nx, y: ny - 0.5, z: nz }) < 1.2 && !p.dead && !p.spectator;
-    if ((hitBlock || hitEnt || hitPlayer) && this.age > 1) {
+    if ((hitBlock || hitEnt) && this.age > 1) {
       this.removed = true;
       if (this.small) {
-        if (hitPlayer && p.damage(5, 'fire', this.shooter) && !p.effects.has('fire_resistance')) p.fireTicks = Math.max(p.fireTicks, 100);
-        else if (hitEnt) {
+        if (hitEnt) {
           const e = hitEnt as unknown as { damage?: (n: number, s: string, a: Entity | null) => boolean; fireTicks: number; fireImmune?: boolean };
           if (e.damage && !e.fireImmune && e.damage(5, 'fire', this.shooter)) e.fireTicks = Math.max(e.fireTicks, 100);
         } else {
@@ -352,7 +356,6 @@ export class Fireball extends Entity {
         }
         return;
       }
-      if (hitPlayer) p.damage(6, 'explosion', this.shooter);
       this.game.interact!.explode(this.x, this.y + 0.5, this.z, 1, true, this);
       return;
     }

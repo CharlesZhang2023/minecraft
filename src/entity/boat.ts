@@ -141,9 +141,10 @@ export class Boat extends Entity implements Mount {
   /** Falling more than three blocks onto land smashes the boat into planks and sticks. */
   override onLand(fall: number) {
     if (fall <= 3 || this.status === 'water' || this.removed) return;
+    const rider = this.rider as { creative?: boolean } | null;
     this.dismount();
     this.removed = true;
-    if (this.game.player?.creative) return;
+    if (rider?.creative) return;
     this.game.dropItem(this.x, this.y + 0.5, this.z, { id: B.OAK_PLANKS, count: 3 } as ItemStack);
     this.game.dropItem(this.x, this.y + 0.5, this.z, { id: I.STICK, count: 2 } as ItemStack);
   }

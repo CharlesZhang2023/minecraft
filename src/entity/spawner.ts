@@ -2,6 +2,7 @@
 import type { Game } from '../game/game';
 import { B, BLOCKS, OPAQUE, idOf } from '../world/blocks';
 import { Mob } from './mobs';
+import type { Player } from '../game/player';
 import { Random } from '../noise';
 import { skyDarken } from '../game/env';
 import { BIOME } from '../world/biomes';
@@ -12,28 +13,41 @@ export class Spawner {
 
   constructor(private game: Game) {}
 
+  /** A player to spawn around (each attempt picks one, so everybody gets mobs). */
+  private pick(): Player {
+    const ps = this.game.playerEntities();
+    return ps[this.rng.int(ps.length)];
+  }
+  /** Distance to the nearest player. */
+  private nearest(x: number, y: number, z: number) {
+    let d = Infinity;
+    for (const p of this.game.playerEntities()) d = Math.min(d, Math.hypot(x - p.x, y - p.y, z - p.z));
+    return d;
+  }
+
   tick() {
-    const g = this.game, p = g.player!, w = g.world!;
-    if (!p) return;
+    const g = this.game, w = g.world!;
+    const players = g.playerEntities().length;
+    if (!players) return;
     const mobs = g.entities.filter((e) => e instanceof Mob && !e.dead) as Mob[];
     const hostiles = mobs.filter((m) => m.hostile).length;
     const animals = mobs.length - hostiles;
     const peaceful = g.options.difficulty === 0;
     if (peaceful) for (const m of mobs) if (m.hostile && m.typeName !== 'Zombie Pigman') m.removed = true;
     // hostile spawning every tick (cap ~ 70 in vanilla for 17x17 chunks; scaled to our view)
-    const cap = Math.round(70 * Math.min(1, ((w.renderDistance * 2 + 1) ** 2) / 289));
+    const cap = Math.round(70 * Math.min(1, ((Math.min(8, w.renderDistance) * 2 + 1) ** 2) / 289) * Math.min(players, 4));
     if ((!peaceful || w.dimension === 'nether') && hostiles < cap && g.ticks % 2 === 0) {
-      for (let attempt = 0; attempt < (w.dimension === 'nether' ? 1 : 3); attempt++) this.tryHostile();
+      for (let attempt = 0; attempt < (w.dimension === 'nether' ? 1 : 3) * Math.min(players, 4); attempt++) this.tryHostile();
     }
     // passive animals: when new chunks come in, occasionally populate them
-    if (g.ticks % 20 === 0 && animals < 40 && w.dimension === 'overworld') this.populateChunks();
-    this.spawnerBlocks();
+    if (g.ticks % 20 === 0 && animals < 40 * Math.min(players, 4) && w.dimension === 'overworld') this.populateChunks();
+    for (const p of g.playerEntities()) this.spawnerBlocks(p);
     if (w.dimension === 'overworld' && g.ticks % 40 === 0) this.ambient(mobs);
   }
 
   /** Squid in deep water, bats in dark caves. */
   private ambient(mobs: Mob[]) {
-    const g = this.game, p = g.player!, w = g.world!;
+    const g = this.game, p = this.pick(), w = g.world!;
     const squid = mobs.filter((m) => m.typeName === 'Squid').length;
     const bats = mobs.filter((m) => m.typeName === 'Bat').length;
     for (let i = 0; i < 4; i++) {
@@ -64,7 +78,7 @@ export class Spawner {
   }
 
   private tryNether() {
-    const g = this.game, p = g.player!, w = g.world!;
+    const g = this.game, p = this.pick(), w = g.world!;
     const a = this.rng.next() * Math.PI * 2, d = 24 + this.rng.next() * 50;
     const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
     if (!w.chunkAt(x, z)) return;
@@ -90,7 +104,7 @@ export class Spawner {
 
   /** The End: endermen wander the islands in small groups (and nothing else spawns). */
   private tryEnd() {
-    const g = this.game, p = g.player!, w = g.world!;
+    const g = this.game, p = this.pick(), w = g.world!;
     if (g.entities.filter((e) => (e as { typeName?: string }).typeName === 'Enderman' && !(e as { dead?: boolean }).dead).length >= 12) return;
     const a = this.rng.next() * Math.PI * 2, d = 24 + this.rng.next() * 40;
     const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
@@ -105,7 +119,7 @@ export class Spawner {
   }
 
   private tryHostile() {
-    const g = this.game, p = g.player!, w = g.world!;
+    const g = this.game, p = this.pick(), w = g.world!;
     if (w.dimension === 'nether') { this.tryNether(); return; }
     if (w.dimension === 'end') { this.tryEnd(); return; }
     const a = this.rng.next() * Math.PI * 2, d = 24 + this.rng.next() * 56;
@@ -117,8 +131,7 @@ export class Spawner {
     const [sky, blk] = w.getLight(x, y, z);
     const eff = Math.max(sky - skyDarken(g.time, g.weather?.rain ?? 0), blk);
     if (eff > this.rng.int(8)) return;
-    const dist = Math.hypot(x + 0.5 - p.x, y - p.y, z + 0.5 - p.z);
-    if (dist < 24) return;
+    if (this.nearest(x + 0.5, y, z + 0.5) < 24) return;
     const r = this.rng.int(100);
     let type = r < 28 ? 'zombie' : r < 50 ? 'skeleton' : r < 70 ? 'creeper' : r < 88 ? 'spider' : r < 95 ? 'enderman' : 'slime';
     // slimes only in "slime chunks" deep underground or in swamps
@@ -143,7 +156,7 @@ export class Spawner {
   }
 
   private populateChunks() {
-    const g = this.game, p = g.player!, w = g.world!;
+    const g = this.game, p = this.pick(), w = g.world!;
     const pcx = Math.floor(p.x) >> 4, pcz = Math.floor(p.z) >> 4;
     const R = Math.min(6, w.renderDistance);
     for (let n = 0; n < 4; n++) {
@@ -171,15 +184,15 @@ export class Spawner {
         const y = w.topSolidY(x, z) + 1;
         if (y <= 0 || w.getId(x, y - 1, z) !== B.GRASS) continue;
         if (!this.spawnable(x, y, z, 2)) continue;
-        if (Math.hypot(x - p.x, z - p.z) < 16) continue;
+        if (this.nearest(x, y, z) < 16) continue;
         const m = g.interact!.spawnMob(herd >= 0 && this.rng.int(10) === 0 ? 'donkey' : type, x + 0.5, y, z + 0.5);
         if (m && herd >= 0 && (m as unknown as { kind: string }).kind === 'horse') (m as unknown as { color: number }).color = herd;
       }
     }
   }
 
-  private spawnerBlocks() {
-    const g = this.game, p = g.player!, w = g.world!;
+  private spawnerBlocks(p: Player) {
+    const g = this.game, w = g.world!;
     if (g.ticks % 20 !== 0) return;
     const px = Math.floor(p.x), py = Math.floor(p.y), pz = Math.floor(p.z);
     // look for spawner tiles in nearby chunks

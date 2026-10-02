@@ -5,7 +5,7 @@ import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import { B, BLOCKS, idOf, metaOf } from '../world/blocks';
 import { I5, type ItemStack } from '../game/items';
-import type { Player } from '../game/player';
+import { Player } from '../game/player';
 import { RAIL_ENDS, railShape, isRail, isAscending, NS, EW, ASC_E, ASC_W, ASC_N, ASC_S } from '../world/rails';
 import { carryRider, dismountSpot, type Mount } from './mount';
 
@@ -180,11 +180,11 @@ export class Minecart extends Entity implements Mount {
 
   /** Bump into the player and other carts (vanilla applyEntityCollision). */
   private pushOthers() {
-    const g = this.game, p = g.player;
+    const g = this.game;
     const b = this.box;
-    for (const e of [p, ...g.entities]) {
+    for (const e of g.entities) {
       if (!e || e === this || e === this.rider || e.removed || (e as Player).spectator) continue;
-      if (e !== p && !(e instanceof Minecart)) continue;
+      if (!(e instanceof Player) && !(e instanceof Minecart)) continue;
       const o = e.box;
       if (o.x1 < b.x0 - 0.2 || o.x0 > b.x1 + 0.2 || o.z1 < b.z0 - 0.2 || o.z0 > b.z1 + 0.2 || o.y1 < b.y0 || o.y0 > b.y1) continue;
       let dx = e.x - this.x, dz = e.z - this.z;

@@ -18,7 +18,7 @@ import { FishingHook } from '../entity/fishing';
 import { createEntity } from '../entity/registry';
 import { aabbIntersects } from '../math';
 import { Random } from '../noise';
-import { GameMode } from './player';
+import { GameMode, Player } from './player';
 import { findFrameAt, frameBlocks } from './portal';
 import { level } from './enchant';
 import { eyeOnFrame, throwEye, teleportEgg, placeCrystal } from './endstuff';
@@ -403,8 +403,8 @@ export class Interaction {
       this.explode(x + 0.5, y + 0.5, z + 0.5, 5, true, null);
       return true;
     }
+    // a bed is your own respawn point (the world spawn stays where new players start)
     p.spawnX = x; p.spawnY = y + 1; p.spawnZ = z;
-    if (g.meta) g.meta.spawn = [x, y + 1, z];
     if (g.isDaytime()) { g.ui.hud.actionBar('You can only sleep at night'); g.ui.chat.add('Respawn point set'); return true; }
     const monsters = g.entities.some((e) => (e as unknown as { hostile?: boolean }).hostile && !(e as LivingEntity).dead && Math.abs(e.x - x) < 8 && Math.abs(e.y - y) < 5 && Math.abs(e.z - z) < 8);
     if (monsters) { g.ui.hud.actionBar('You may not rest now; there are monsters nearby'); return true; }
@@ -661,10 +661,7 @@ export class Interaction {
       g.audio.play('eat', p, 0.5 + 0.5 * this.rng.int(2), (this.rng.next() - this.rng.next()) * 0.2 + 1);
       const eye = g.eyePos(1);
       const d = g.lookVec(p.yaw, p.pitch);
-      for (let i = 0; i < 5; i++)
-        g.particles!.add({ x: eye.x + d.x * 0.5, y: eye.y - 0.2, z: eye.z + d.z * 0.5, vx: (this.rng.next() - 0.5) * 0.1 + d.x * 0.05, vy: 0.1, vz: (this.rng.next() - 0.5) * 0.1 + d.z * 0.05, layer: this.spriteLayer(item.name), u0: this.rng.next() * 0.7, v0: this.rng.next() * 0.7, u1: 0, v1: 0, size: 0.05, life: 10 + this.rng.int(10) });
-      const last = g.particles!.list;
-      for (let i = last.length - 5; i < last.length; i++) if (i >= 0) { last[i].u1 = last[i].u0 + 0.25; last[i].v1 = last[i].v0 + 0.25; }
+      g.particles!.crumbs(eye.x + d.x * 0.5, eye.y - 0.2, eye.z + d.z * 0.5, d.x, d.z, this.spriteLayer(item.name));
     }
     if (this.eating >= 32 && item.food) {
       p.eat(item.food.hunger, item.food.saturation);
@@ -859,11 +856,10 @@ export class Interaction {
   private noEntities(x: number, y: number, z: number, v: number): boolean {
     const shapes = collisionShapes(v);
     if (!shapes.length) return true;
-    const ents: Entity[] = [this.player, ...this.game.entities.filter((e) => e instanceof LivingEntity && !e.dead)];
+    const ents: Entity[] = this.game.entities.filter((e) => e instanceof LivingEntity && !e.dead && !(e instanceof Player && e.spectator));
     for (const s of shapes) {
       const b = { x0: x + s.x0, y0: y + s.y0, z0: z + s.z0, x1: x + s.x1, y1: y + s.y1, z1: z + s.z1 };
       for (const e of ents) {
-        if (e === this.player && this.player.spectator) continue;
         if (aabbIntersects(b, e.box)) return false;
       }
     }
@@ -920,10 +916,9 @@ export class Interaction {
 
   arrowHitEntity(a: Arrow, nx: number, ny: number, nz: number): boolean {
     const g = this.game;
-    const targets: Entity[] = [...g.entities, g.player!];
-    for (const e of targets) {
+    for (const e of g.entities) {
       if (!(e instanceof LivingEntity) || e.dead || e === a.shooter && a.age < 5) continue;
-      if (e === g.player && g.player!.spectator) continue;
+      if (e instanceof Player && e.spectator) continue;
       const hb = e.hitBoxes().find((b) => nx > b.x0 - 0.3 && nx < b.x1 + 0.3 && ny > b.y0 - 0.3 && ny < b.y1 + 0.3 && nz > b.z0 - 0.3 && nz < b.z1 + 0.3);
       if (hb) {
         e.hitPart = hb.part ?? null;
@@ -951,7 +946,7 @@ export class Interaction {
   projectileHitEntity(s: Snowball, nx: number, ny: number, nz: number): Entity | null {
     const g = this.game;
     for (const e of g.entities) {
-      if (!(e instanceof LivingEntity) || e.dead || e === s.shooter) continue;
+      if (!(e instanceof LivingEntity) || e.dead || e === s.shooter || (e instanceof Player && e.spectator)) continue;
       const hb = e.hitBoxes().find((b) => nx > b.x0 - 0.2 && nx < b.x1 + 0.2 && ny > b.y0 - 0.2 && ny < b.y1 + 0.2 && nz > b.z0 - 0.2 && nz < b.z1 + 0.2);
       if (hb) {
         e.hitPart = hb.part ?? null;
@@ -997,9 +992,8 @@ export class Interaction {
     }
     // entities
     const r2 = power * 2;
-    const ents: Entity[] = [...g.entities, g.player!];
-    for (const e of ents) {
-      if (e === source || e.removed) continue;
+    for (const e of g.entities) {
+      if (e === source || e.removed || (e instanceof Player && e.spectator)) continue;
       const d = e.distanceTo({ x, y, z }) / r2;
       if (d > 1) continue;
       let ex = e.x - x, ey = e.y + (e instanceof LivingEntity ? e.eyeHeight() : 0) - y, ez = e.z - z;

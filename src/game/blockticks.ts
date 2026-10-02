@@ -365,25 +365,35 @@ export class BlockTicker {
   }
 
   // ------------------------------------------------------------------ random ticks
+  /** Random block ticks (crops, grass, fire, ice) in the chunks around every player, each chunk once. */
   private randomTicks() {
-    const w = this.world, p = this.game.player;
-    if (!p) return;
-    const pcx = Math.floor(p.x) >> 4, pcz = Math.floor(p.z) >> 4;
+    const w = this.world;
     const R = Math.min(8, w.renderDistance);
-    for (let cx = pcx - R; cx <= pcx + R; cx++)
-      for (let cz = pcz - R; cz <= pcz + R; cz++) {
-        const c = w.getChunk(cx, cz);
-        if (!c || !c.ready || !c.heightmap) continue;
-        let top = 0;
-        for (let i = 0; i < 256; i++) if (c.heightmap[i] > top) top = c.heightmap[i];
-        const sections = (top >> 4) + 1;
-        for (let s = 0; s < sections; s++)
-          for (let k = 0; k < 3; k++) {
-            const lx = this.rng.int(16), ly = s * 16 + this.rng.int(16), lz = this.rng.int(16);
-            const v = c.blocks[lx | (lz << 4) | (ly << 8)];
-            if (v === 0) continue;
-            this.randomTick(cx * 16 + lx, ly, cz * 16 + lz, v, c);
-          }
+    const done = new Set<number>();
+    for (const p of this.game.playerEntities()) {
+      const pcx = Math.floor(p.x) >> 4, pcz = Math.floor(p.z) >> 4;
+      for (let cx = pcx - R; cx <= pcx + R; cx++)
+        for (let cz = pcz - R; cz <= pcz + R; cz++) {
+          const k = (cx + 0x8000) * 0x10000 + (cz + 0x8000);
+          if (done.has(k)) continue;
+          done.add(k);
+          this.randomTickChunk(cx, cz);
+        }
+    }
+  }
+
+  private randomTickChunk(cx: number, cz: number) {
+    const c = this.world.getChunk(cx, cz);
+    if (!c || !c.ready || !c.heightmap) return;
+    let top = 0;
+    for (let i = 0; i < 256; i++) if (c.heightmap[i] > top) top = c.heightmap[i];
+    const sections = (top >> 4) + 1;
+    for (let s = 0; s < sections; s++)
+      for (let k = 0; k < 3; k++) {
+        const lx = this.rng.int(16), ly = s * 16 + this.rng.int(16), lz = this.rng.int(16);
+        const v = c.blocks[lx | (lz << 4) | (ly << 8)];
+        if (v === 0) continue;
+        this.randomTick(cx * 16 + lx, ly, cz * 16 + lz, v, c);
       }
   }
 

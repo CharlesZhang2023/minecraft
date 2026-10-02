@@ -444,16 +444,14 @@ export class Redstone {
 
   private occupied(x: number, y: number, z: number) {
     const g = this.game;
-    const ents = [g.player!, ...g.entities];
-    return ents.some((e) => !e.removed && Math.floor(e.x) === x && Math.floor(e.z) === z && e.y >= y && e.y < y + 0.5);
+    return g.entities.some((e) => !e.removed && Math.floor(e.x) === x && Math.floor(e.z) === z && e.y >= y && e.y < y + 0.5);
   }
 
   /** Per tick: pressure plates, comparators watching containers. */
   tick() {
     const g = this.game, w = this.w;
-    const ents = [g.player!, ...g.entities];
-    for (const e of ents) {
-      if (e.removed || (e === g.player && g.player!.spectator)) continue;
+    for (const e of g.entities) {
+      if (e.removed || (e as { spectator?: boolean }).spectator) continue;
       const x = Math.floor(e.x), y = Math.floor(e.y + 0.01), z = Math.floor(e.z);
       const v = w.get(x, y, z);
       if (idOf(v) === B.STONE_PRESSURE_PLATE && !metaOf(v)) {

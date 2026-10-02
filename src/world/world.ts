@@ -25,15 +25,28 @@ export class Chunk {
   meshedVersion = -1;
   modified = false; // needs saving
   urgent = false;
+  /** Client: the server said this chunk is untouched terrain, so we generate it ourselves from the seed. */
+  localGen = false;
   mesh: unknown = null; // owned by the renderer
   tiles = new Map<number, TileEntity>();
   lastSeen = 0;
   constructor(public cx: number, public cz: number) {}
 }
 
-type Job = { type: 'gen' | 'mesh'; chunk: Chunk; version?: number };
+type Job = { type: 'gen' | 'mesh' | 'light'; chunk: Chunk; version?: number };
 
 export type Dimension = 'overworld' | 'nether' | 'end';
+
+/**
+ * - `server`: the simulation's world. Generates or loads chunks around every player, lights them (no meshes) and saves.
+ * - `client`: what a player's screen shows. Chunks near the player arrive from the server (`receiveChunk`); farther
+ *   ones the server knows are untouched, the client generates itself from the seed (`generateChunk`). Never saved.
+ * - `local`: the title-screen backdrop: generates and meshes by itself, never saved.
+ */
+export type WorldRole = 'server' | 'client' | 'local';
+
+/** A spot chunks are kept loaded around (each player on the server), with its radius in chunks. */
+export interface LoadCenter { x: number; z: number; r: number }
 
 export class World {
   chunks = new Map<number, Chunk>();
@@ -44,13 +57,18 @@ export class World {
   onUnload: (c: Chunk) => void = () => {};
   onChunkLoaded: (c: Chunk, spawns?: { type: string; x: number; y: number; z: number; data?: Record<string, unknown> }[]) => void = () => {};
   onBlockChange: (x: number, y: number, z: number, old: number, v: number) => void = () => {};
+  /** A tile entity was replaced or removed (server: tell the players who have that chunk). */
+  onTileChange: (x: number, y: number, z: number) => void = () => {};
   renderDistance = 8;
   centerCX = 0;
   centerCZ = 0;
   frame = 0;
-  readOnly = false;
+  /** Only the server's world is saved. */
+  get readOnly() { return this.role !== 'server'; }
+  /** Server: where players are, so chunks load around all of them (set every tick). */
+  centers: LoadCenter[] = [];
 
-  constructor(public seed: number, public worldId: string, public dimension: Dimension = 'overworld') {
+  constructor(public seed: number, public worldId: string, public dimension: Dimension = 'overworld', public role: WorldRole = 'server') {
     const n = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
     for (let i = 0; i < n; i++) {
       const w = new WorkerCtor();
@@ -173,65 +191,128 @@ export class World {
     if (t) c.tiles.set(i, t);
     else c.tiles.delete(i);
     c.modified = true;
+    this.onTileChange(x, y, z);
   }
 
   // ------------------------------------------------------------------ streaming
-  /** Called every frame. */
+  /** Called every frame (client / local) with the camera's position. */
   update(px: number, pz: number, frustumTest?: (cx: number, cz: number) => boolean) {
-    this.frame++;
-    const pcx = Math.floor(px / 16), pcz = Math.floor(pz / 16);
-    this.centerCX = pcx;
-    this.centerCZ = pcz;
-    const rd = this.renderDistance;
-    const loadR = rd + 1;
-    // ensure chunk objects exist
-    for (let dz = -loadR; dz <= loadR; dz++)
-      for (let dx = -loadR; dx <= loadR; dx++) {
-        if (dx * dx + dz * dz > (loadR + 0.5) * (loadR + 0.5)) continue;
-        const cx = pcx + dx, cz = pcz + dz;
-        const k = chunkKey(cx, cz);
-        let c = this.chunks.get(k);
-        if (!c) {
-          c = new Chunk(cx, cz);
-          this.chunks.set(k, c);
-        }
-        c.lastSeen = this.frame;
-      }
-    // unload far chunks
-    if (this.frame % 30 === 0) {
-      const unloadR = loadR + 2;
-      const toSave: [string, SavedChunk][] = [];
-      for (const [k, c] of this.chunks) {
-        const dx = c.cx - pcx, dz = c.cz - pcz;
-        if (dx * dx + dz * dz > unloadR * unloadR && !c.meshing && !c.loading) {
-          if (c.modified && c.ready) toSave.push([keyStr(c.cx, c.cz), this.serialize(c)]);
-          this.onUnload(c);
-          this.chunks.delete(k);
-        }
-      }
-      if (toSave.length && !this.readOnly) {
-        for (const [k] of toSave) this.savedKeys.add(k);
-        Storage.saveChunks(this.worldId, toSave);
-      }
-    }
-    this.schedule(pcx, pcz, frustumTest);
+    this.updateCenters([{ x: px, z: pz, r: this.renderDistance }], frustumTest);
   }
 
-  private schedule(pcx: number, pcz: number, frustumTest?: (cx: number, cz: number) => boolean) {
+  /** Squared chunk distance to the nearest center, measured against that center's radius (< 0 = inside). */
+  private nearest(cx: number, cz: number, centers: { cx: number; cz: number; r: number }[]) {
+    let best = Infinity, slack = Infinity;
+    for (const c of centers) {
+      const dx = cx - c.cx, dz = cz - c.cz, d = dx * dx + dz * dz;
+      if (d < best) best = d;
+      const s = Math.sqrt(d) - c.r;
+      if (s < slack) slack = s;
+    }
+    return { d: best, slack };
+  }
+
+  /** Keep chunks loaded around every center (the server passes one per player). */
+  updateCenters(centers: LoadCenter[], frustumTest?: (cx: number, cz: number) => boolean) {
+    this.frame++;
+    const cs = centers.map((c) => ({ cx: Math.floor(c.x / 16), cz: Math.floor(c.z / 16), r: c.r }));
+    if (!cs.length) return;
+    this.centerCX = cs[0].cx;
+    this.centerCZ = cs[0].cz;
+    // the client only holds what the server sent it (and drops it when told)
+    if (this.role !== 'client') {
+      // ensure chunk objects exist
+      for (const ctr of cs) {
+        const loadR = ctr.r + 1;
+        for (let dz = -loadR; dz <= loadR; dz++)
+          for (let dx = -loadR; dx <= loadR; dx++) {
+            if (dx * dx + dz * dz > (loadR + 0.5) * (loadR + 0.5)) continue;
+            const cx = ctr.cx + dx, cz = ctr.cz + dz;
+            const k = chunkKey(cx, cz);
+            let c = this.chunks.get(k);
+            if (!c) {
+              c = new Chunk(cx, cz);
+              this.chunks.set(k, c);
+            }
+            c.lastSeen = this.frame;
+          }
+      }
+      // unload far chunks
+      if (this.frame % 30 === 0) {
+        const toSave: [string, SavedChunk][] = [];
+        for (const [k, c] of this.chunks) {
+          if (this.nearest(c.cx, c.cz, cs).slack > 3 && !c.meshing && !c.loading && this.canUnload(c)) {
+            if (c.modified && c.ready) toSave.push([keyStr(c.cx, c.cz), this.serialize(c)]);
+            this.onUnload(c);
+            this.chunks.delete(k);
+          }
+        }
+        if (toSave.length && !this.readOnly) {
+          for (const [k] of toSave) this.savedKeys.add(k);
+          Storage.saveChunks(this.worldId, toSave);
+        }
+      }
+    }
+    this.schedule(cs, frustumTest);
+  }
+
+  /** Server hook: chunks a player was sent stay loaded until that player lets go of them. */
+  canUnload: (c: Chunk) => boolean = () => true;
+
+  /** Client: a chunk arrived from the server (replacing any copy we had). */
+  receiveChunk(cx: number, cz: number, blocks: Uint16Array, biomes: Uint8Array, tiles?: [number, TileEntity][]) {
+    const k = chunkKey(cx, cz);
+    let c = this.chunks.get(k);
+    if (!c) {
+      c = new Chunk(cx, cz);
+      this.chunks.set(k, c);
+    }
+    c.tiles.clear();
+    c.version++;
+    c.urgent = true;
+    c.localGen = false;
+    this.acceptChunk(c, blocks, biomes, tiles);
+  }
+
+  /** Client: generate this chunk ourselves (the server says it's still exactly what the seed makes). */
+  generateChunk(cx: number, cz: number) {
+    const k = chunkKey(cx, cz);
+    let c = this.chunks.get(k);
+    if (c?.ready || c?.loading) return;
+    if (!c) {
+      c = new Chunk(cx, cz);
+      this.chunks.set(k, c);
+    }
+    c.localGen = true;
+  }
+
+  /** Client: the server stopped tracking a chunk for us. */
+  dropChunk(cx: number, cz: number) {
+    const k = chunkKey(cx, cz), c = this.chunks.get(k);
+    if (!c) return;
+    this.onUnload(c);
+    this.chunks.delete(k);
+    for (let dz = -1; dz <= 1; dz++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const n = this.getChunk(cx + dx, cz + dz);
+        if (n && n.ready && n !== c) n.dirty = true;
+      }
+  }
+
+  private schedule(cs: { cx: number; cz: number; r: number }[], frustumTest?: (cx: number, cz: number) => boolean) {
     const idle = this.workers.filter((w) => !w.busy);
     if (!idle.length) return;
-    const rd = this.renderDistance;
     const genCands: [number, Chunk][] = [];
     const meshCands: [number, Chunk][] = [];
     for (const c of this.chunks.values()) {
-      const dx = c.cx - pcx, dz = c.cz - pcz;
-      let d = dx * dx + dz * dz;
+      const near = this.nearest(c.cx, c.cz, cs);
+      let d = near.d;
       if (!c.ready) {
-        if (!c.loading) genCands.push([d, c]);
+        if (!c.loading && (this.role !== 'client' || c.localGen)) genCands.push([d, c]);
         continue;
       }
       if (!c.dirty || c.meshing) continue;
-      if (d > (rd + 0.5) * (rd + 0.5)) continue;
+      if (near.slack > 0.5) continue;
       if (!this.neighborsReady(c)) continue;
       if (c.urgent) d = -1000 + d;
       else if (frustumTest && !frustumTest(c.cx, c.cz)) d += 400;
@@ -294,8 +375,11 @@ export class World {
     c.dirty = false;
     c.urgent = false;
     slot.busy = true;
-    slot.job = { type: 'mesh', chunk: c, version: c.version };
-    slot.w.postMessage({ type: 'mesh', id: ++this.jobId, cx: c.cx, cz: c.cz, chunks, biomes, sky: this.hasSky });
+    // the server only needs light (mob spawning, crops, snow); meshes are for screens
+    const type = this.role === 'server' ? 'light' : 'mesh';
+    slot.job = { type, chunk: c, version: c.version };
+    if (type === 'light') slot.w.postMessage({ type, id: ++this.jobId, cx: c.cx, cz: c.cz, chunks, sky: this.hasSky });
+    else slot.w.postMessage({ type, id: ++this.jobId, cx: c.cx, cz: c.cz, chunks, biomes, sky: this.hasSky });
   }
 
   private acceptChunk(c: Chunk, blocks: Uint16Array, biomes: Uint8Array, tiles?: [number, TileEntity][], spawns?: { type: string; x: number; y: number; z: number; data?: Record<string, unknown> }[]) {
@@ -322,16 +406,17 @@ export class World {
     const c = job.chunk;
     if (d.type === 'gen') {
       if (this.chunks.get(chunkKey(c.cx, c.cz)) !== c) return; // unloaded meanwhile
+      if (!c.loading) return; // the server sent the real thing while we were generating
       this.acceptChunk(c, d.blocks as Uint16Array, d.biomes as Uint8Array, undefined, d.spawns as { type: string; x: number; y: number; z: number }[]);
       c.modified = !!(d.spawns as unknown[] | undefined)?.length; // remember that inhabitants were spawned
-    } else if (d.type === 'mesh') {
+    } else if (d.type === 'mesh' || d.type === 'light') {
       c.meshing = false;
       if (this.chunks.get(chunkKey(c.cx, c.cz)) !== c) return;
       const r = d as unknown as MeshResult;
       c.light = r.light;
       c.heightmap = r.heightmap;
       c.meshedVersion = job.version!;
-      this.onMesh(c, r);
+      if (d.type === 'mesh') this.onMesh(c, r);
     }
   }
 

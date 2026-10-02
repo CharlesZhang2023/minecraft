@@ -1,21 +1,16 @@
-// Game orchestration: main loop, ticking, camera, interaction and rendering.
-import { Renderer, Camera } from '../render/renderer';
-import { World, Dimension } from '../world/world';
+// The simulation (an "integrated server"): worlds, entities, block ticks, redstone and every player's actions.
+// It never draws anything. Each player is a ServerPlayer talking to a client over a connection; single-player is
+// the same thing with the client in this page on a loopback connection.
+//
+// Gameplay code reaches for `game.player`, `game.world`, `game.input`, `game.ui`... as if there were one player.
+// Those follow the current context: the dimension being simulated and, while a player's own action runs (mining,
+// using an item, a click in their chest), that player.
+import { World, Dimension, Chunk } from '../world/world';
 import { Player, GameMode } from './player';
-import { Input } from './input';
-import { device } from './device';
-import { Audio, SOUND_FOR } from './audio';
-import { Options, loadOptions, saveOptions } from './options';
-import { Particles } from './particles';
-import { computeEnv, netherEnv, endEnv } from './env';
 import { findPortal, buildPortal } from './portal';
 import { raycastBlocks, BlockHit } from './raycast';
-import { BLOCKS, B, idOf, metaOf, Render, CHUNK_H, TEXTURES, tex } from '../world/blocks';
-import { selectionShapes } from '../world/models';
-import { getItem, ItemStack, stack, I } from './items';
-import { Gui } from '../ui/gui';
-import { IconCache } from '../ui/icons';
-import { UI } from '../ui/ui';
+import { BLOCKS, B } from '../world/blocks';
+import { ItemStack, stack, I, getItem } from './items';
 import { Storage, WorldMeta } from './storage';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
@@ -26,12 +21,9 @@ import { buildPending, enterGateway } from './gateways';
 import { BlockTicker } from './blockticks';
 import { Interaction } from './interact';
 import { Spawner } from '../entity/spawner';
-import { EntityRenderer } from '../render/entityrender';
 import { Weather } from './weather';
 import { createEntity } from '../entity/registry';
-import { rayAABB, clamp, mat4 } from '../math';
-import { getItemSprite, ITEM_SPRITE_NAMES } from '../render/itemsprites';
-import { getTexture } from '../render/textures';
+import { rayAABB } from '../math';
 import { Random } from '../noise';
 import { BIOMES } from '../world/biomes';
 import { Commands } from './commands';
@@ -40,263 +32,401 @@ import { Redstone } from './redstone';
 import { Pistons } from './pistons';
 import { Devices } from './devices';
 import { Brewing } from './brewing';
-import { LoadingScreen, CreditsScreen } from '../ui/menus';
 import { END_PLATFORM } from '../world/endgen';
 import { EnderDragon, buildExitPortal } from '../entity/dragon';
 import { tickFurnaces } from './furnace';
-import { rainTexture, snowTexture } from './weather';
+import { SOUND_FOR } from './audio';
+import type { Conn, Msg } from '../net/conn';
+import { ServerPlayer, NetPlayer } from '../server/splayer';
+import { ServerAudio, BroadcastUI, fxSink, VirtualInput } from '../server/sui';
+import { captureState, sig, encodeValue, State } from '../net/replicate';
+import type { Particles } from './particles';
 
 export const TICK_MS = 50;
 
-export class Game {
-  renderer: Renderer;
-  gui: Gui;
-  icons = new IconCache();
-  ui: UI;
-  input: Input;
-  audio = new Audio();
-  options: Options;
-  world: World | null = null;
-  player: Player | null = null;
-  meta: WorldMeta | null = null;
+/** One loaded dimension: its world, entities (players included) and the systems that run it. */
+export class Dim {
   entities: Entity[] = [];
-  particles: Particles | null = null;
-  ticker: BlockTicker | null = null;
-  interact: Interaction | null = null;
-  spawner: Spawner | null = null;
-  weather: Weather | null = null;
-  commands: Commands;
-  achievements: Achievements;
+  ticker: BlockTicker;
   redstone: Redstone;
   pistons: Pistons;
   devices: Devices;
   brewing: Brewing;
-  entityRenderer: EntityRenderer;
+  spawner: Spawner;
+  /** Interaction for world-made events (explosions, falling blocks) that no player is behind. */
+  interact: Interaction;
+  emptyTicks = 0;
+  /** Replication: each entity's encoded fields this tick, what changed since the last, and comparable copies. */
+  states = new Map<number, State>();
+  deltas = new Map<number, State>();
+  sigs = new Map<number, Map<string, unknown>>();
+  pistonsWere = false;
+  constructor(public world: World, g: Game) {
+    this.ticker = new BlockTicker(g, world);
+    this.redstone = new Redstone(g);
+    this.pistons = new Pistons(g);
+    this.devices = new Devices(g);
+    this.brewing = new Brewing(g);
+    this.spawner = new Spawner(g);
+    this.interact = new Interaction(g);
+  }
+}
+
+const NO_INPUT = new VirtualInput();
+
+export class Game {
+  meta: WorldMeta | null = null;
+  dims = new Map<Dimension, Dim>();
+  /** The dimension being simulated right now (gameplay code's `world`, `entities`, `ticker`...). */
+  dim: Dim | null = null;
+  players: ServerPlayer[] = [];
+  /** The player whose action is running right now. */
+  ctx: ServerPlayer | null = null;
   time = 0;
   ticks = 0;
-  private acc = 0;
-  private last = performance.now();
-  partial = 0;
-  /** A gateway that was just opened or used shines a beam for a while. */
-  gatewayBeam: { x: number; y: number; z: number; until: number } | null = null;
-  target: BlockHit | null = null;
-  targetEntity: Entity | null = null;
-  /** Which hit box of the targeted entity the crosshair is on (only multi-part entities name them). */
-  targetPart: string | null = null;
-  thirdPerson = 0;
-  hideHud = false;
-  showDebug = false;
-  fps = 0;
-  private frames = 0;
-  private fpsTime = 0;
-  frameMs = 0;
-  cam: Camera = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 70 };
-  fovMod = 1;
-  pFovMod = 1;
-  ctx: CanvasRenderingContext2D;
-  rng = new Random(Date.now() & 0xffffff);
-  panorama = false; // title-screen background world
   doDaylightCycle = true;
+  weather: Weather;
+  commands: Commands;
+  audio: ServerAudio;
+  particles: Particles;
+  options = { difficulty: 2 };
+  readonly panorama = false;
+  rng = new Random(Date.now() & 0xffffff);
+  /** Single-player pause (the pause menu stops the world unless other people are playing). */
+  paused = false;
+  /** Sounds without a position made while replaying a player's clicks are their client's own business. */
+  muteUi = false;
+  /** Largest view distance a player can ask for. */
+  maxViewDistance = 12;
+  /**
+   * How far around each player the world is loaded and simulated (mobs, crops, redstone). Beyond it, clients draw
+   * terrain they generated themselves, plus any changed chunks read from disk.
+   */
+  simDistance = 6;
   lastSave = 0;
   saving = false;
-  handSwapAnim = 0; // equip animation
-  pHandSwapAnim = 0;
-  lastHeldId = -1;
-  lastHeldSlot = -1;
-  sleepFade = 0;
-  dimension: Dimension = 'overworld';
-  portalTime = 0;
-  portalCooldown = 0;
-  pendingArrival: { x: number; y: number; z: number; toSpawn: boolean } | null = null;
-  traveling = false;
-  torchFlicker = 0;
-  private torchFlickerDX = 0;
-  titleYaw = 0;
-  private uiCanvas: HTMLCanvasElement;
+  closed = false;
+  private broadcast = new BroadcastUI(this);
+  private loading = new Map<Dimension, Promise<Dim>>();
+  private noAchievements: Achievements;
+  /** Called when someone joins or leaves (the host's player list). */
+  onPlayersChanged: () => void = () => {};
 
-  constructor(glCanvas: HTMLCanvasElement, uiCanvas: HTMLCanvasElement) {
-    this.options = loadOptions();
-    this.renderer = new Renderer(glCanvas);
-    this.uiCanvas = uiCanvas;
-    this.ctx = uiCanvas.getContext('2d')!;
-    // register item sprite textures so they can be used as particles / dropped items
-    const extra = ITEM_SPRITE_NAMES.map((n) => ({ name: 'item/' + n, img: getItemSprite(n)! }));
-    extra.push({ name: 'weather_rain', img: rainTexture() }, { name: 'weather_snow', img: snowTexture() });
-    extra.push({ name: 'grass_side_item', img: tintMasked(getTexture('grass_side'), 0x7cbd6b) });
-    extra.push({ name: 'entity_shadow', img: shadowTexture() });
-    extra.push({ name: 'end_beam', img: getTexture('end_beam') });
-    this.renderer.initAtlas(extra);
-    this.gui = new Gui();
-    this.input = new Input(uiCanvas);
-    this.entityRenderer = new EntityRenderer(this.renderer);
+  constructor() {
+    this.audio = new ServerAudio(this);
+    this.particles = fxSink(this);
+    this.weather = new Weather(this);
     this.commands = new Commands(this);
-    this.achievements = new Achievements(this);
-    this.redstone = new Redstone(this);
-    this.pistons = new Pistons(this);
-    this.devices = new Devices(this);
-    this.brewing = new Brewing(this);
-    this.ui = new UI(this);
-    this.resize();
-    window.addEventListener('resize', () => this.resize());
-    window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 120));
-    screen.orientation?.addEventListener('change', () => this.resize());
-    window.visualViewport?.addEventListener('resize', () => this.resize());
-    window.visualViewport?.addEventListener('scroll', () => this.resize());
-    device.onChange(() => this.resize());
-    this.audio.volume = this.options.volume;
-    this.audio.musicVolume = this.options.music;
+    this.noAchievements = new Achievements(this);
+    this.noAchievements.passive = true;
   }
 
-  private lastSize = '';
-  resize() {
-    const dpr = device.ratio(), vp = device.viewport();
-    const w = Math.max(1, Math.floor(vp.w * dpr)), h = Math.max(1, Math.floor(vp.h * dpr));
-    // visualViewport fires scroll/resize in bursts (iOS keyboard, pinch): resizing a canvas reallocates and clears it
-    const key = `${w},${h},${vp.x},${vp.y},${vp.w},${vp.h},${vp.rot},${device.touch}`;
-    if (key === this.lastSize) return;
-    this.lastSize = key;
-    // on touch devices the canvases follow the visual viewport (it shrinks when the soft keyboard opens);
-    // held upright, they are turned a quarter clockwise so the game stays landscape
-    for (const c of [this.renderer.canvas, this.uiCanvas]) {
-      c.style.left = device.touch ? vp.x + 'px' : '';
-      c.style.top = device.touch ? vp.y + 'px' : '';
-      c.style.width = device.touch ? vp.w + 'px' : '';
-      c.style.height = device.touch ? vp.h + 'px' : '';
-      c.style.transformOrigin = vp.rot ? '0 0' : '';
-      c.style.transform = vp.rot ? `translateX(${vp.sw}px) rotate(90deg)` : '';
+  // ------------------------------------------------------------------ context (what "the" world / player means)
+  get world(): World | null { return this.dim?.world ?? null; }
+  get entities(): Entity[] { return this.dim?.entities ?? []; }
+  get ticker() { return this.dim?.ticker ?? null; }
+  get redstone() { return this.dim!.redstone; }
+  get pistons() { return this.dim!.pistons; }
+  get devices() { return this.dim!.devices; }
+  get brewing() { return this.dim!.brewing; }
+  get spawner() { return this.dim?.spawner ?? null; }
+  get dimension(): Dimension { return this.dim?.world.dimension ?? 'overworld'; }
+  /** The acting player; outside any player's action, the first player in this dimension. */
+  get player(): Player | null {
+    if (this.ctx) return this.ctx.entity;
+    return this.playersHere()[0]?.entity ?? null;
+  }
+  get interact(): Interaction | null { return this.ctx?.interact ?? this.dim?.interact ?? null; }
+  get input() { return this.ctx?.input ?? NO_INPUT; }
+  get target(): BlockHit | null { return this.ctx?.target ?? null; }
+  set target(t: BlockHit | null) { if (this.ctx) this.ctx.target = t; }
+  get targetEntity(): Entity | null { return this.ctx?.targetEntity ?? null; }
+  set targetEntity(e: Entity | null) { if (this.ctx) this.ctx.targetEntity = e; }
+  get targetPart(): string | null { return this.ctx?.targetPart ?? null; }
+  get ui() { return (this.ctx?.ui ?? this.broadcast) as unknown as import('../ui/ui').UI; }
+  get achievements(): Achievements { return this.ctx?.achievements ?? this.noAchievements; }
+  get portalCooldown() { return this.ctx?.portalCooldown ?? 0; }
+  set portalCooldown(n: number) { if (this.ctx) this.ctx.portalCooldown = n; }
+  set gatewayBeam(b: { x: number; y: number; z: number; until: number }) {
+    for (const p of this.playersHere()) p.event(['beam', b.x, b.y, b.z, b.until - this.ticks]);
+  }
+
+  /** Players in the dimension being simulated (everyone, outside any dimension). */
+  playersHere(): ServerPlayer[] {
+    const d = this.dim;
+    return d ? this.players.filter((p) => p.dim === d.world.dimension && p.entity.world === d.world) : this.players;
+  }
+  /** Player entities in the current dimension (mobs pick targets from these). */
+  playerEntities(): Player[] {
+    return this.playersHere().map((p) => p.entity);
+  }
+  /** The ServerPlayer behind a player entity. */
+  playerOf(e: Entity | null | undefined): ServerPlayer | null {
+    return e instanceof NetPlayer ? e.sp : null;
+  }
+  /** Nearest living player within `range` of `e` (ignores creative / spectator unless asked). */
+  nearestPlayer(e: { x: number; y: number; z: number }, range: number, includeCreative = false): Player | null {
+    let best: Player | null = null, bd = range;
+    for (const p of this.playerEntities()) {
+      if (p.dead || p.spectator || (!includeCreative && p.creative)) continue;
+      const d = Math.hypot(p.x - e.x, p.y - e.y, p.z - e.z);
+      if (d < bd) { bd = d; best = p; }
     }
-    this.renderer.resize(w, h);
-    this.uiCanvas.width = w;
-    this.uiCanvas.height = h;
+    return best;
   }
 
-  saveOptions() {
-    saveOptions(this.options);
-    this.audio.setVolume(this.options.volume, this.options.music);
-    if (this.world) this.world.renderDistance = this.panorama ? Math.min(6, this.options.renderDistance) : this.options.renderDistance;
-    if (this.player) this.player.difficulty = this.options.difficulty;
+  /** Run `fn` as player `sp` (their dimension, input, screen, achievements). */
+  asActor<T>(sp: ServerPlayer, fn: () => T): T {
+    const pc = this.ctx, pd = this.dim;
+    this.ctx = sp;
+    this.dim = this.dims.get(sp.dim) ?? pd;
+    try {
+      return fn();
+    } finally {
+      this.ctx = pc;
+      this.dim = pd;
+    }
+  }
+  inDim<T>(d: Dim, fn: () => T): T {
+    const pd = this.dim, pc = this.ctx;
+    this.dim = d;
+    if (pc && pc.dim !== d.world.dimension) this.ctx = null;
+    try {
+      return fn();
+    } finally {
+      this.dim = pd;
+      this.ctx = pc;
+    }
   }
 
   // ------------------------------------------------------------------ world lifecycle
-  private makeWorld(meta: WorldMeta, dim: Dimension, panorama: boolean): World {
-    const world = new World(meta.seed, dim === 'overworld' ? meta.id : meta.id + '~' + dim, dim);
-    world.readOnly = panorama;
-    world.renderDistance = panorama ? Math.min(6, this.options.renderDistance) : this.options.renderDistance;
-    return world;
+  async openWorld(meta: WorldMeta) {
+    this.meta = meta;
+    this.time = meta.time ?? 0;
+    this.ticks = 0;
+    this.options.difficulty = meta.difficulty ?? 2;
+    this.lastSave = performance.now();
+    await this.loadDim('overworld');
   }
 
-  private attachWorld(world: World) {
-    this.world = world;
-    world.onMesh = (c, r) => this.renderer.uploadChunk(c, r);
-    world.onUnload = (c) => this.renderer.freeChunk(c);
-    this.particles = new Particles(world);
-    this.ticker = new BlockTicker(this, world);
-    this.pistons.reset();
-    world.onBlockChange = (x, y, z, old, v) => this.ticker!.onChange(x, y, z, old, v);
-    world.onChunkLoaded = (c, spawns) => {
-      this.ticker!.onChunkLoaded(c);
-      this.pistons.scanChunk(c.cx, c.cz);
-      if (spawns && !this.panorama) for (const sp of spawns) {
+  /** Load a dimension (once, even if several players arrive together). */
+  loadDim(d: Dimension): Promise<Dim> {
+    const have = this.dims.get(d);
+    if (have) return Promise.resolve(have);
+    let p = this.loading.get(d);
+    if (!p) {
+      p = this.createDim(d);
+      this.loading.set(d, p);
+      p.finally(() => this.loading.delete(d));
+    }
+    return p;
+  }
+
+  private async createDim(d: Dimension): Promise<Dim> {
+    const meta = this.meta!;
+    const world = new World(meta.seed, d === 'overworld' ? meta.id : meta.id + '~' + d, d, 'server');
+    await world.init();
+    const dim = new Dim(world, this);
+    world.onBlockChange = (x, y, z, old, v) => {
+      this.inDim(dim, () => dim.ticker.onChange(x, y, z, old, v));
+      for (const p of this.players) if (p.dim === d) p.blockChanged(x, y, z, v);
+    };
+    world.onTileChange = (x, y, z) => { for (const p of this.players) if (p.dim === d) p.tileChanged(x, y, z); };
+    world.canUnload = (c: Chunk) => !this.players.some((p) => p.dim === d && p.holdsChunk(((c.cx + 0x8000) * 0x10000) + (c.cz + 0x8000)));
+    world.onChunkLoaded = (c, spawns) => this.inDim(dim, () => {
+      dim.ticker.onChunkLoaded(c);
+      dim.pistons.scanChunk(c.cx, c.cz);
+      if (spawns) for (const sp of spawns) {
         const e = createEntity(sp.type, world, this);
         if (!e) continue;
         e.setPos(sp.x, sp.y, sp.z);
         if (sp.data) Object.assign(e, sp.data);
-        this.entities.push(e);
+        dim.entities.push(e);
       }
-    };
-    this.dimension = world.dimension;
+    });
+    world.renderDistance = this.simDistance;
+    this.dims.set(d, dim);
+    this.inDim(dim, () => {
+      for (const e of (this.entitiesOf(meta, d) ?? []) as { type: string }[]) {
+        const ent = createEntity(e.type, world, this);
+        if (ent) { (ent as unknown as { load(d: unknown): void }).load(e); dim.entities.push(ent); }
+      }
+      if (d === 'end') this.ensureDragon();
+    });
+    return dim;
   }
 
-  private loadEntities(list: unknown[] | undefined) {
-    this.entities = [];
-    if (list) for (const e of list as { type: string }[]) {
-      const ent = createEntity(e.type, this.world!, this);
-      if (ent) { (ent as unknown as { load(d: unknown): void }).load(e); this.entities.push(ent); }
-    }
-  }
-  private saveEntities() {
-    return this.entities.filter((e) => (e as unknown as { persist?: boolean }).persist && !e.removed).map((e) => (e as unknown as { toJSON(): unknown }).toJSON());
-  }
   private entitiesOf(meta: WorldMeta, dim: Dimension) {
     return dim === 'nether' ? meta.netherEntities : dim === 'end' ? meta.endEntities : meta.entities;
   }
-  private storeEntities(meta: WorldMeta, dim: Dimension) {
-    const list = this.saveEntities();
-    if (dim === 'nether') meta.netherEntities = list;
-    else if (dim === 'end') meta.endEntities = list;
+  private storeEntities(dim: Dim) {
+    const list = dim.entities.filter((e) => (e as unknown as { persist?: boolean }).persist && !e.removed).map((e) => (e as unknown as { toJSON(): unknown }).toJSON());
+    const meta = this.meta!, d = dim.world.dimension;
+    if (d === 'nether') meta.netherEntities = list;
+    else if (d === 'end') meta.endEntities = list;
     else meta.entities = list;
   }
 
-  async openWorld(meta: WorldMeta, panorama = false) {
-    await this.closeWorld(false);
-    this.panorama = panorama;
-    this.meta = meta;
-    const dim = meta.dimension ?? 'overworld';
-    const world = this.makeWorld(meta, dim, panorama);
-    await world.init();
-    this.attachWorld(world);
-    this.interact = new Interaction(this);
-    this.spawner = new Spawner(this);
-    this.weather = new Weather(this);
-    this.time = meta.time ?? 0;
-    this.ticks = 0;
-    this.portalTime = 0;
-    this.portalCooldown = 0;
-    this.pendingArrival = null;
-    const p = new Player(world);
-    this.player = p;
-    p.difficulty = this.options.difficulty;
-    p.onDamaged = (src) => {
-      this.audio.play('hurt', null, 1, 1);
-      void src;
-    };
-    p.onDeath = (msg) => {
-      this.ui.chat.add(msg);
-      if (!this.panorama) setTimeout(() => this.ui.openDeath(msg), 50);
-      if (this.meta?.hardcore) this.player!.setGameMode(GameMode.Spectator);
-      // drop inventory
-      if (!p.creative) {
-        for (const s of [...p.inventory.main, ...p.inventory.armor]) if (s) this.dropItem(p.x, p.y + 1, p.z, s, true);
-        p.inventory.clear();
-      }
-    };
-    if (meta.player) {
-      p.load(meta.player);
-      if (meta.spawn) [p.spawnX, p.spawnY, p.spawnZ] = meta.spawn;
-    } else {
-      p.setGameMode(meta.gameMode);
-      const [sx, sz] = this.findSpawn(meta.seed);
-      p.spawnX = sx;
-      p.spawnZ = sz;
-      p.spawnY = -1; // resolved once the chunk loads
-      p.setPos(sx + 0.5, 200, sz + 0.5);
-    }
-    this.loadEntities(this.entitiesOf(meta, dim));
-    this.achievements.load(meta.achievements);
-    this.doDaylightCycle = true;
-    this.lastSave = performance.now();
+  private async unloadDim(d: Dimension) {
+    const dim = this.dims.get(d);
+    if (!dim) return;
+    this.dims.delete(d);
+    this.storeEntities(dim);
+    await dim.world.saveAll();
+    dim.world.destroy();
   }
 
-  /** Move the player to another dimension through a portal (or back to spawn after death / leaving the End). */
-  async travel(to: Dimension, toSpawn = false) {
-    if (!this.world || !this.player || !this.meta || this.traveling) return;
-    this.traveling = true;
-    const p = this.player, meta = this.meta;
-    const from = this.world;
-    const fromDim = from.dimension;
-    const loading = new LoadingScreen(this.ui, to === 'nether' ? 'Entering the Nether' : to === 'end' ? 'Entering the End' : fromDim === 'end' ? 'Leaving the End' : 'Leaving the Nether');
-    loading.ready = true;
-    this.ui.open(loading);
-    // persist the dimension we're leaving
-    this.storeEntities(meta, fromDim);
-    await from.saveAll();
-    for (const c of from.chunks.values()) this.renderer.freeChunk(c);
-    from.destroy();
-    const world = this.makeWorld(meta, to, false);
-    await world.init();
-    this.attachWorld(world);
-    p.world = world;
-    this.loadEntities(this.entitiesOf(meta, to));
+  async saveWorld() {
+    const meta = this.meta;
+    if (!meta || this.saving) return;
+    this.saving = true;
+    meta.time = this.time;
+    meta.lastPlayed = Date.now();
+    meta.difficulty = this.options.difficulty;
+    const players = (meta.players ??= {});
+    for (const sp of this.players) {
+      if (sp.owner) {
+        meta.player = sp.entity.toJSON();
+        meta.gameMode = sp.entity.gameMode;
+        meta.dimension = sp.dim;
+        meta.achievements = sp.achievements.toJSON();
+      } else players[sp.name] = sp.save();
+    }
+    for (const dim of this.dims.values()) this.storeEntities(dim);
+    try {
+      for (const dim of this.dims.values()) await dim.world.saveAll();
+      await Storage.saveWorld(meta);
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  async close() {
+    if (this.closed) return;
+    this.closed = true;
+    for (const sp of [...this.players]) sp.conn.close('Server closed');
+    await this.saveWorld();
+    for (const d of [...this.dims.keys()]) await this.unloadDim(d);
+  }
+
+  // ------------------------------------------------------------------ players
+  /** A client connected. The owner is the person whose world this is (their data lives in meta.player). */
+  async addPlayer(conn: Conn, name: string, owner: boolean): Promise<ServerPlayer> {
+    const meta = this.meta!;
+    const over = await this.loadDim('overworld');
+    const sp = new ServerPlayer(this, conn, name, owner);
+    const p = sp.entity;
+    p.sp = sp;
+    const saved = owner ? (meta.player as Record<string, unknown> | undefined) : meta.players?.[name];
+    let dimName: Dimension = 'overworld';
+    if (saved) {
+      p.load(saved);
+      dimName = (owner ? meta.dimension : (saved as { dim?: Dimension }).dim) ?? 'overworld';
+      sp.achievements.load(owner ? meta.achievements : (saved as { achievements?: string[] }).achievements);
+    } else {
+      p.setGameMode(meta.gameMode);
+      const sp0 = meta.spawn;
+      p.spawnX = sp0?.[0] ?? 0; p.spawnY = sp0?.[1] ?? -1; p.spawnZ = sp0?.[2] ?? 0;
+      p.setPos(p.spawnX + 0.5, 200, p.spawnZ + 0.5);
+      sp.pendingArrival = { x: p.spawnX + 0.5, y: p.spawnY, z: p.spawnZ + 0.5, toSpawn: true };
+    }
+    const dim = dimName === 'overworld' ? over : await this.loadDim(dimName);
+    sp.dim = dimName;
+    p.world = dim.world;
+    p.difficulty = this.options.difficulty;
+    this.hookPlayer(sp);
+    dim.entities.push(p);
+    this.players.push(sp);
+    sp.send({ t: 'join', id: p.id, name, dim: dimName, seed: meta.seed, worldName: meta.name, hardcore: meta.hardcore, time: this.timeState(), owner });
+    sp.teleported();
+    if (!owner) this.say(`§e${name} joined the game`);
+    this.onPlayersChanged();
+    return sp;
+  }
+
+  private hookPlayer(sp: ServerPlayer) {
+    const p = sp.entity;
+    p.onDamaged = () => {
+      sp.event(['hurt', p.lastHurtDirection]);
+    };
+    p.onDeath = (msg) => {
+      const named = msg.replace(/^Player\b/, sp.name);
+      this.say(named);
+      sp.send({ t: 'death', msg });
+      this.inDim(this.dims.get(sp.dim)!, () => {
+        if (this.meta?.hardcore) p.setGameMode(GameMode.Spectator);
+        if (!p.creative) {
+          for (const s of [...p.inventory.main, ...p.inventory.armor]) if (s) this.dropItem(p.x, p.y + 1, p.z, s, true);
+          p.inventory.clear();
+        }
+      });
+    };
+  }
+
+  removePlayer(sp: ServerPlayer, reason = 'left the game') {
+    const i = this.players.indexOf(sp);
+    if (i < 0) return;
+    // close their window (returns crafting-grid items) and get off any mount
+    this.asActor(sp, () => {
+      if (sp.ui.screen) { sp.ui.fromClient = true; sp.ui.open(null); sp.ui.fromClient = false; }
+      sp.entity.riding?.dismount();
+    });
+    if (!sp.owner && this.meta) (this.meta.players ??= {})[sp.name] = sp.save();
+    else if (sp.owner && this.meta) { this.meta.player = sp.entity.toJSON(); this.meta.dimension = sp.dim; this.meta.achievements = sp.achievements.toJSON(); }
+    this.players.splice(i, 1);
+    const dim = this.dims.get(sp.dim);
+    if (dim) { const k = dim.entities.indexOf(sp.entity); if (k >= 0) dim.entities.splice(k, 1); }
+    if (!sp.conn.closed) sp.conn.close(reason);
+    if (!sp.owner) this.say(`§e${sp.name} ${reason}`);
+    this.onPlayersChanged();
+  }
+
+  /** Chat from a player: a command or a message to everyone. */
+  chat(sp: ServerPlayer, msg: string) {
+    msg = msg.trim();
+    if (!msg) return;
+    if (msg.startsWith('/')) {
+      if (!sp.owner && !this.meta?.cheatsForAll) { sp.send({ t: 'chat', msg: '§cOnly the host can use commands' }); return; }
+      for (const line of this.asActor(sp, () => this.commands.run(msg))) sp.send({ t: 'chat', msg: line });
+      return;
+    }
+    this.say(`<${sp.name}> ${msg}`);
+  }
+
+  say(msg: string) {
+    for (const p of this.players) p.send({ t: 'chat', msg });
+  }
+
+  respawn(sp: ServerPlayer) {
+    const p = sp.entity;
+    if (!p.dead) return;
+    if (this.meta?.hardcore) {
+      p.dead = false;
+      p.health = 20;
+      p.setGameMode(GameMode.Spectator);
+      return;
+    }
+    p.respawn();
+    if (sp.dim !== 'overworld') this.travel(sp, 'overworld', true);
+    else sp.pendingArrival = { x: p.x, y: p.y, z: p.z, toSpawn: true };
+  }
+
+  // ------------------------------------------------------------------ dimensions
+  /** Send a player to another dimension through a portal (or back to spawn after death / leaving the End). */
+  async travel(sp: ServerPlayer, to: Dimension, toSpawn = false) {
+    if (sp.traveling || this.closed) return;
+    sp.traveling = true;
+    const p = sp.entity;
+    const fromDim = sp.dim;
+    p.riding?.dismount();
+    this.asActor(sp, () => { if (sp.ui.screen) sp.ui.open(null); });
+    const from = this.dims.get(fromDim);
+    if (from) { const k = from.entities.indexOf(p); if (k >= 0) from.entities.splice(k, 1); }
+    const dim = await this.loadDim(to);
+    sp.resetView();
+    sp.dim = to;
+    p.world = dim.world;
+    dim.entities.push(p);
     let nx: number, nz: number, ny = 70;
     if (to === 'end') {
       nx = END_PLATFORM.x + 0.5; nz = END_PLATFORM.z + 0.5; ny = END_PLATFORM.y + 1;
@@ -305,22 +435,30 @@ export class Game {
       nx = p.x * scale; nz = p.z * scale;
       if (toSpawn) { nx = p.spawnX + 0.5; nz = p.spawnZ + 0.5; }
     }
+    const title = to === 'nether' ? 'Entering the Nether' : to === 'end' ? 'Entering the End' : fromDim === 'end' ? 'Leaving the End' : 'Leaving the Nether';
+    sp.send({ t: 'dim', dim: to, title });
     p.setPos(nx, toSpawn ? p.spawnY : ny, nz);
     p.vx = p.vy = p.vz = 0;
-    this.pendingArrival = { x: nx, y: p.y, z: nz, toSpawn };
-    meta.dimension = to;
-    if (to === 'nether' && !toSpawn) this.achievements.unlock('portal');
-    if (to === 'end') this.achievements.unlock('theEnd');
-    this.portalTime = 0;
-    this.portalCooldown = to === 'end' || fromDim === 'end' ? 60 : 200;
-    this.traveling = false;
+    sp.pendingArrival = { x: nx, y: p.y, z: nz, toSpawn };
+    if (to === 'nether' && !toSpawn) sp.achievements.unlock('portal');
+    if (to === 'end') sp.achievements.unlock('theEnd');
+    sp.portalTime = 0;
+    sp.portalCooldown = to === 'end' || fromDim === 'end' ? 60 : 200;
+    sp.traveling = false;
   }
 
-  private resolveArrival() {
-    const a = this.pendingArrival!, w = this.world!, p = this.player!;
+  /** Place a player who's waiting for the ground under them to load. */
+  resolveArrival(sp: ServerPlayer) {
+    const a = sp.pendingArrival!, w = this.dims.get(sp.dim)?.world, p = sp.entity;
+    if (!w) return false;
+    if (a.toSpawn && sp.dim === 'overworld' && !this.meta?.spawn && !this.resolveWorldSpawn(w)) return false;
+    if (a.toSpawn && p.spawnY < 0 && this.meta?.spawn) {
+      [p.spawnX, p.spawnY, p.spawnZ] = this.meta.spawn;
+      a.x = p.spawnX + 0.5; a.z = p.spawnZ + 0.5;
+    }
     if (!w.chunkAt(Math.floor(a.x), Math.floor(a.z))) return false;
-    if (w.loadProgress(a.x, a.z, Math.min(3, w.renderDistance)) < 0.99) return false;
-    this.pendingArrival = null;
+    if (w.loadProgress(a.x, a.z, 2) < 0.99) return false;
+    sp.pendingArrival = null;
     if (w.dimension === 'end') {
       // the obsidian arrival platform (rebuilt every time, like the real game)
       const c: [number, number, number, number][] = [];
@@ -330,26 +468,44 @@ export class Game {
           for (let h = 1; h <= 3; h++) c.push([END_PLATFORM.x + dx, END_PLATFORM.y + h, END_PLATFORM.z + dz, B.AIR]);
         }
       this.interact!.setAll(c);
-      p.setPos(END_PLATFORM.x + 0.5, END_PLATFORM.y + 1, END_PLATFORM.z + 0.5);
       p.yaw = p.pyaw = 90; p.pitch = p.ppitch = 0;
+      p.setPos(END_PLATFORM.x + 0.5, END_PLATFORM.y + 1, END_PLATFORM.z + 0.5);
       this.audio.play('portalTravel', null, 0.6, 1);
       this.ensureDragon();
-      return true;
-    }
-    if (a.toSpawn) {
+    } else if (a.toSpawn) {
       const y = w.topSolidY(Math.floor(a.x), Math.floor(a.z)) + 1;
       p.setPos(a.x, Math.max(a.y, y), a.z);
-      return true;
-    }
-    const nether = w.dimension === 'nether';
-    const found = findPortal(w, a.x, a.z, nether ? 16 : 128);
-    if (found) {
-      p.setPos(found[0] + 0.5, found[1], found[2] + 0.5);
     } else {
-      const [x, y, z] = buildPortal(w, Math.floor(a.x), nether ? 70 : Math.max(64, w.topSolidY(Math.floor(a.x), Math.floor(a.z)) + 1), Math.floor(a.z), nether ? 34 : 60, nether ? 100 : 180, (c) => this.interact!.setAll(c));
-      p.setPos(x, y, z);
+      const nether = w.dimension === 'nether';
+      const found = findPortal(w, a.x, a.z, nether ? 16 : 128);
+      if (found) p.setPos(found[0] + 0.5, found[1], found[2] + 0.5);
+      else {
+        const [x, y, z] = buildPortal(w, Math.floor(a.x), nether ? 70 : Math.max(64, w.topSolidY(Math.floor(a.x), Math.floor(a.z)) + 1), Math.floor(a.z), nether ? 34 : 60, nether ? 100 : 180, (c) => this.interact!.setAll(c));
+        p.setPos(x, y, z);
+      }
+      this.audio.play('portalTravel', null, 0.6, 1);
     }
-    this.audio.play('portalTravel', null, 0.6, 1);
+    if (!sp.ready) { sp.ready = true; sp.send({ t: 'ready' }); }
+    return true;
+  }
+
+  /** Find the world spawn: a dry grass/sand column near the origin (once, when its chunks have loaded). */
+  private resolveWorldSpawn(w: World) {
+    const meta = this.meta!;
+    for (let r = 0; r < 64; r += 4) {
+      for (let a = 0; a < Math.max(1, r * 2); a++) {
+        const ang = (a / Math.max(1, r * 2)) * Math.PI * 2;
+        const x = Math.round(Math.cos(ang) * r), z = Math.round(Math.sin(ang) * r);
+        if (!w.chunkAt(x, z)) return false;
+        const y = w.topSolidY(x, z);
+        const id = w.getId(x, y, z);
+        if (id === B.GRASS || id === B.SAND || id === B.SNOW || id === B.PODZOL) {
+          meta.spawn = [x, y + 1, z];
+          return true;
+        }
+      }
+    }
+    meta.spawn = [0, w.topSolidY(0, 0) + 1, 0];
     return true;
   }
 
@@ -363,406 +519,193 @@ export class Game {
   }
 
   /** Walking into the exit portal: the first time, the credits roll before returning to the overworld. */
-  leaveEnd() {
-    if (this.traveling || this.pendingArrival) return;
-    if (this.meta && this.meta.dragonKilled && !this.meta.endPoemSeen) {
-      this.meta.endPoemSeen = true;
-      this.ui.open(new CreditsScreen(this.ui, () => this.travel('overworld', true)));
+  leaveEnd(sp: ServerPlayer) {
+    if (sp.traveling || sp.pendingArrival) return;
+    if (this.meta && this.meta.dragonKilled && !(sp.owner ? this.meta.endPoemSeen : (sp.entity as unknown as { endPoemSeen?: boolean }).endPoemSeen)) {
+      if (sp.owner) this.meta.endPoemSeen = true;
+      sp.send({ t: 'credits' });
+    }
+    this.travel(sp, 'overworld', true);
+  }
+
+  /** Nether / End portals and End gateways under a player. */
+  portalTick(sp: ServerPlayer) {
+    const p = sp.entity, w = this.world!;
+    if (sp.portalCooldown > 0) sp.portalCooldown--;
+    if (sp.pendingArrival || sp.traveling) return;
+    const b = p.box;
+    let inPortal = false, inEndPortal = false;
+    const dim = sp.dim;
+    for (let x = Math.floor(b.x0); x <= Math.floor(b.x1); x++)
+      for (let y = Math.floor(b.y0); y <= Math.floor(b.y1); y++)
+        for (let z = Math.floor(b.z0); z <= Math.floor(b.z1); z++) {
+          const id = w.getId(x, y, z);
+          if (id === B.NETHER_PORTAL) inPortal = true;
+          else if (id === B.END_PORTAL && dim !== 'nether' && sp.portalCooldown === 0 && !p.dead) inEndPortal = true;
+          else if (id === B.END_GATEWAY && dim === 'end' && sp.portalCooldown === 0 && !p.dead) { enterGateway(this, x, y, z); return; }
+        }
+    if (inEndPortal) {
+      sp.portalCooldown = 60;
+      if (dim === 'overworld') this.travel(sp, 'end');
+      else this.leaveEnd(sp);
       return;
     }
-    this.travel('overworld', true);
-  }
-
-  /** Pick a spawn column on land near the origin using the worldgen noise directly. */
-  findSpawn(seed: number): [number, number] {
-    // done lazily by the worker-generated chunks: start at 0,0 and search once loaded
-    void seed;
-    return [0, 0];
-  }
-
-  private resolveSpawn() {
-    const p = this.player!, w = this.world!;
-    if (p.spawnY >= 0) return true;
-    // spiral search for a dry grass/sand column around the current spawn column
-    for (let r = 0; r < 64; r += 4) {
-      for (let a = 0; a < Math.max(1, r * 2); a++) {
-        const ang = (a / Math.max(1, r * 2)) * Math.PI * 2;
-        const x = Math.round(p.spawnX + Math.cos(ang) * r), z = Math.round(p.spawnZ + Math.sin(ang) * r);
-        if (!w.chunkAt(x, z)) return false;
-        const y = w.topSolidY(x, z);
-        const id = w.getId(x, y, z);
-        if (id === B.GRASS || id === B.SAND || id === B.SNOW || id === B.PODZOL) {
-          p.spawnX = x; p.spawnZ = z; p.spawnY = y + 1;
-          p.setPos(x + 0.5, y + 1, z + 0.5);
-          if (this.meta) this.meta.spawn = [x, y + 1, z];
-          return true;
-        }
-      }
+    if (inPortal && !p.dead && dim !== 'end') {
+      if (sp.portalTime === 0 && sp.portalCooldown === 0) this.audio.play('portalTrigger', null, 0.5, 0.8 + Math.random() * 0.4);
+      sp.portalTime = Math.min(90, sp.portalTime + 1);
+      if (sp.portalCooldown === 0 && (sp.portalTime >= 80 || (p.creative && sp.portalTime >= 2))) this.travel(sp, dim === 'nether' ? 'overworld' : 'nether');
+    } else {
+      sp.portalTime = Math.max(0, sp.portalTime - 5);
+      if (!inPortal && sp.portalCooldown > 0 && sp.portalCooldown < 190) sp.portalCooldown = 0;
     }
-    const y = w.topSolidY(p.spawnX, p.spawnZ) + 1;
-    p.spawnY = y;
-    p.setPos(p.spawnX + 0.5, y, p.spawnZ + 0.5);
-    return true;
-  }
-
-  async closeWorld(save = true) {
-    if (!this.world) return;
-    if (save && !this.panorama) await this.saveWorld();
-    for (const c of this.world.chunks.values()) this.renderer.freeChunk(c);
-    this.world.destroy();
-    this.world = null;
-    this.player = null;
-    this.entities = [];
-    this.meta = null;
-    this.target = null;
-  }
-
-  async saveWorld() {
-    if (!this.world || !this.meta || this.panorama || this.saving) return;
-    this.saving = true;
-    this.meta.time = this.time;
-    this.meta.lastPlayed = Date.now();
-    this.meta.player = this.player?.toJSON();
-    this.meta.gameMode = this.player?.gameMode ?? this.meta.gameMode;
-    this.meta.difficulty = this.options.difficulty;
-    this.meta.dimension = this.dimension;
-    this.meta.achievements = this.achievements.toJSON();
-    this.storeEntities(this.meta, this.dimension);
-    try {
-      await this.world.saveAll();
-      await Storage.saveWorld(this.meta);
-    } finally {
-      this.saving = false;
-    }
-  }
-
-  /** Is the world near the player loaded enough to start playing? */
-  loadProgress(): number {
-    if (!this.world || !this.player) return 0;
-    const r = Math.min(3, this.world.renderDistance);
-    return this.world.loadProgress(this.player.x, this.player.z, r);
   }
 
   // ------------------------------------------------------------------ main loop
-  start() {
-    const loop = (now: number) => {
-      requestAnimationFrame(loop);
-      this.frame(now);
-    };
-    requestAnimationFrame(loop);
-  }
-
-  frame(now: number) {
-    const t0 = performance.now();
-    let dt = now - this.last;
-    this.last = now;
-    if (dt > 1000) dt = 1000;
-    const paused = this.ui.pausesGame();
-    if (!paused) this.acc += dt;
-    let n = 0;
-    while (this.acc >= TICK_MS && n < 10) {
-      this.tick();
-      this.acc -= TICK_MS;
-      n++;
-    }
-    if (n >= 10) this.acc = 0;
-    this.ui.tick(dt);
-    this.partial = paused ? 1 : this.acc / TICK_MS;
-    this.ui.touch.update();
-    this.updateLook();
-    this.render();
-    this.frames++;
-    if (now - this.fpsTime >= 1000) {
-      this.fps = Math.round((this.frames * 1000) / (now - this.fpsTime));
-      this.frames = 0;
-      this.fpsTime = now;
-    }
-    this.frameMs = performance.now() - t0;
-  }
-
-  /** Mouse look is applied per frame for responsiveness. */
-  private updateLook() {
-    const [dx, dy] = this.input.takeMouse();
-    const p = this.player;
-    if (!p || !this.input.locked || this.ui.screen) return;
-    if (p.sleeping) return;
-    const o = this.options;
-    const curve = (v: number) => { const s = v * 0.6 + 0.2; return s * s * s * 8 * 0.15; };
-    // touch: separate across / up-down speeds, swipe up looks up unless set to drag the view with the
-    // finger; the mouse keeps one speed and its own invert setting
-    const fx = curve(device.touch ? o.touchSensX : o.sensitivity);
-    const fy = device.touch ? curve(o.touchSensY) * (o.touchSwipeDown ? -1 : 1) : curve(o.sensitivity) * (o.invertY ? -1 : 1);
-    p.yaw += dx * fx;
-    p.pitch = clamp(p.pitch + dy * fy, -90, 90);
-    p.pyaw += dx * fx;
-    p.ppitch = clamp(p.ppitch + dy * fy, -90, 90);
-  }
-
   tick() {
+    if (this.closed) return;
+    for (const sp of [...this.players]) {
+      if (sp.conn.closed) { this.removePlayer(sp, sp.conn.closeReason === 'kicked' ? 'was kicked' : 'left the game'); continue; }
+      for (const m of sp.conn.poll()) sp.receive(m);
+    }
+    if (this.paused) {
+      for (const sp of this.players) sp.flush();
+      return;
+    }
     this.ticks++;
-    const w = this.world, p = this.player;
-    this.audio.tickMusic(!w || this.panorama);
-    if (!w || !p) return;
-    this.renderer.atlas.tick(this.ticks);
-    this.torchFlickerDX += (Math.random() - Math.random()) * Math.random() * Math.random();
-    this.torchFlickerDX *= 0.9;
-    this.torchFlicker += this.torchFlickerDX - this.torchFlicker;
-    this.torchFlicker *= 0.9;
-    if (this.panorama) {
-      this.time += 1;
-      this.titleYaw += 0.1;
-      p.preTick();
-      p.yaw = this.titleYaw;
-      p.pitch = 12;
-      if (p.spawnY < 0) this.resolveSpawn();
-      else {
-        // hover above the highest nearby terrain
-        let top = p.spawnY;
-        for (let dx = -8; dx <= 8; dx += 4) for (let dz = -8; dz <= 8; dz += 4) top = Math.max(top, w.topSolidY(p.spawnX + dx, p.spawnZ + dz) + 1);
-        p.setPos(p.spawnX + 0.5, top + 4, p.spawnZ + 0.5);
-        p.pitch = p.ppitch = 8;
-      }
-      return;
-    }
-    if (this.pendingArrival) {
-      p.preTick();
-      this.resolveArrival();
-      return;
-    }
-    if (this.dimension === 'overworld' && p.spawnY < 0 && !this.resolveSpawn()) {
-      p.preTick();
-      return; // wait for spawn chunk
-    }
-    if (!w.isLoaded(p.x, p.z)) {
-      p.preTick();
-      return; // don't simulate the player in unloaded chunks
-    }
     if (this.doDaylightCycle) this.time++;
-    if (this.dimension === 'overworld') this.weather!.tick();
-    if (this.dimension === 'end' && this.meta?.dragonKilled && this.ticks % 20 === 0) buildExitPortal(this);
-    if (this.dimension === 'end') buildPending(this);
-    this.portalTick();
-
-    // ---------- player input
-    this.handleKeys();
-    p.preTick();
-    if (!this.ui.screen || !this.ui.screen.pausesGame) {
-      const inp = this.ui.screen ? { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false } : this.moveInput();
-      p.applyInput(inp);
-      if (p.riding && inp.sneak) p.riding.dismount();
-    }
-    p.tick();
-    this.pFovMod = this.fovMod;
-    let fovTarget = 1;
-    if (p.flying) fovTarget *= 1.1;
-    if (p.sprinting) fovTarget *= 1.15;
-    const bowDraw = this.interact!.bowCharge();
-    if (bowDraw > 0) fovTarget *= 1 - Math.min(1, bowDraw / 20) ** 2 * 0.15;
-    this.fovMod += (fovTarget - this.fovMod) * 0.5;
-
-    this.pHandSwapAnim = this.handSwapAnim;
-    const held = p.inventory.held();
-    const hid = held ? held.id : 0;
-    if (hid !== this.lastHeldId || p.inventory.selected !== this.lastHeldSlot) {
-      this.handSwapAnim = 1;
-      this.lastHeldId = hid;
-      this.lastHeldSlot = p.inventory.selected;
-    }
-    this.handSwapAnim = Math.max(0, this.handSwapAnim - 0.25);
-
-    this.updateTarget();
-    this.interact!.tick();
-
-    // ---------- entities
-    for (let i = this.entities.length - 1; i >= 0; i--) {
-      const e = this.entities[i];
-      if (!w.isLoaded(e.x, e.z)) { e.preTick(); continue; }
-      e.preTick();
-      e.tick();
-      // items, arrows, orbs and falling blocks that drop into the void (living things take void damage instead)
-      if (e.y < -64 && !(e instanceof LivingEntity)) e.removed = true;
-      if (e.removed) this.entities.splice(i, 1);
-    }
-    // potion swirls around entities under status effects
-    for (const e of [p, ...this.entities]) {
-      if (!(e instanceof LivingEntity) || !e.effectColor || e.dead) continue;
-      const own = e === p && this.thirdPerson === 0;
-      if (this.rng.next() > (own ? 0.12 : e.effects.has('invisibility') ? 0.15 : 0.6)) continue;
-      this.particles!.swirl(e.x + (this.rng.next() - 0.5) * e.width, e.y + this.rng.next() * e.height, e.z + (this.rng.next() - 0.5) * e.width, 0, 0.02, 0, e.effectColor);
-    }
-    this.ticker!.tick();
-    this.redstone.tick();
-    this.pistons.tick();
-    this.devices.tick();
-    this.brewing.tick();
-    tickFurnaces(this);
-    this.entityRenderer.tick();
-    this.spawner!.tick();
-    this.particles!.tick();
-    // ambient particles
-    this.ambientParticles();
-    // footsteps
-    if (p.onGround && !p.sneaking && Math.floor(p.distWalked) !== Math.floor(p.pDistWalked)) {
-      const below = w.getId(Math.floor(p.x), Math.floor(p.y - 0.2), Math.floor(p.z));
-      const snd = SOUND_FOR[BLOCKS[below].sound];
-      if (snd) this.audio.play(snd, null, 0.15, 1);
-    }
-    if (p.inWater && Math.floor(p.distWalked * 2) !== Math.floor(p.pDistWalked * 2) && this.rng.int(3) === 0) this.audio.play('swim', null, 0.2, 1 + (this.rng.next() - 0.5) * 0.4);
+    const over = this.dims.get('overworld');
+    if (over) this.inDim(over, () => this.weather.tick());
+    for (const dim of this.dims.values()) this.inDim(dim, () => this.tickDim(dim));
+    this.sleepCheck();
+    for (const dim of this.dims.values()) this.replicate(dim);
+    for (const sp of this.players) sp.flush();
+    for (const dim of this.dims.values()) dim.deltas.clear();
     // autosave every 60 s
     if (performance.now() - this.lastSave > 60000) {
       this.lastSave = performance.now();
       this.saveWorld();
     }
-    this.ui.hud.tick();
-    // cave ambience: underground in the dark, every few minutes
-    if (this.dimension === 'overworld' && this.rng.int(6000) === 0) {
-      const [sl, bl] = w.getLight(Math.floor(p.x), Math.floor(p.y + 1), Math.floor(p.z));
-      if (sl === 0 && bl < 8 && p.y < 60) this.audio.play('cave', null, 0.7, 0.8 + this.rng.next() * 0.3);
-    }
-    this.audio.setRain(this.dimension === 'overworld' && this.weather!.rainAt(p.x, p.y, p.z) && !p.isInsideOpaque() ? this.weather!.rain : 0);
-  }
-
-  private portalTick() {
-    const p = this.player!, w = this.world!;
-    if (this.portalCooldown > 0) this.portalCooldown--;
-    const b = p.box;
-    let inPortal = false;
-    for (let x = Math.floor(b.x0); x <= Math.floor(b.x1) && !inPortal; x++)
-      for (let y = Math.floor(b.y0); y <= Math.floor(b.y1) && !inPortal; y++)
-        for (let z = Math.floor(b.z0); z <= Math.floor(b.z1) && !inPortal; z++) if (w.getId(x, y, z) === B.NETHER_PORTAL) inPortal = true;
-    // End portals work at once
-    let inEndPortal = false;
-    if (this.dimension !== 'nether' && this.portalCooldown === 0 && !p.dead)
-      for (let x = Math.floor(b.x0); x <= Math.floor(b.x1) && !inEndPortal; x++)
-        for (let y = Math.floor(b.y0); y <= Math.floor(b.y1) && !inEndPortal; y++)
-          for (let z = Math.floor(b.z0); z <= Math.floor(b.z1) && !inEndPortal; z++) if (w.getId(x, y, z) === B.END_PORTAL) inEndPortal = true;
-    if (this.dimension === 'end' && this.portalCooldown === 0 && !p.dead) {
-      for (let x = Math.floor(b.x0); x <= Math.floor(b.x1); x++)
-        for (let y = Math.floor(b.y0); y <= Math.floor(b.y1); y++)
-          for (let z = Math.floor(b.z0); z <= Math.floor(b.z1); z++) if (w.getId(x, y, z) === B.END_GATEWAY) { enterGateway(this, x, y, z); return; }
-    }
-    if (inEndPortal) {
-      this.portalCooldown = 60;
-      if (this.dimension === 'overworld') this.travel('end');
-      else this.leaveEnd();
-      return;
-    }
-    if (inPortal && !p.dead && this.dimension !== 'end') {
-      if (this.portalTime === 0 && this.portalCooldown === 0) this.audio.play('portalTrigger', null, 0.5, 0.8 + Math.random() * 0.4);
-      this.portalTime = Math.min(90, this.portalTime + 1);
-      if (this.portalCooldown === 0 && (this.portalTime >= 80 || (p.creative && this.portalTime >= 2))) {
-        this.travel(this.dimension === 'nether' ? 'overworld' : 'nether');
-      }
-    } else {
-      this.portalTime = Math.max(0, this.portalTime - 5);
-      if (!inPortal && this.portalCooldown > 0 && this.portalCooldown < 190) this.portalCooldown = 0;
+    // dimensions nobody is in unload after half a minute (the overworld stays while anyone is connected)
+    for (const [d, dim] of this.dims) {
+      if (d === 'overworld' || this.players.some((p) => p.dim === d) || this.loading.has(d)) { dim.emptyTicks = 0; continue; }
+      if (++dim.emptyTicks > 600) this.unloadDim(d);
     }
   }
 
-  private moveInput() {
-    const i = this.input;
-    let forward = 0, strafe = 0;
-    if (i.isDown('KeyW')) forward += 1;
-    if (i.isDown('KeyS')) forward -= 1;
-    if (i.isDown('KeyA')) strafe += 1;
-    if (i.isDown('KeyD')) strafe -= 1;
-    if (i.stick) {
-      // analog stick overrides the keys: up is forward, left is +strafe
-      forward = -i.stick.y;
-      strafe = -i.stick.x;
+  private tickDim(dim: Dim) {
+    const w = dim.world;
+    const here = this.players.filter((p) => p.dim === w.dimension);
+    w.renderDistance = this.simDistance;
+    w.updateCenters(here.map((p) => ({ x: p.entity.x, z: p.entity.z, r: p.simRadius() })));
+    if (!here.length) return;
+    if (w.dimension === 'end' && this.meta?.dragonKilled && this.ticks % 20 === 0) buildExitPortal(this);
+    if (w.dimension === 'end') buildPending(this);
+    const list = dim.entities;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const e = list[i];
+      if (!e) continue;
+      if (!w.isLoaded(e.x, e.z)) {
+        e.preTick();
+        // a player waiting for their ground still runs their input (portals, respawn placement)
+        if (e instanceof NetPlayer) e.sp?.tickInput();
+        continue;
+      }
+      e.preTick();
+      e.tick();
+      // items, arrows, orbs and falling blocks that drop into the void (living things take void damage instead)
+      if (e.y < -64 && !(e instanceof LivingEntity)) e.removed = true;
+      if (e.removed && !(e instanceof NetPlayer)) { const k = list.indexOf(e); if (k >= 0) list.splice(k, 1); }
     }
-    return {
-      forward: forward * 0.98, strafe: strafe * 0.98,
-      jump: i.isDown('Space'), sneak: i.isDown('ShiftLeft') || i.isDown('ShiftRight'),
-      sprint: i.isDown('ControlLeft') || i.isDown('ControlRight') || this.sprintLatch,
-    };
-  }
-  private sprintLatch = false;
-  private lastWTap = -100;
-  private lastSpaceTap = -100;
-
-  private handleKeys() {
-    const p = this.player!;
-    const presses = this.input.takePressed();
-    if (!this.input.isDown('KeyW') || p.collidedH) this.sprintLatch = false;
-    for (const code of presses) {
-      if (this.ui.screen) continue;
-      if (code === 'KeyW') {
-        if (this.ticks - this.lastWTap < 7) this.sprintLatch = true;
-        this.lastWTap = this.ticks;
-      }
-      if (code === 'Space' && p.canFly) {
-        if (this.ticks - this.lastSpaceTap < 7 && !p.spectator) {
-          p.flying = !p.flying;
-          this.lastSpaceTap = -100;
-        } else this.lastSpaceTap = this.ticks;
-      }
-      if (code.startsWith('Digit')) {
-        const n = parseInt(code.slice(5));
-        if (n >= 1 && n <= 9) p.inventory.selected = n - 1;
-      }
-      if (code === 'KeyQ') this.interact!.dropHeld(this.input.isDown('ControlLeft') || this.input.isDown('MetaLeft'));
-      if (code === 'KeyF') this.interact!.swapOffhand();
-    }
-    const wheel = this.input.takeWheel();
-    if (wheel && !this.ui.screen) p.inventory.selected = (((p.inventory.selected + wheel) % 9) + 9) % 9;
+    dim.ticker.tick();
+    dim.redstone.tick();
+    dim.pistons.tick();
+    dim.devices.tick();
+    dim.brewing.tick();
+    tickFurnaces(this);
+    dim.spawner.tick();
   }
 
-  // ------------------------------------------------------------------ targeting
-  eyePos(t = 1) {
-    const p = this.player!;
-    return { x: p.lerpX(t), y: p.lerpY(t) + p.pEyeOffset + (p.eyeOffset - p.pEyeOffset) * t, z: p.lerpZ(t) };
+  /** Night passes once everybody in the overworld has been in bed for a few seconds. */
+  private sleepCheck() {
+    const over = this.players.filter((p) => p.dim === 'overworld' && !p.entity.dead);
+    for (const p of over) if (p.entity.sleeping) p.sleepTicks++;
+    if (!over.length || !over.every((p) => p.entity.sleeping && p.sleepTicks >= 100)) return;
+    this.time = Math.ceil(this.time / 24000) * 24000;
+    this.weather.setWeather('clear', 12000 + Math.floor(Math.random() * 100000));
+    for (const p of over) p.wake();
+  }
+
+  /** Work out every entity's fields and what changed since last tick (shared by all the players watching). */
+  private replicate(dim: Dim) {
+    if (!this.players.some((p) => p.dim === dim.world.dimension)) { dim.states.clear(); dim.sigs.clear(); return; }
+    const alive = new Set<number>();
+    for (const e of dim.entities) {
+      if (e.removed) continue;
+      alive.add(e.id);
+      const s = captureState(e);
+      let prev = dim.sigs.get(e.id);
+      const first = !prev;
+      if (!prev) dim.sigs.set(e.id, (prev = new Map()));
+      let delta: State | null = null;
+      for (const [k, v] of Object.entries(s)) {
+        const g = sig(v);
+        if (prev.get(k) === g) continue;
+        prev.set(k, g);
+        if (!first) (delta ??= {})[k] = v;
+      }
+      dim.states.set(e.id, s);
+      if (delta) dim.deltas.set(e.id, delta);
+    }
+    for (const id of dim.states.keys()) if (!alive.has(id)) { dim.states.delete(id); dim.sigs.delete(id); }
+    dim.pistonsWere = dim.pistons.snapshot().length > 0;
+  }
+
+  timeState() {
+    const w = this.weather;
+    return { time: this.time, dl: this.doDaylightCycle, raining: w.raining, thundering: w.thundering, rain: w.rain, thunder: w.thunder };
+  }
+
+  // ------------------------------------------------------------------ targeting (for the acting player)
+  eyePos(_t = 1) {
+    const p = this.ctx?.entity ?? this.player!;
+    return { x: p.x, y: p.y + p.eyeOffset, z: p.z };
   }
   lookVec(yawDeg: number, pitchDeg: number) {
     const y = (yawDeg * Math.PI) / 180, pi = (pitchDeg * Math.PI) / 180;
     return { x: -Math.sin(y) * Math.cos(pi), y: -Math.sin(pi), z: Math.cos(y) * Math.cos(pi) };
   }
   reach() {
-    return this.player!.creative ? 5 : 4.5;
+    return this.player?.creative ? 5 : 4.5;
   }
+  touchAim() { return false; }
 
-  /** Phones aiming by touch: the block or mob under the finger is the target, and there's no crosshair. */
-  touchAim() {
-    return device.touch && this.options.touchAim === 'touch';
-  }
-
-  /** The ray through a point on screen (fractions of its width and height), from the first-person camera. */
-  screenRay(sx: number, sy: number) {
-    const p = this.player!;
-    const f = this.lookVec(p.yaw, p.pitch);
-    const y = (p.yaw * Math.PI) / 180;
-    const r = { x: -Math.cos(y), y: 0, z: -Math.sin(y) };
-    const u = { x: r.y * f.z - r.z * f.y, y: r.z * f.x - r.x * f.z, z: r.x * f.y - r.y * f.x };
-    const t = Math.tan(((this.cam.fov || this.options.fov) * Math.PI) / 360);
-    const a = (sx * 2 - 1) * t * (this.renderer.width / this.renderer.height), b = (1 - sy * 2) * t;
-    const d = { x: f.x + r.x * a + u.x * b, y: f.y + r.y * a + u.y * b, z: f.z + r.z * a + u.z * b };
-    const l = Math.hypot(d.x, d.y, d.z);
-    return { x: d.x / l, y: d.y / l, z: d.z / l };
-  }
-
-  updateTarget() {
-    const p = this.player!;
-    const aim = this.input.aim;
-    if (p.spectator || p.dead || (this.touchAim() && !aim)) { this.target = null; this.targetEntity = null; this.targetPart = null; return; }
-    const eye = this.eyePos(1);
-    const d = this.touchAim() && aim ? this.screenRay(aim.x, aim.y) : this.lookVec(p.yaw, p.pitch);
+  /** What the acting player is pointing at, along the direction their client reports. */
+  updateTarget(sp: ServerPlayer) {
+    const p = sp.entity;
+    sp.target = null; sp.targetEntity = null; sp.targetPart = null;
+    if (p.spectator || p.dead || !sp.dir) return;
+    let [dx, dy, dz] = sp.dir;
+    const l = Math.hypot(dx, dy, dz);
+    if (!(l > 0.5 && l < 2)) return;
+    dx /= l; dy /= l; dz /= l;
+    const eye = this.eyePos();
     const reach = this.reach();
-    this.target = raycastBlocks(this.world!, eye.x, eye.y, eye.z, d.x, d.y, d.z, reach);
-    // entities
+    sp.target = raycastBlocks(this.world!, eye.x, eye.y, eye.z, dx, dy, dz, reach);
     let best: Entity | null = null, bestPart: string | null = null;
-    let bestT = this.target ? this.target.t : Math.min(reach, 3.5);
+    let bestT = sp.target ? sp.target.t : Math.min(reach, 3.5);
     for (const e of this.entities) {
+      if (e === p || e === (p.riding as unknown as Entity)) continue;
       if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat) && !(e instanceof Minecart)) continue; }
-      if (e === this.player?.riding) continue;
+      if (e instanceof Player && e.spectator) continue;
       for (const b of e.hitBoxes()) {
         const g = 0.1;
-        const r = rayAABB(eye.x, eye.y, eye.z, d.x, d.y, d.z, { x0: b.x0 - g, y0: b.y0 - g, z0: b.z0 - g, x1: b.x1 + g, y1: b.y1 + g, z1: b.z1 + g }, bestT);
+        const r = rayAABB(eye.x, eye.y, eye.z, dx, dy, dz, { x0: b.x0 - g, y0: b.y0 - g, z0: b.z0 - g, x1: b.x1 + g, y1: b.y1 + g, z1: b.z1 + g }, bestT);
         if (r && r.t < bestT && r.t <= 3.5) { bestT = r.t; best = e; bestPart = b.part ?? null; }
       }
     }
-    this.targetEntity = best;
-    this.targetPart = bestPart;
-    if (best) this.target = null;
+    sp.targetEntity = best;
+    sp.targetPart = bestPart;
+    if (best) sp.target = null;
   }
 
   /** Is a minecart sitting on the rail at (x, y, z)? (detector rails) */
@@ -775,15 +718,10 @@ export class Game {
     if (!this.world || !s || s.count <= 0) return null;
     const e = new ItemEntity(this.world, this, { ...s });
     e.setPos(x, y, z);
-    if (scatter) {
-      e.vx = (this.rng.next() - 0.5) * 0.2;
-      e.vy = 0.2;
-      e.vz = (this.rng.next() - 0.5) * 0.2;
-    } else {
-      e.vx = (this.rng.next() - 0.5) * 0.1;
-      e.vy = 0.2;
-      e.vz = (this.rng.next() - 0.5) * 0.1;
-    }
+    const f = scatter ? 0.2 : 0.1;
+    e.vx = (this.rng.next() - 0.5) * f;
+    e.vy = 0.2;
+    e.vz = (this.rng.next() - 0.5) * f;
     e.pickupDelay = pickupDelay;
     this.entities.push(e);
     return e;
@@ -798,12 +736,11 @@ export class Game {
   }
 
   playBlockSound(blockId: number, x: number, y: number, z: number, kind: 'break' | 'place' | 'hit' | 'step') {
-    const def = BLOCKS[blockId];
-    const snd = SOUND_FOR[def.sound];
+    const snd = SOUND_FOR[BLOCKS[blockId].sound];
     if (!snd) return;
     const vol = kind === 'hit' ? 0.25 : kind === 'step' ? 0.15 : 1;
     const pitch = kind === 'hit' ? 0.5 : kind === 'place' ? 0.8 : 0.8 + this.rng.next() * 0.2;
-    this.audio.play(snd, { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, vol, pitch);
+    this.emitSound(snd, { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, vol, pitch);
   }
 
   biomeAt(x: number, z: number) {
@@ -817,255 +754,46 @@ export class Game {
     return t < 12500 || t > 23500;
   }
 
-  private ambientParticles() {
-    const p = this.player!, w = this.world!, pt = this.particles!;
-    if (this.options.particles >= 2) return;
-    // torch smoke/flames & lava pops in the player's vicinity
-    for (let i = 0; i < 60; i++) {
-      const x = Math.floor(p.x) + this.rng.int(32) - 16, y = Math.floor(p.y) + this.rng.int(32) - 16, z = Math.floor(p.z) + this.rng.int(32) - 16;
-      const v = w.get(x, y, z);
-      const id = idOf(v);
-      if (id === B.TORCH) {
-        const m = metaOf(v);
-        let ox = 0.5, oz = 0.5, oy = 0.7;
-        if (m >= 1 && m <= 4) {
-          const d = [[0, -1], [1, 0], [0, 1], [-1, 0]][m - 1];
-          ox += d[0] * 0.27; oz += d[1] * 0.27; oy = 0.92;
-        }
-        pt.smoke(x + ox, y + oy, z + oz);
-        pt.flame(x + ox, y + oy, z + oz);
-      } else if (id === B.LAVA && w.getId(x, y + 1, z) === B.AIR && this.rng.int(50) === 0) {
-        pt.add({ x: x + this.rng.next(), y: y + 1, z: z + this.rng.next(), vy: 0.2, vx: (this.rng.next() - 0.5) * 0.1, vz: (this.rng.next() - 0.5) * 0.1, layer: tex('particle_flame'), size: 0.07, life: 30, gravity: 0.02, fullbright: true, kind: 'flame' });
-      } else if (id === B.LIT_FURNACE && this.rng.int(4) === 0) {
-        pt.smoke(x + 0.5, y + 1.05, z + 0.5);
-      } else if (id === B.FIRE && this.rng.int(2) === 0) {
-        pt.smoke(x + this.rng.next(), y + 0.8, z + this.rng.next(), true);
-      } else if ((id === B.WATER || id === B.LAVA) && OPAQUE_BELOW(w, x, y, z) && this.rng.int(20) === 0) {
-        // dripping from ceilings
-        pt.drip(x + this.rng.next(), y - 1.05, z + this.rng.next(), id === B.LAVA);
-      }
-      if (id === B.WATER && this.rng.int(10) === 0 && p.inWater) pt.bubble(x + this.rng.next(), y + this.rng.next(), z + this.rng.next());
-    }
-  }
-
-  // ------------------------------------------------------------------ rendering
-  render() {
-    const r = this.renderer;
-    const ctx = this.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, this.uiCanvas.width, this.uiCanvas.height);
-    if (!this.world || !this.player) {
-      r.beginFrame(computeEnv({ time: 6000, renderDistance: 8, underwater: false, inLava: false, blind: 0, rain: 0, thunder: 0, cameraY: 64, gamma: 0.5, clouds: false, skyTemp: 0.8, flicker: 1.5, ticks: 0 }));
-      this.ui.render(ctx);
+  /** A sound: positioned ones reach everyone in earshot, unpositioned ones the player whose action made them. */
+  emitSound(name: string, pos: { x: number; y: number; z: number } | null, volume: number, pitch: number) {
+    if (!pos) {
+      if (this.ctx) { if (!this.muteUi) this.ctx.event(['s', name, null, volume, pitch]); return; }
+      for (const p of this.playersHere()) p.event(['s', name, null, volume, pitch]);
       return;
     }
-    const p = this.player, t = this.partial, w = this.world;
-    // camera
-    const eye = this.eyePos(t);
-    let yaw = p.pyaw + (p.yaw - p.pyaw) * t, pitch = p.ppitch + (p.pitch - p.ppitch) * t;
-    const cam: Camera = { x: eye.x, y: eye.y, z: eye.z, yaw: (yaw * Math.PI) / 180, pitch: (pitch * Math.PI) / 180, fov: this.options.fov * (this.pFovMod + (this.fovMod - this.pFovMod) * t) };
-    if (p.inWater && idOf(w.get(Math.floor(eye.x), Math.floor(eye.y), Math.floor(eye.z))) === B.WATER) cam.fov *= 60 / 70;
-    if (p.dead) { cam.roll = (Math.min(20, p.deathTime + t) / 20) * (Math.PI / 4); cam.y -= Math.min(1.2, (p.deathTime + t) * 0.06); }
-    // hurt tilt
-    if (p.hurtTime > 0 && !p.dead) {
-      let f = (p.hurtTime - t) / p.hurtDuration;
-      f = Math.sin(f * f * f * f * Math.PI);
-      cam.roll = ((-f * 14) * Math.PI) / 180 * Math.cos(((p.lastHurtDirection) * Math.PI) / 180);
+    const range = Math.max(16, 16 * volume);
+    const at = [Math.round(pos.x * 100) / 100, Math.round(pos.y * 100) / 100, Math.round(pos.z * 100) / 100];
+    for (const p of this.playersHere()) {
+      const e = p.entity;
+      if (Math.abs(e.x - pos.x) > range || Math.abs(e.y - pos.y) > range || Math.abs(e.z - pos.z) > range) continue;
+      p.event(['s', name, at, volume, pitch]);
     }
-    // view bobbing
-    if (this.options.viewBobbing && this.thirdPerson === 0 && !p.flying) {
-      const dw = p.distWalked - p.pDistWalked;
-      const f1 = -(p.distWalked + dw * t);
-      const f2 = p.pCameraYaw + (p.cameraYaw - p.pCameraYaw) * t;
-      cam.bobX = Math.sin(f1 * Math.PI) * f2 * 0.5;
-      cam.bobY = -Math.abs(Math.cos(f1 * Math.PI) * f2);
-      cam.roll = (cam.roll ?? 0) + ((Math.sin(f1 * Math.PI) * f2 * 3) * Math.PI) / 180;
-      cam.pitch += ((Math.abs(Math.cos(f1 * Math.PI - 0.2) * f2) * 5 + (p.pCameraPitch + (p.cameraPitch - p.pCameraPitch) * t)) * Math.PI) / 180;
-    }
-    if (this.thirdPerson) {
-      // pull the camera back, stopping at blocks
-      const front = this.thirdPerson === 2;
-      if (front) { yaw += 180; pitch = -pitch; cam.yaw += Math.PI; cam.pitch = -cam.pitch; }
-      const d = this.lookVec(yaw, pitch);
-      let dist = 4;
-      const hit = raycastBlocks(w, eye.x, eye.y, eye.z, -d.x, -d.y, -d.z, 4);
-      if (hit) dist = Math.max(0.3, hit.t - 0.2);
-      cam.x -= d.x * dist; cam.y -= d.y * dist; cam.z -= d.z * dist;
-    }
-    this.cam = cam;
-    this.audio.setListener(eye.x, eye.y, eye.z, yaw);
-    r.setupCamera(cam, 0.05, Math.max(256, w.renderDistance * 16 * 1.5 + 64));
-    w.update(p.x, p.z, (cx, cz) => r.chunkVisible(cx, cz));
-
-    const camBlock = w.get(Math.floor(cam.x), Math.floor(cam.y), Math.floor(cam.z));
-    const underwater = idOf(camBlock) === B.WATER && cam.y < Math.floor(cam.y) + 1 - ((metaOf(camBlock) & 7) + 1) / 9 + 0.12;
-    const inLava = idOf(camBlock) === B.LAVA;
-    const biome = this.biomeAt(Math.floor(p.x), Math.floor(p.z));
-    const nether = w.dimension === 'nether', end = w.dimension === 'end';
-    const rain = nether || end ? 0 : this.weather!.rain;
-    const env = nether ? netherEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : end ? endEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : computeEnv({
-      time: this.time, renderDistance: w.renderDistance, underwater, inLava, blind: 0, rain, thunder: this.weather!.thunder,
-      cameraY: cam.y, gamma: this.options.gamma, clouds: this.options.clouds, skyTemp: biome.cold ? -0.5 : biome.name === 'Desert' ? 2 : 0.8,
-      flicker: 1.5 + this.torchFlicker * 0.1, ticks: this.ticks + t,
-    });
-    const nv = p.effects.get('night_vision');
-    env.nightVision = nv ? (nv.dur > 200 ? 1 : 0.7 + Math.sin(((nv.dur - t) * Math.PI) * 0.2) * 0.3) : 0;
-    r.beginFrame(env);
-    if (end) r.drawEndSky();
-    else if (!nether) r.drawSky();
-    r.drawChunks(w.chunks.values(), 'opaque');
-    this.entityRenderer.render(this, t);
-    this.drawSelection();
-    const pm = r.dyn;
-    pm.reset();
-    this.particles!.build(pm, cam.x, cam.y, cam.z, t, yaw, pitch);
-    r.drawDyn(pm, { blend: false, cull: false, alphaCut: 0.1 });
-    r.drawChunks(w.chunks.values(), 'trans');
-    if (!nether && !end) {
-      r.drawClouds(192.33);
-      this.weather!.render(t);
-    }
-    // first-person hand
-    if (this.thirdPerson === 0 && !this.hideHud && !p.spectator && !this.panorama) this.entityRenderer.renderHand(this, t);
-    // overlays
-    if (underwater) r.drawOverlay([0.02, 0.05, 0.25, 0.25], 0.5);
-    else if (inLava) r.drawOverlay([0.8, 0.25, 0, 0.6]);
-    else if (p.fireTicks > 0 && !p.creative) r.drawOverlay([1, 0.45, 0, 0.18]);
-    if (camBlock && BLOCKS[idOf(camBlock)].opaque && !p.spectator && this.thirdPerson === 0) r.drawOverlay([0.05, 0.05, 0.05, 0.95]);
-    if (this.sleepFade > 0) r.drawOverlay([0.02, 0.02, 0.06, Math.min(1, this.sleepFade)]);
-    if (this.portalTime > 0) {
-      const f = Math.min(1, (this.portalTime + t) / 80);
-      r.drawOverlay([0.45, 0.1, 0.8, f * 0.75 + Math.sin((this.ticks + t) * 0.3) * 0.05 * f]);
-    }
-    if (this.ui.previewBox) this.entityRenderer.renderPreview(this, this.ui.previewBox, this.gui.scale);
-    this.ui.render(ctx);
   }
 
-  private drawSelection() {
-    const r = this.renderer, w = this.world!, cam = this.cam;
-    const tgt = this.target;
-    if (!tgt || this.hideHud || this.ui.screen?.hidesSelection) return;
-    const v = w.get(tgt.x, tgt.y, tgt.z);
-    const shapes = selectionShapes(v, (a, b, c) => w.get(tgt.x + a, tgt.y + b, tgt.z + c));
-    if (!shapes.length) return;
-    let x0 = 1, y0 = 1, z0 = 1, x1 = 0, y1 = 0, z1 = 0;
-    for (const s of shapes) { x0 = Math.min(x0, s.x0); y0 = Math.min(y0, s.y0); z0 = Math.min(z0, s.z0); x1 = Math.max(x1, s.x1); y1 = Math.max(y1, s.y1); z1 = Math.max(z1, s.z1); }
-    const e = 0.002;
-    const ox = tgt.x - cam.x, oy = tgt.y - cam.y, oz = tgt.z - cam.z;
-    const X0 = ox + x0 - e, Y0 = oy + y0 - e, Z0 = oz + z0 - e, X1 = ox + x1 + e, Y1 = oy + y1 + e, Z1 = oz + z1 + e;
-    const L = [
-      X0, Y0, Z0, X1, Y0, Z0, X1, Y0, Z0, X1, Y0, Z1, X1, Y0, Z1, X0, Y0, Z1, X0, Y0, Z1, X0, Y0, Z0,
-      X0, Y1, Z0, X1, Y1, Z0, X1, Y1, Z0, X1, Y1, Z1, X1, Y1, Z1, X0, Y1, Z1, X0, Y1, Z1, X0, Y1, Z0,
-      X0, Y0, Z0, X0, Y1, Z0, X1, Y0, Z0, X1, Y1, Z0, X1, Y0, Z1, X1, Y1, Z1, X0, Y0, Z1, X0, Y1, Z1,
-    ];
-    r.drawLines(new Float32Array(L), [0, 0, 0, 0.45]);
-    // crack overlay
-    const br = this.interact!.breaking;
-    if (br && br.x === tgt.x && br.y === tgt.y && br.z === tgt.z && br.progress > 0) {
-      const stage = Math.min(9, Math.floor(br.progress * 10));
-      const layer = TEXTURES.indexOf('destroy_stage_' + stage);
-      const m = r.dyn;
-      m.reset();
-      const E = 0.004;
-      for (const s of shapes) {
-        const a = [ox + s.x0 - E, oy + s.y0 - E, oz + s.z0 - E], b = [ox + s.x1 + E, oy + s.y1 + E, oz + s.z1 + E];
-        boxFaces(m, a, b, layer, s);
-      }
-      r.gl.enable(r.gl.POLYGON_OFFSET_FILL);
-      r.gl.polygonOffset(-1, -10);
-      r.drawDyn(m, { blend: true, fullbright: true, alphaCut: 0.01 });
-      r.gl.disable(r.gl.POLYGON_OFFSET_FILL);
+  /** A particle effect, for everyone close enough to see it. */
+  emitFx(method: string, args: unknown[]) {
+    const a0 = args[0] as { x?: number; y?: number; z?: number } | number;
+    const x = typeof a0 === 'number' ? a0 : a0?.x, y = typeof a0 === 'number' ? (args[1] as number) : a0?.y, z = typeof a0 === 'number' ? (args[2] as number) : a0?.z;
+    const enc = encodeValue(args);
+    for (const p of this.playersHere()) {
+      const e = p.entity;
+      if (typeof x === 'number' && typeof y === 'number' && typeof z === 'number' && Math.max(Math.abs(e.x - x), Math.abs(e.y - y), Math.abs(e.z - z)) > 64) continue;
+      p.event(['f', method, enc]);
+    }
+  }
+
+  /** Item pickup: tell everyone nearby so the item flies into the collector. */
+  pickedUp(item: Entity, by: Entity, id: number) {
+    for (const p of this.playersHere()) {
+      if (p.entity.distanceTo(item) > 32) continue;
+      p.event(['pickup', item.id, by.id, id]);
     }
   }
 
   get heldItem(): ItemStack | null {
     return this.player?.inventory.held() ?? null;
   }
-
-  // debug info for F3
-  debugLines(): string[] {
-    const p = this.player, w = this.world;
-    if (!p || !w) return [];
-    const bx = Math.floor(p.x), by = Math.floor(p.y), bz = Math.floor(p.z);
-    const [sl, bl] = w.getLight(bx, by, bz);
-    const facing = ['south (Towards positive Z)', 'west (Towards negative X)', 'north (Towards negative Z)', 'east (Towards positive X)'][((Math.round(p.yaw / 90) % 4) + 4) % 4];
-    const chunks = [...w.chunks.values()];
-    const lines = [
-      `Minecraft Web 1.0 (vanilla-like)`,
-      `${this.fps} fps (${this.frameMs.toFixed(1)} ms frame)`,
-      `C: ${this.renderer.drawnChunks}/${chunks.filter((c) => c.mesh).length} D: ${w.renderDistance}, ${(this.renderer.chunkBytes / 1048576).toFixed(1)} MB meshes`,
-      `E: ${this.entities.length}, P: ${this.particles!.list.length}`,
-      '',
-      `XYZ: ${p.x.toFixed(3)} / ${p.y.toFixed(5)} / ${p.z.toFixed(3)}`,
-      `Block: ${bx} ${by} ${bz}`,
-      `Chunk: ${bx & 15} ${by & 15} ${bz & 15} in ${bx >> 4} ${by >> 4} ${bz >> 4}`,
-      `Facing: ${facing} (${(((p.yaw % 360) + 540) % 360 - 180).toFixed(1)} / ${p.pitch.toFixed(1)})`,
-      `Light: ${Math.max(sl, bl)} (${sl} sky, ${bl} block)`,
-      `Biome: ${this.biomeAt(bx, bz).name}`,
-      `Local Difficulty: ${['Peaceful', 'Easy', 'Normal', 'Hard'][this.options.difficulty]}`,
-      `Day ${Math.floor(this.time / 24000)}, time ${this.time % 24000}`,
-      `Seed: ${this.meta?.seed}`,
-    ];
-    if (this.target) {
-      const v = w.get(this.target.x, this.target.y, this.target.z);
-      lines.push('', `Targeted Block: ${this.target.x}, ${this.target.y}, ${this.target.z}`, `minecraft:${BLOCKS[idOf(v)].name}${metaOf(v) ? ' [meta=' + metaOf(v) + ']' : ''}`);
-    }
-    if (this.targetEntity) lines.push('', `Targeted Entity: ${(this.targetEntity as unknown as { typeName: string }).typeName}`);
-    return lines;
-  }
 }
 
-/** Fluid resting on an opaque block that has air beneath it: drips from the ceiling. */
-function OPAQUE_BELOW(w: World, x: number, y: number, z: number) {
-  return w.isOpaque(x, y - 1, z) && w.getId(x, y - 2, z) === B.AIR;
-}
-
-/** Emit 6 faces of a box into a dynamic mesh (used for crack overlays and dropped blocks). */
-export function boxFaces(m: import('../render/gl').DynMesh, a: number[], b: number[], layer: number, s: { x0: number; y0: number; z0: number; x1: number; y1: number; z1: number }, col = 0xffffff, alpha = 1, sky = 15, blk = 15) {
-  const [x0, y0, z0] = a, [x1, y1, z1] = b;
-  const u = (v: number) => v;
-  // -x
-  m.v(x0, y0, z0, u(s.z0), 1 - s.y0, layer, col, alpha, sky, blk); m.v(x0, y0, z1, u(s.z1), 1 - s.y0, layer, col, alpha, sky, blk);
-  m.v(x0, y1, z1, u(s.z1), 1 - s.y1, layer, col, alpha, sky, blk); m.v(x0, y1, z0, u(s.z0), 1 - s.y1, layer, col, alpha, sky, blk);
-  // +x
-  m.v(x1, y0, z1, 1 - s.z1, 1 - s.y0, layer, col, alpha, sky, blk); m.v(x1, y0, z0, 1 - s.z0, 1 - s.y0, layer, col, alpha, sky, blk);
-  m.v(x1, y1, z0, 1 - s.z0, 1 - s.y1, layer, col, alpha, sky, blk); m.v(x1, y1, z1, 1 - s.z1, 1 - s.y1, layer, col, alpha, sky, blk);
-  // -y
-  m.v(x0, y0, z0, s.x0, s.z0, layer, col, alpha, sky, blk); m.v(x1, y0, z0, s.x1, s.z0, layer, col, alpha, sky, blk);
-  m.v(x1, y0, z1, s.x1, s.z1, layer, col, alpha, sky, blk); m.v(x0, y0, z1, s.x0, s.z1, layer, col, alpha, sky, blk);
-  // +y
-  m.v(x0, y1, z0, s.x0, s.z0, layer, col, alpha, sky, blk); m.v(x0, y1, z1, s.x0, s.z1, layer, col, alpha, sky, blk);
-  m.v(x1, y1, z1, s.x1, s.z1, layer, col, alpha, sky, blk); m.v(x1, y1, z0, s.x1, s.z0, layer, col, alpha, sky, blk);
-  // -z
-  m.v(x1, y0, z0, 1 - s.x1, 1 - s.y0, layer, col, alpha, sky, blk); m.v(x0, y0, z0, 1 - s.x0, 1 - s.y0, layer, col, alpha, sky, blk);
-  m.v(x0, y1, z0, 1 - s.x0, 1 - s.y1, layer, col, alpha, sky, blk); m.v(x1, y1, z0, 1 - s.x1, 1 - s.y1, layer, col, alpha, sky, blk);
-  // +z
-  m.v(x0, y0, z1, s.x0, 1 - s.y0, layer, col, alpha, sky, blk); m.v(x1, y0, z1, s.x1, 1 - s.y0, layer, col, alpha, sky, blk);
-  m.v(x1, y1, z1, s.x1, 1 - s.y1, layer, col, alpha, sky, blk); m.v(x0, y1, z1, s.x0, 1 - s.y1, layer, col, alpha, sky, blk);
-}
-
-export { stack, I, getItem, Render, CHUNK_H, mat4 };
-
-function shadowTexture(): Uint8ClampedArray {
-  const img = new Uint8ClampedArray(16 * 16 * 4);
-  for (let y = 0; y < 16; y++)
-    for (let x = 0; x < 16; x++) {
-      const d = Math.hypot(x - 7.5, y - 7.5) / 7.5;
-      img[(y * 16 + x) * 4 + 3] = d < 1 ? Math.round(255 * (1 - d * d) * 0.9 + 25) * (d < 0.95 ? 1 : 0.5) : 0;
-    }
-  return img;
-}
-
-/** Copy of a texture with the tint-masked (alpha 254) pixels coloured. */
-function tintMasked(img: Uint8ClampedArray, col: number): Uint8ClampedArray {
-  const o = new Uint8ClampedArray(img);
-  for (let i = 0; i < o.length; i += 4) {
-    if (o[i + 3] > 0 && o[i + 3] < 255) {
-      o[i] = (o[i] * ((col >> 16) & 255)) / 255;
-      o[i + 1] = (o[i + 1] * ((col >> 8) & 255)) / 255;
-      o[i + 2] = (o[i + 2] * (col & 255)) / 255;
-      o[i + 3] = 255;
-    }
-  }
-  return o;
-}
+export { stack, I, getItem };
+export type { Msg };
