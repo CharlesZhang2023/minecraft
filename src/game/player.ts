@@ -138,6 +138,7 @@ export class Player extends LivingEntity {
     if (this.onGround || this.health <= 0) tilt = 0;
     this.cameraPitch += (tilt - this.cameraPitch) * 0.8;
     if (this.onGround && !this.flying) this.distWalked += hd * 0.6;
+    this.turnBody(dx, dz);
     // exhaustion
     if (!this.canFly) {
       const d = Math.sqrt(dx * dx + (this.y - oy) ** 2 + dz * dz);
@@ -146,6 +147,24 @@ export class Player extends LivingEntity {
       this.foodTick();
     }
     if (this.hurtFlash > 0) this.hurtFlash--;
+  }
+
+  /** Vanilla body turning: the head looks where you look, the body eases toward the way you walk (or
+   * where you look when swinging) and never lets the head twist more than 75° from it. */
+  private turnBody(dx: number, dz: number) {
+    this.headYaw = this.yaw;
+    let target = this.bodyYaw;
+    if (dx * dx + dz * dz > 0.0025) {
+      target = (Math.atan2(dz, dx) * 180) / Math.PI - 90;
+      // walking backwards keeps the body facing forwards (1.9+)
+      if (Math.abs(wrapDeg(target - this.yaw)) > 95) target += 180;
+    }
+    if (this.swingProgress > 0) target = this.yaw;
+    this.bodyYaw += wrapDeg(target - this.bodyYaw) * 0.3;
+    let twist = wrapDeg(this.yaw - this.bodyYaw);
+    twist = Math.max(-75, Math.min(75, twist));
+    this.bodyYaw = this.yaw - twist;
+    if (twist * twist > 2500) this.bodyYaw += twist * 0.2;
   }
 
   exhaust(n: number) {
@@ -323,4 +342,11 @@ export function xpCap(level: number) {
   if (level >= 30) return 112 + (level - 30) * 9;
   if (level >= 15) return 37 + (level - 15) * 5;
   return 7 + level * 2;
+}
+
+function wrapDeg(a: number) {
+  a %= 360;
+  if (a >= 180) a -= 360;
+  if (a < -180) a += 360;
+  return a;
 }
