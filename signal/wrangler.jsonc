@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mc-signal",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-25",
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "vars": {
+    // coturn on the game server; TURN_SECRET (its static-auth-secret) is set with `wrangler secret put`
+    "TURN_HOST": "mc.iloveust.com",
+    // pages allowed to open rooms (localhost and private-LAN dev servers are always allowed)
+    "ALLOWED_ORIGINS": "https://mc.iloveust.com"
+  }
+}
