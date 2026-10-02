@@ -572,7 +572,17 @@ export class Game {
     if (this.closed) return;
     for (const sp of [...this.players]) {
       if (sp.conn.closed) { this.removePlayer(sp, sp.conn.closeReason === 'kicked' ? 'was kicked' : 'left the game'); continue; }
-      for (const m of sp.conn.poll()) sp.receive(m);
+      for (const m of sp.conn.poll()) {
+        // a guest's messages run here, in the host's game: a bad one costs that player their connection, never the world
+        try {
+          if (!m || typeof m !== 'object' || typeof m.t !== 'string') throw new Error('bad message');
+          if (!sp.allow(m.t)) continue;
+          sp.receive(m);
+        } catch (e) {
+          console.warn('dropping', sp.name, e);
+          if (!sp.owner) { this.removePlayer(sp, 'was disconnected (bad data)'); break; }
+        }
+      }
     }
     if (this.paused) {
       for (const sp of this.players) sp.flush();

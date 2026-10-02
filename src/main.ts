@@ -63,6 +63,12 @@ try {
       await playWorld(game.ui, meta);
     }, 50);
   }
+  // offline play (hotspots, pairing by QR code): keep the game's files in a service worker's cache
+  if ('serviceWorker' in navigator && !import.meta.env.DEV) {
+    navigator.serviceWorker.register('./sw.js').then((reg) => {
+      if (navigator.onLine) (reg.active ?? reg.waiting ?? reg.installing)?.postMessage('precache');
+    }).catch(() => {});
+  }
 } catch (e) {
   console.error(e);
   fail('Failed to start: ' + (e as Error).message);

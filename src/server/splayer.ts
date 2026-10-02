@@ -158,6 +158,21 @@ export class ServerPlayer {
   }
 
   send(m: Msg) { this.conn.send(m); }
+
+  /** Flood limits per kind of message (tokens refill every second). */
+  private budget = new Map<string, { n: number; at: number }>();
+  allow(t: string) {
+    if (this.owner) return true;
+    const per = t === 'in' ? 40 : t === 'ui' ? 60 : t === 'chat' ? 4 : 20;
+    const now = performance.now();
+    const b = this.budget.get(t) ?? { n: per, at: now };
+    b.n = Math.min(per * 2, b.n + ((now - b.at) / 1000) * per);
+    b.at = now;
+    this.budget.set(t, b);
+    if (b.n < 1) return false;
+    b.n--;
+    return true;
+  }
   /** Something to tell the client at the end of this tick (sounds, particles, pickups...). */
   event(e: unknown) { this.events.push(e); }
 

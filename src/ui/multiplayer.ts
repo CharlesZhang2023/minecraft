@@ -119,6 +119,9 @@ export class ConnectingScreen extends Screen {
 }
 
 // ------------------------------------------------------------------ QR codes on screen
+/** Room for the QR picture: left of centre, between the heading and the bottom buttons. */
+const qrSize = (W: number, H: number) => Math.max(60, Math.min(H - 40 - 56, W / 2 - 24));
+
 /** Shows a code as a QR picture plus Copy / Share buttons, and reads one by camera or paste. */
 abstract class PairingScreen extends Screen {
   protected qr: HTMLCanvasElement | null = null;
@@ -241,28 +244,28 @@ export class OfflineHostScreen extends PairingScreen {
   }
   override init() {
     const W = this.gui.w, H = this.gui.h;
-    const right = W / 2 + 10;
+    const right = W / 2 + 8, size = qrSize(W, H);
     this.widgets = this.done
       ? [new Button(this.ui, right, 120, 140, 20, 'Add Another Device', () => this.begin())]
-      : [...this.codeButtons(W / 2 - 150, H - 52), ...this.readButtons(right, 92)];
+      : [...this.codeButtons(W / 2 - 8 - size, 40 + size + 4), ...this.readButtons(right, 92)];
     this.widgets.push(new Button(this.ui, W / 2 - 100, H - 28, 200, 20, 'Done', () => this.ui.open(this.parent)));
   }
   override render(ctx: Ctx, mx: number, my: number) {
     const W = this.gui.w, H = this.gui.h;
     this.gui.dirtBackground(ctx);
     this.gui.textCenter(ctx, 'Add a Device Without Internet', W / 2, 8, '#FFFFFF');
-    const size = Math.min(H - 90, W / 2 - 30);
-    this.gui.text(ctx, '1. On the other device: Multiplayer,', W / 2 - 150, 22, '#A0A0A0');
-    this.gui.text(ctx, '   Join Without Internet, scan this', W / 2 - 150, 32, '#A0A0A0');
-    if (this.scanner) this.drawCamera(ctx, W / 2 - 150, 44, size);
-    else if (this.qr) this.drawCode(ctx, W / 2 - 150, 44, size);
-    else this.gui.text(ctx, 'Making a code...', W / 2 - 140, 60, '#A0A0A0');
+    const size = qrSize(W, H), x = W / 2 - 8 - size, right = W / 2 + 8;
+    this.gui.text(ctx, '1. On the other device: Multiplayer,', x, 20, '#A0A0A0');
+    this.gui.text(ctx, '   Join Without Internet, scan this:', x, 29, '#A0A0A0');
+    if (this.scanner) this.drawCamera(ctx, x, 40, size);
+    else if (this.qr) this.drawCode(ctx, x, 40, size);
+    else this.gui.text(ctx, 'Making a code...', x + 10, 60, '#A0A0A0');
     if (!this.done) {
-      this.gui.text(ctx, '2. Then read the code it shows:', W / 2 + 10, 50, '#A0A0A0');
-      this.gui.text(ctx, 'Both devices need the same Wi-Fi', W / 2 + 10, 116, '#606060');
-      this.gui.text(ctx, 'or hotspot.', W / 2 + 10, 126, '#606060');
+      this.gui.text(ctx, '2. Then read the code it shows:', right, 52, '#A0A0A0');
+      this.gui.text(ctx, 'Both devices need the same Wi-Fi', right, 116, '#606060');
+      this.gui.text(ctx, 'or hotspot.', right, 126, '#606060');
     }
-    this.drawMessage(ctx, W / 2 + 80, this.done ? 100 : 140);
+    this.drawMessage(ctx, right + 70, this.done ? 100 : 140);
     super.render(ctx, mx, my);
   }
   override onClose() {
@@ -296,7 +299,8 @@ export class OfflineJoinScreen extends PairingScreen {
   }
   override init() {
     const W = this.gui.w, H = this.gui.h;
-    this.widgets = this.replying ? this.codeButtons(W / 2 - 150, H - 52) : this.readButtons(W / 2 - 100, 70);
+    const size = qrSize(W, H);
+    this.widgets = this.replying ? this.codeButtons(W / 2 - 8 - size, 40 + size + 4) : this.readButtons(W / 2 - 100, 70);
     this.widgets.push(new Button(this.ui, W / 2 - 100, H - 28, 200, 20, 'Cancel', () => this.ui.open(this.parent)));
   }
   override render(ctx: Ctx, mx: number, my: number) {
@@ -308,11 +312,11 @@ export class OfflineJoinScreen extends PairingScreen {
       this.gui.textCenter(ctx, "Scan the code it shows, or paste it here:", W / 2, 34, '#A0A0A0');
       if (this.scanner) this.drawCamera(ctx, W / 2 - 50, 96, Math.min(100, H - 140));
     } else {
-      const size = Math.min(H - 90, W / 2 - 30);
-      this.drawCode(ctx, W / 2 - 150, 30, size);
-      this.gui.text(ctx, 'Now let the host scan this', W / 2 + 10, 50, '#A0A0A0');
-      this.gui.text(ctx, 'code (or send it to them).', W / 2 + 10, 60, '#A0A0A0');
-      this.gui.text(ctx, 'Waiting for the host...', W / 2 + 10, 80, '#FFFFFF');
+      const size = qrSize(W, H);
+      this.drawCode(ctx, W / 2 - 8 - size, 40, size);
+      this.gui.text(ctx, 'Now let the host scan this', W / 2 + 8, 50, '#A0A0A0');
+      this.gui.text(ctx, 'code (or send it to them).', W / 2 + 8, 60, '#A0A0A0');
+      this.gui.text(ctx, 'Waiting for the host...', W / 2 + 8, 80, '#FFFFFF');
     }
     this.drawMessage(ctx, W / 2, H - 70);
     super.render(ctx, mx, my);
