@@ -17,6 +17,12 @@ function detect(): boolean {
   return false;
 }
 
+/** The physical screen is upright. Asked of the screen, not the viewport, so an open soft keyboard doesn't flip it. */
+function portraitScreen(): boolean {
+  const t = screen.orientation?.type;
+  return t ? t.startsWith('portrait') : screen.height > screen.width;
+}
+
 const listeners: (() => void)[] = [];
 let touch = detect();
 let lastTouch = -1e9;
@@ -38,11 +44,24 @@ export const device = {
     const dpr = window.devicePixelRatio || 1;
     return touch ? Math.min(dpr, 2) : dpr;
   },
-  /** The visible area. On touch devices this follows the visual viewport, which shrinks when the keyboard opens. */
+  /**
+   * The visible area. On touch devices this follows the visual viewport, which shrinks when the keyboard opens.
+   * A phone held upright still plays in landscape: the canvases are turned a quarter clockwise (`rot`), so
+   * `w`/`h` are the game's size and `sw` is the screen width the turned canvases are pushed across.
+   */
   viewport() {
     const vv = touch ? window.visualViewport : null;
-    if (vv) return { x: vv.offsetLeft, y: vv.offsetTop, w: Math.round(vv.width), h: Math.round(vv.height) };
-    return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+    const r = vv ? { x: vv.offsetLeft, y: vv.offsetTop, w: Math.round(vv.width), h: Math.round(vv.height) } : { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+    const rot = touch && portraitScreen();
+    return rot ? { x: r.x, y: r.y, w: r.h, h: r.w, sw: r.w, rot } : { ...r, sw: r.w, rot };
   },
-  get portrait() { return window.innerHeight > window.innerWidth; },
+  /** Is the game drawn turned a quarter clockwise on a portrait screen? */
+  get rotated() { return touch && portraitScreen(); },
+  /** Try to really switch to landscape: fullscreen, then lock the orientation (Android; iOS has no lock). */
+  landscape() {
+    const so = screen.orientation as unknown as { lock?: (o: string) => Promise<void> } | undefined;
+    const lock = () => so?.lock?.('landscape').catch(() => {});
+    if (document.fullscreenElement || !document.fullscreenEnabled) { lock(); return; }
+    document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(lock).catch(() => {});
+  },
 };

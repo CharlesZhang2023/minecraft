@@ -15,6 +15,8 @@ export interface Options {
   showFps: boolean;
   particles: number; // 0 all, 1 decreased, 2 minimal
   fancyLeaves: boolean;
+  touchMove: 'dpad' | 'joystick'; // phones: Pocket Edition D-pad or a floating stick
+  touchAim: 'touch' | 'crosshair'; // phones: act on what's under the finger, or on the crosshair ("split controls")
 }
 
 export const DEFAULT_OPTIONS: Options = {
@@ -32,6 +34,8 @@ export const DEFAULT_OPTIONS: Options = {
   showFps: false,
   particles: 0,
   fancyLeaves: true,
+  touchMove: 'dpad',
+  touchAim: 'touch',
 };
 
 /** Phones get lighter defaults: a shorter view distance, plain leaves, and a bit more look sensitivity. */

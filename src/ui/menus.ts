@@ -357,7 +357,10 @@ export class PauseScreen extends Screen {
     this.widgets = [
       new Button(this.ui, W / 2 - 100, y + 16, 200, 20, 'Back to Game', () => this.ui.close()),
       Object.assign(new Button(this.ui, W / 2 - 100, y + 40, 98, 20, 'Advancements', () => {}), { enabled: false }),
-      Object.assign(new Button(this.ui, W / 2 + 2, y + 40, 98, 20, 'Statistics', () => {}), { enabled: false }),
+      // phones have no F5: the camera toggle takes the Statistics slot
+      device.touch
+        ? new Button(this.ui, W / 2 + 2, y + 40, 98, 20, () => ['First Person', 'Back View', 'Front View'][this.game.thirdPerson], () => { this.game.thirdPerson = (this.game.thirdPerson + 1) % 3; })
+        : Object.assign(new Button(this.ui, W / 2 + 2, y + 40, 98, 20, 'Statistics', () => {}), { enabled: false }),
       new Button(this.ui, W / 2 - 100, y + 64, 98, 20, 'Options...', () => this.ui.open(new OptionsScreen(this.ui, this))),
       new Button(this.ui, W / 2 + 2, y + 64, 98, 20, 'Controls', () => this.ui.open(new ControlsScreen(this.ui, this))),
       new Button(this.ui, W / 2 - 100, y + 104, 200, 20, 'Save and Quit to Title', () => this.quit()),
@@ -422,13 +425,22 @@ export class ControlsScreen extends Screen {
   constructor(ui: UI, public parent: Screen) { super(ui); }
   override pausesGame = true;
   override init() {
-    this.widgets = [new Button(this.ui, this.gui.w / 2 - 100, this.gui.h - 28, 200, 20, 'Done', () => this.ui.open(this.parent))];
+    const W = this.gui.w, o = this.game.options;
+    this.widgets = [new Button(this.ui, W / 2 - 100, this.gui.h - 28, 200, 20, 'Done', () => this.ui.open(this.parent))];
+    if (device.touch) {
+      const save = () => this.game.saveOptions();
+      this.widgets.push(
+        new Button(this.ui, W / 2 - 155, 30, 150, 20, () => `Movement: ${o.touchMove === 'joystick' ? 'Joystick' : 'D-Pad'}`, () => { o.touchMove = o.touchMove === 'joystick' ? 'dpad' : 'joystick'; save(); }),
+        new Button(this.ui, W / 2 + 5, 30, 150, 20, () => `Aim: ${o.touchAim === 'crosshair' ? 'Crosshair' : 'Touch'}`, () => { o.touchAim = o.touchAim === 'crosshair' ? 'touch' : 'crosshair'; save(); }),
+      );
+    }
   }
   override render(ctx: Ctx, mx: number, my: number) {
     if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
     else this.gui.dirtBackground(ctx);
     const W = this.gui.w;
     this.gui.textCenter(ctx, 'Controls', W / 2, 15, '#FFFFFF');
+    if (device.touch) { this.renderTouch(ctx); super.render(ctx, mx, my); return; }
     const rows: [string, string][] = [
       ['Walk', 'W A S D'], ['Jump / Swim up', 'Space'], ['Sneak / Fly down', 'Shift'], ['Sprint', 'Ctrl or double-tap W'],
       ['Break / Attack', 'Left Mouse'], ['Place / Use', 'Right Mouse'], ['Pick Block', 'Middle Mouse'], ['Hotbar', '1-9 / Scroll'],
@@ -441,6 +453,27 @@ export class ControlsScreen extends Screen {
       this.gui.text(ctx, b, W / 2 + 20, y, '#FFFF55');
     });
     super.render(ctx, mx, my);
+  }
+  /** Phones: the two control styles, then what each gesture does with them. */
+  private renderTouch(ctx: Ctx) {
+    const W = this.gui.w, o = this.game.options;
+    const stick = o.touchMove === 'joystick', aim = o.touchAim !== 'crosshair';
+    const rows: [string, string][] = [
+      ['Walk', stick ? 'Drag the joystick (left side)' : 'D-pad'],
+      ['Sprint', stick ? 'Push the joystick past its edge' : 'Double-tap forward'],
+      ['Jump / Swim up', 'Jump button'], ['Sneak', stick ? 'Sneak button' : 'Middle of the D-pad'],
+      ['Fly (creative)', 'Double-tap jump'], ['Look around', 'Drag on the screen'],
+      ['Place / Use', aim ? 'Tap the block' : 'Tap anywhere (crosshair)'],
+      ['Break', aim ? 'Hold on the block' : 'Hold anywhere (crosshair)'],
+      ['Attack / Feed', aim ? 'Tap the mob' : 'Tap with a mob in the crosshair'],
+      ['Eat / Draw bow', 'Hold'], ['Drop Item', 'Hold a hotbar slot'], ['Inventory', '... on the hotbar'],
+    ];
+    const top = 58, step = Math.min(11, (this.gui.h - 34 - top) / rows.length);
+    rows.forEach(([a, b], i) => {
+      const y = top + i * step;
+      this.gui.text(ctx, a, W / 2 - 150, y, '#FFFFFF');
+      this.gui.text(ctx, b, W / 2 - 20, y, '#FFFF55');
+    });
   }
   override key(e: KeyboardEvent) {
     if (e.code === 'Escape') { this.ui.open(this.parent); return true; }

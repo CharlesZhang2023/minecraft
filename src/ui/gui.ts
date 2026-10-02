@@ -84,9 +84,9 @@ export class Gui {
     return c;
   }
 
-  setup(ctx: Ctx, screenW: number, screenH: number, pref: number) {
+  setup(ctx: Ctx, screenW: number, screenH: number, pref: number, minW = 320, minH = 240) {
     let s = 1;
-    while (s < (pref || 99) && screenW / (s + 1) >= 320 && screenH / (s + 1) >= 240) s++;
+    while (s < (pref || 99) && screenW / (s + 1) >= minW && screenH / (s + 1) >= minH) s++;
     this.scale = s;
     this.w = Math.ceil(screenW / s);
     this.h = Math.ceil(screenH / s);

@@ -18,6 +18,8 @@ export class Input {
   virtual = new Set<string>();
   /** Analog movement stick, x right / y down in -1..1. */
   stick: { x: number; y: number } | null = null;
+  /** Touch aiming: the screen point (fractions of width and height) the player is pointing at, if any. */
+  aim: { x: number; y: number } | null = null;
   /** True while the touch layer should behave like a locked pointer (in the world with no screen open). */
   touchPlaying: () => boolean = () => false;
   onKeyDown: (e: KeyboardEvent) => boolean = () => false; // return true if consumed by UI

@@ -6,6 +6,7 @@ import { getItem, ItemStack } from '../game/items';
 import { B } from '../world/blocks';
 import { EnderDragon } from '../entity/dragon';
 import { device } from '../game/device';
+import { touchHotbar } from './touchlayout';
 
 export class Hud {
   private itemNameTimer = 0;
@@ -64,7 +65,7 @@ export class Hud {
     if (g.hideHud) return;
     const cx = Math.floor(W / 2);
     // crosshair (inverted colours)
-    if (!g.showDebug && g.thirdPerson === 0) {
+    if (!g.showDebug && g.thirdPerson === 0 && !g.touchAim()) {
       ctx.save();
       ctx.globalCompositeOperation = 'difference';
       ctx.fillStyle = '#ffffff';
@@ -78,14 +79,17 @@ export class Hud {
       this.renderChatAndText(ctx);
       return;
     }
-    // hotbar
+    // hotbar; on touch screens the Pocket Edition one: only the slots that fit, then "..." for the inventory
+    const touch = device.touch;
+    const tb = touch ? touchHotbar(W, H) : null;
     const hx = cx - 91, hy = H - 22;
-    this.hotbarFrame(ctx, hx, hy);
-    for (let i = 0; i < 9; i++) {
+    const slots = tb ? tb.n : 9, bx = tb ? tb.x : hx;
+    this.hotbarFrame(ctx, bx, hy, slots, !!tb);
+    for (let i = 0; i < slots; i++) {
       const s = p.inventory.main[i];
       if (s) {
         const pop = this.pickupPop.get(i) ?? 0;
-        this.ui.drawItem(ctx, s, hx + 3 + i * 20, hy + 3, pop);
+        this.ui.drawItem(ctx, s, bx + 3 + i * 20, hy + 3, pop);
       }
     }
     const survival = !p.creative;
@@ -106,16 +110,18 @@ export class Hud {
         for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) gui.font.draw(ctx, t, tx + ox, ty + oy, '#000000', false);
         gui.font.draw(ctx, t, tx, ty, '#80FF20', false);
       }
-      // hearts
+      // hearts: above the hotbar's left half, or along the top left on touch screens (food top right),
+      // with the extra rows stacking up from the hotbar, or down from the top edge
       const lowHealth = p.health <= 4;
       const hardcore = !!g.meta?.hardcore;
-      const heartsY = H - 39;
+      const heartsY = touch ? 2 : H - 39, rowDir = touch ? 1 : -1;
+      const heartsX = touch ? 2 : hx, foodX = touch ? W - 11 : hx + 182 - 9;
       const blink = this.healthBlink > 0 && Math.floor(this.healthBlink / 3) % 2 === 1;
       for (let i = 0; i < 10; i++) {
         let y = heartsY;
         if (lowHealth) y += ((i * 31 + this.ticks * 7) % 3) - 1;
         if (this.regenWave === i) y -= 2;
-        const x = hx + i * 8;
+        const x = heartsX + i * 8;
         ctx.drawImage(blink ? gui.sprites.heartEmptyFlash : gui.sprites.heartEmpty, x, y);
         const hp = p.health - i * 2;
         if (blink) {
@@ -130,7 +136,7 @@ export class Hud {
       // absorption (golden) hearts on the row above
       const abs = Math.ceil(p.absorption);
       for (let i = 0; i < Math.ceil(abs / 2); i++) {
-        const x = hx + (i % 10) * 8, y = heartsY - 10 - Math.floor(i / 10) * 10;
+        const x = heartsX + (i % 10) * 8, y = heartsY + rowDir * (10 + Math.floor(i / 10) * 10);
         ctx.drawImage(gui.sprites.heartEmpty, x, y);
         if (abs - i * 2 >= 2) ctx.drawImage(gui.sprites.heartAbsorb, x, y);
         else ctx.drawImage(gui.sprites.heartAbsorb, 0, 0, 5, 9, x, y, 5, 9);
@@ -140,14 +146,14 @@ export class Hud {
       const armor = p.inventory.armorPoints();
       if (armor > 0) {
         for (let i = 0; i < 10; i++) {
-          const x = hx + i * 8, y = heartsY - 10 - rowUp;
+          const x = heartsX + i * 8, y = heartsY + rowDir * (10 + rowUp);
           const a = armor - i * 2;
           ctx.drawImage(a >= 2 ? gui.sprites.armor : a === 1 ? gui.sprites.armorHalf : gui.sprites.armorEmpty, x, y);
         }
       }
       // food
       for (let i = 0; i < 10; i++) {
-        const x = hx + 182 - 9 - i * 8;
+        const x = foodX - i * 8;
         let y = heartsY;
         if (p.saturation <= 0 && this.ticks % (p.food * 3 + 1) === 0) y += ((i * 13 + this.ticks) % 3) - 1;
         ctx.drawImage(gui.sprites.foodEmpty, x, y);
@@ -162,8 +168,8 @@ export class Hud {
         const full = Math.ceil(((p.air - 2) * 10) / 300);
         const pop = Math.ceil((p.air * 10) / 300) - full;
         for (let i = 0; i < full + pop; i++) {
-          const x = hx + 182 - 9 - i * 8;
-          ctx.drawImage(i < full ? gui.sprites.bubble : gui.sprites.bubblePop, x, heartsY - 10);
+          const x = foodX - i * 8;
+          ctx.drawImage(i < full ? gui.sprites.bubble : gui.sprites.bubblePop, x, heartsY + rowDir * 10);
         }
       }
     }
@@ -171,12 +177,12 @@ export class Hud {
     if (this.itemNameTimer > 0 && this.itemName) {
       const a = Math.min(1, (this.itemNameTimer * 256) / 10 / 255);
       ctx.globalAlpha = a;
-      gui.textCenter(ctx, this.itemName, cx, H - 59 + (survival ? 0 : 14), '#FFFFFF');
+      gui.textCenter(ctx, this.itemName, cx, (touch ? H - 45 : H - 59) + (survival ? 0 : 14), '#FFFFFF');
       ctx.globalAlpha = 1;
     }
     if (this.actionTimer > 0) {
       ctx.globalAlpha = Math.min(1, this.actionTimer / 10);
-      gui.textCenter(ctx, this.actionText, cx, H - 72 + (survival ? 0 : 14), '#FFFFFF');
+      gui.textCenter(ctx, this.actionText, cx, (touch ? H - 58 : H - 72) + (survival ? 0 : 14), '#FFFFFF');
       ctx.globalAlpha = 1;
     }
     if (!this.ui.screen && !g.hideHud) drawEffectsHud(ctx, this.ui);
@@ -191,8 +197,8 @@ export class Hud {
     const d = g.entities.find((e) => e instanceof EnderDragon && !e.removed) as EnderDragon | undefined;
     if (!d) return;
     const x = Math.floor(gui.w / 2) - 91;
-    // on touch screens the menu buttons sit along the top edge
-    const y = device.touch ? Math.ceil((56 * device.ratio()) / gui.scale) : 12;
+    // on touch screens the chat and pause buttons sit along the top edge
+    const y = device.touch ? 30 : 12;
     gui.textCenter(ctx, 'Ender Dragon', gui.w / 2, y - 9, '#FFFFFF');
     ctx.fillStyle = '#000000';
     ctx.fillRect(x - 1, y - 1, 184, 7);
@@ -212,13 +218,14 @@ export class Hud {
     if (!this.ui.screen?.showsChat) this.ui.chat.render(ctx, false);
   }
 
-  private hotbarFrame(ctx: Ctx, x: number, y: number) {
+  private hotbarFrame(ctx: Ctx, x: number, y: number, slots: number, more: boolean) {
     const p = this.ui.game.player!;
+    const cells = slots + (more ? 1 : 0), w = cells * 20 + 2;
     ctx.fillStyle = 'rgba(0,0,0,0.85)';
-    ctx.fillRect(x, y, 182, 22);
+    ctx.fillRect(x, y, w, 22);
     ctx.fillStyle = 'rgba(92,92,92,0.75)';
-    ctx.fillRect(x + 1, y + 1, 180, 20);
-    for (let i = 0; i < 9; i++) {
+    ctx.fillRect(x + 1, y + 1, w - 2, 20);
+    for (let i = 0; i < cells; i++) {
       const sx = x + 1 + i * 20;
       ctx.fillStyle = 'rgba(58,58,58,0.8)';
       ctx.fillRect(sx + 1, y + 2, 18, 18);
@@ -229,8 +236,18 @@ export class Hud {
       ctx.fillRect(sx + 1, y + 2, 18, 1);
       ctx.fillRect(sx + 1, y + 2, 1, 18);
     }
+    if (more) {
+      // the "..." cell that opens the inventory
+      const dx = x + 1 + slots * 20;
+      for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = '#3a3a3a';
+        ctx.fillRect(dx + 5 + i * 4, y + 11, 2, 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(dx + 4 + i * 4, y + 10, 2, 2);
+      }
+    }
     // selection frame
-    const sx = x - 1 + p.inventory.selected * 20;
+    const sx = x - 1 + Math.min(p.inventory.selected, slots - 1) * 20;
     ctx.fillStyle = '#000000';
     ctx.fillRect(sx, y - 1, 24, 24);
     ctx.fillStyle = '#ffffff';

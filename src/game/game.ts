@@ -135,6 +135,7 @@ export class Game {
     this.resize();
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 120));
+    screen.orientation?.addEventListener('change', () => this.resize());
     window.visualViewport?.addEventListener('resize', () => this.resize());
     window.visualViewport?.addEventListener('scroll', () => this.resize());
     device.onChange(() => this.resize());
@@ -147,15 +148,18 @@ export class Game {
     const dpr = device.ratio(), vp = device.viewport();
     const w = Math.max(1, Math.floor(vp.w * dpr)), h = Math.max(1, Math.floor(vp.h * dpr));
     // visualViewport fires scroll/resize in bursts (iOS keyboard, pinch): resizing a canvas reallocates and clears it
-    const key = `${w},${h},${vp.x},${vp.y},${vp.w},${vp.h},${device.touch}`;
+    const key = `${w},${h},${vp.x},${vp.y},${vp.w},${vp.h},${vp.rot},${device.touch}`;
     if (key === this.lastSize) return;
     this.lastSize = key;
-    // on touch devices the canvases follow the visual viewport (it shrinks when the soft keyboard opens)
+    // on touch devices the canvases follow the visual viewport (it shrinks when the soft keyboard opens);
+    // held upright, they are turned a quarter clockwise so the game stays landscape
     for (const c of [this.renderer.canvas, this.uiCanvas]) {
       c.style.left = device.touch ? vp.x + 'px' : '';
       c.style.top = device.touch ? vp.y + 'px' : '';
       c.style.width = device.touch ? vp.w + 'px' : '';
       c.style.height = device.touch ? vp.h + 'px' : '';
+      c.style.transformOrigin = vp.rot ? '0 0' : '';
+      c.style.transform = vp.rot ? `translateX(${vp.sw}px) rotate(90deg)` : '';
     }
     this.renderer.resize(w, h);
     this.uiCanvas.width = w;
@@ -703,11 +707,31 @@ export class Game {
     return this.player!.creative ? 5 : 4.5;
   }
 
+  /** Phones aiming by touch: the block or mob under the finger is the target, and there's no crosshair. */
+  touchAim() {
+    return device.touch && this.options.touchAim === 'touch';
+  }
+
+  /** The ray through a point on screen (fractions of its width and height), from the first-person camera. */
+  screenRay(sx: number, sy: number) {
+    const p = this.player!;
+    const f = this.lookVec(p.yaw, p.pitch);
+    const y = (p.yaw * Math.PI) / 180;
+    const r = { x: -Math.cos(y), y: 0, z: -Math.sin(y) };
+    const u = { x: r.y * f.z - r.z * f.y, y: r.z * f.x - r.x * f.z, z: r.x * f.y - r.y * f.x };
+    const t = Math.tan(((this.cam.fov || this.options.fov) * Math.PI) / 360);
+    const a = (sx * 2 - 1) * t * (this.renderer.width / this.renderer.height), b = (1 - sy * 2) * t;
+    const d = { x: f.x + r.x * a + u.x * b, y: f.y + r.y * a + u.y * b, z: f.z + r.z * a + u.z * b };
+    const l = Math.hypot(d.x, d.y, d.z);
+    return { x: d.x / l, y: d.y / l, z: d.z / l };
+  }
+
   updateTarget() {
     const p = this.player!;
-    if (p.spectator || p.dead) { this.target = null; this.targetEntity = null; this.targetPart = null; return; }
+    const aim = this.input.aim;
+    if (p.spectator || p.dead || (this.touchAim() && !aim)) { this.target = null; this.targetEntity = null; this.targetPart = null; return; }
     const eye = this.eyePos(1);
-    const d = this.lookVec(p.yaw, p.pitch);
+    const d = this.touchAim() && aim ? this.screenRay(aim.x, aim.y) : this.lookVec(p.yaw, p.pitch);
     const reach = this.reach();
     this.target = raycastBlocks(this.world!, eye.x, eye.y, eye.z, d.x, d.y, d.z, reach);
     // entities

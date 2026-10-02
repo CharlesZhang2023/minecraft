@@ -309,6 +309,16 @@ export class Interaction {
   }
 
   // ------------------------------------------------------------------ using / placing
+  /** Right-click the targeted mob (feed, shear, saddle, trade, ride...). False if it has nothing to do with it. */
+  interactEntity(): boolean {
+    const g = this.game, p = this.player;
+    if (!g.targetEntity || p.spectator || p.dead) return false;
+    const e = g.targetEntity as unknown as { interact?: (game: Game, s: ItemStack | null) => boolean };
+    if (!e.interact || !e.interact(g, p.inventory.held())) return false;
+    p.swing();
+    return true;
+  }
+
   private use(fresh: boolean) {
     const g = this.game, p = this.player, w = this.world;
     this.useDelay = 4;
@@ -316,10 +326,7 @@ export class Interaction {
     const held = p.inventory.held();
     const item = held ? getItem(held.id) : undefined;
     // entity interaction
-    if (g.targetEntity && fresh) {
-      const e = g.targetEntity as unknown as { interact?: (game: Game, s: ItemStack | null) => boolean };
-      if (e.interact && e.interact(g, held)) { p.swing(); return; }
-    }
+    if (fresh && this.interactEntity()) return;
     const t = g.target;
     if (t) {
       const v = w.get(t.x, t.y, t.z);

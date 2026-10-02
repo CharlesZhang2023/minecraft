@@ -1,4 +1,5 @@
 // Status effect icons: HUD row (top right) and the inventory-side list.
+import { device } from '../game/device';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { EFFECTS, ROMAN, formatDuration } from '../game/potiondata';
@@ -57,7 +58,9 @@ export function drawEffectsHud(ctx: Ctx, ui: UI) {
   let good = 0, bad = 0;
   for (const e of sorted(p.effects.values())) {
     const harmful = EFFECTS[e.id].bad;
-    const x = gui.w - 25 * (harmful ? ++bad : ++good), y = harmful ? 27 : 1;
+    // touch screens keep hunger and air along the top right
+    const top = device.touch ? 22 : 1;
+    const x = gui.w - 25 * (harmful ? ++bad : ++good), y = top + (harmful ? 26 : 0);
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(x, y, 24, 24);
     ctx.fillStyle = harmful ? '#6a2020' : '#3a4a6a';

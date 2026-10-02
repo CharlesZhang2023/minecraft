@@ -1,3 +1,4 @@
+import { device } from '../game/device';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
 
@@ -17,7 +18,8 @@ export class Chat {
   render(ctx: Ctx, open: boolean) {
     const gui = this.ui.gui;
     const now = performance.now();
-    const baseY = gui.h - 57;
+    // touch screens: above the D-pad, which fills the bottom left corner
+    const baseY = gui.h - (device.touch && !open ? 84 : 57);
     const max = open ? 20 : 10;
     let n = 0;
     for (let i = this.scroll; i < this.lines.length && n < max; i++) {

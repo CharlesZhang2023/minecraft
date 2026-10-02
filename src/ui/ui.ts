@@ -148,7 +148,7 @@ export class UI {
       // lets Ctrl+W sprint without closing the tab (Chromium keyboard lock)
       (navigator as unknown as { keyboard?: { lock?: (k: string[]) => Promise<void> } }).keyboard?.lock?.(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ']).catch(() => {});
       // phones: the game wants landscape
-      if (device.touch) (screen.orientation as unknown as { lock?: (o: string) => Promise<void> }).lock?.('landscape').catch(() => {});
+      if (device.touch) device.landscape();
     }).catch(() => {});
   }
 
@@ -171,7 +171,9 @@ export class UI {
   render(ctx: Ctx) {
     const g = this.game;
     g.icons.setScale(this.gui.scale);
-    this.gui.setup(ctx, g.renderer.width, g.renderer.height, g.options.guiScale);
+    // touch, in the world: a bigger HUD with thumb-sized controls, like the Pocket Edition (screens keep room for chests)
+    const big = device.touch && !!g.world && !g.panorama && !this.screen;
+    this.gui.setup(ctx, g.renderer.width, g.renderer.height, g.options.guiScale, big ? 300 : 320, big ? 180 : 240);
     if (this.gui.w !== this.lastGuiW || this.gui.h !== this.lastGuiH) {
       // rotation, window resize or the soft keyboard changed the GUI size: lay the open screen out again
       const first = this.lastGuiW === 0;
