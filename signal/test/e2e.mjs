@@ -105,8 +105,11 @@ results.hostReconnect = await host.evaluate(async (u) => { const { hello } = awa
 // the P2P link must survive the host's signaling socket being replaced
 results.channelAfterReconnect = await host.evaluate(() => window.chans.map((c) => c.readyState));
 await host.close();
-await new Promise((r) => setTimeout(r, 1500));
-results.guestAfterHostLeft = await guest.evaluate(() => window.guestClosed ?? 'still open');
+// the guest should hear the host left (the round trip can take seconds through a slow proxy)
+results.guestAfterHostLeft = await guest.evaluate(() => new Promise((res) => {
+  const t0 = Date.now(), poll = () => (window.guestClosed ? res({ ...window.guestClosed, ms: Date.now() - t0 }) : Date.now() - t0 > 10000 ? res('still open') : setTimeout(poll, 50));
+  poll();
+}));
 
 console.log(JSON.stringify(results, null, 2));
 await browser.close();
