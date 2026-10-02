@@ -1,7 +1,7 @@
 // Main-thread world: chunk storage, streaming, worker scheduling, block access.
 import { CHUNK_H, idOf, metaOf, BLOCKS, B, OPAQUE, LIGHT_OPACITY, LIGHT_EMIT } from './blocks';
 import type { MeshResult } from './mesher';
-import { Storage, SavedChunk, rleEncode, rleDecode } from '../game/storage';
+import { Storage, SavedChunk, SavedBase, rleEncode, rleDecode } from '../game/storage';
 import WorkerCtor from './worker.ts?worker&inline';
 import { chunkHash } from '../net/protocol';
 
@@ -26,19 +26,31 @@ export class Chunk {
   meshedVersion = -1;
   modified = false; // needs saving
   urgent = false;
-  /** Client: the server said this chunk is untouched terrain, so we generate it ourselves from the seed. */
+  /**
+   * Server: the chunk as the generator made it, kept as its hash plus the original value of every block changed
+   * since (a block put back the way it was drops out). Clients regenerate the terrain and apply the changes.
+   */
+  base: { hash: number; orig: Map<number, number> } | null = null;
+  /** Server: loaded from a save made before bases were recorded: work it out by generating the chunk again. */
+  needsBase = false;
+  basing = false;
+  /** Client: we generate this chunk ourselves from the seed (then apply the server's changes to it). */
   localGen = false;
-  /** Server: hash of the blocks as generated (only for chunks fresh from the generator). */
-  genHash: number | null = null;
-  /** Client: what the generated blocks must hash to (the server's copy); null = not checked. */
+  /** Client: what the generated blocks must hash to before the changes; null = not checked (far terrain). */
   expectHash: number | null = null;
+  genChanges: { i: Uint16Array; v: Uint16Array } | null = null;
+  genTiles: [number, TileEntity][] | null = null;
+  /** Client: edits that arrived while the chunk was still being generated, applied once it's ready. */
+  pending: (() => void)[] | null = null;
   mesh: unknown = null; // owned by the renderer
   tiles = new Map<number, TileEntity>();
   lastSeen = 0;
   constructor(public cx: number, public cz: number) {}
 }
 
-type Job = { type: 'gen' | 'mesh' | 'light'; chunk: Chunk; version?: number };
+type Job = { type: 'gen' | 'mesh' | 'light' | 'base'; chunk: Chunk; version?: number };
+/** Where a chunk's blocks came from (the server records the generator's version as the chunk's base). */
+type Source = 'gen' | 'disk' | 'net';
 
 export type Dimension = 'overworld' | 'nether' | 'end';
 
@@ -156,11 +168,22 @@ export class World {
   set(x: number, y: number, z: number, v: number): boolean {
     if (y < 0 || y >= CHUNK_H) return false;
     const c = this.chunkAt(x, z);
-    if (!c) return false;
+    if (!c) {
+      // client: a change to a chunk we're still generating waits until it's ready
+      const g = this.role === 'client' ? this.getChunk(x >> 4, z >> 4) : undefined;
+      if (g && !g.ready && (g.loading || g.localGen)) (g.pending ??= []).push(() => this.set(x, y, z, v));
+      return false;
+    }
     const i = (x & 15) | ((z & 15) << 4) | (y << 8);
     const old = c.blocks[i];
     if (old === v) return false;
     c.blocks[i] = v;
+    if (c.base) {
+      // remember what the generator put here (once); setting it back undoes the change
+      const o = c.base.orig, was = o.get(i);
+      if (was === undefined) o.set(i, old);
+      else if (was === v) o.delete(i);
+    }
     c.version++;
     c.modified = true;
     c.dirty = true;
@@ -191,7 +214,11 @@ export class World {
   }
   setTile(x: number, y: number, z: number, t: TileEntity | undefined) {
     const c = this.chunkAt(x, z);
-    if (!c) return;
+    if (!c) {
+      const g = this.role === 'client' ? this.getChunk(x >> 4, z >> 4) : undefined;
+      if (g && !g.ready && (g.loading || g.localGen)) (g.pending ??= []).push(() => this.setTile(x, y, z, t));
+      return;
+    }
     const i = (x & 15) | ((z & 15) << 4) | (y << 8);
     if (t) c.tiles.set(i, t);
     else c.tiles.delete(i);
@@ -276,11 +303,13 @@ export class World {
     c.version++;
     c.urgent = true;
     c.localGen = false;
-    this.acceptChunk(c, blocks, biomes, tiles);
+    // the full data is newer than anything queued while we were generating
+    c.pending = null;
+    this.acceptChunk(c, blocks, biomes, 'net', tiles);
   }
 
   /** Client: generate this chunk ourselves (the server says it's still exactly what the seed makes). */
-  generateChunk(cx: number, cz: number, hash: number | null = null) {
+  generateChunk(cx: number, cz: number, hash: number | null = null, changes: { i: Uint16Array; v: Uint16Array } | null = null, tiles: [number, TileEntity][] | null = null) {
     const k = chunkKey(cx, cz);
     let c = this.chunks.get(k);
     if (c?.ready || c?.loading) return;
@@ -290,6 +319,8 @@ export class World {
     }
     c.localGen = true;
     c.expectHash = hash;
+    c.genChanges = changes;
+    c.genTiles = tiles;
   }
 
   /** Client: terrain we generated came out different from the server's (another browser's maths): ask for it. */
@@ -329,7 +360,9 @@ export class World {
     }
     meshCands.sort((a, b) => a[0] - b[0]);
     genCands.sort((a, b) => a[0] - b[0]);
-    let mi = 0, gi = 0;
+    // server, when there's nothing more urgent: regenerate old saves' chunks to learn their bases
+    const baseCands = this.role === 'server' ? [...this.chunks.values()].filter((c) => c.ready && c.needsBase && !c.basing) : [];
+    let mi = 0, gi = 0, bi = 0;
     for (const slot of idle) {
       // urgent meshes first, then alternate: nearer of gen vs mesh
       const m = meshCands[mi], g = genCands[gi];
@@ -339,6 +372,12 @@ export class World {
       } else if (g) {
         gi++;
         this.startGen(slot, g[1]);
+      } else if (baseCands[bi]) {
+        const c = baseCands[bi++];
+        c.basing = true;
+        slot.busy = true;
+        slot.job = { type: 'base', chunk: c };
+        slot.w.postMessage({ type: 'gen', id: ++this.jobId, seed: this.seed, cx: c.cx, cz: c.cz, dim: this.dimension });
       } else break;
     }
   }
@@ -358,7 +397,7 @@ export class World {
     if (this.savedKeys.has(ks)) {
       // load from disk asynchronously (doesn't occupy the worker)
       Storage.loadChunk(this.worldId, ks).then((saved) => {
-        if (saved) this.acceptChunk(c, rleDecode(saved.blocks, 16 * 16 * CHUNK_H), saved.biomes, saved.tiles as [number, TileEntity][] | undefined);
+        if (saved) this.acceptChunk(c, rleDecode(saved.blocks, 16 * 16 * CHUNK_H), saved.biomes, 'disk', saved.tiles as [number, TileEntity][] | undefined, undefined, saved.base);
         else {
           this.savedKeys.delete(ks);
           c.loading = false;
@@ -391,9 +430,13 @@ export class World {
     else slot.w.postMessage({ type, id: ++this.jobId, cx: c.cx, cz: c.cz, chunks, biomes, sky: this.hasSky });
   }
 
-  private acceptChunk(c: Chunk, blocks: Uint16Array, biomes: Uint8Array, tiles?: [number, TileEntity][], spawns?: { type: string; x: number; y: number; z: number; data?: Record<string, unknown> }[]) {
-    // server: a fresh chunk's fingerprint, so clients can generate it themselves and check
-    if (this.role === 'server' && !this.savedKeys.has(keyStr(c.cx, c.cz))) c.genHash = chunkHash(blocks);
+  private acceptChunk(c: Chunk, blocks: Uint16Array, biomes: Uint8Array, source: Source, tiles?: [number, TileEntity][], spawns?: { type: string; x: number; y: number; z: number; data?: Record<string, unknown> }[], saved?: SavedBase) {
+    if (this.role === 'server') {
+      // the base: straight from the generator, or as recorded in the save (older saves: work it out later)
+      if (source === 'gen') c.base = { hash: chunkHash(blocks), orig: new Map() };
+      else if (saved) c.base = { hash: saved.h, orig: new Map([...saved.i].map((idx, k) => [idx, saved.v[k]])) };
+      else c.needsBase = true;
+    }
     c.blocks = blocks;
     c.biomes = biomes;
     c.ready = true;
@@ -408,6 +451,10 @@ export class World {
       }
     // chests generated in dungeons get loot; fresh chunks may spawn structure inhabitants
     this.onChunkLoaded(c, spawns);
+    // client: edits that came in while we were generating it
+    const pend = c.pending;
+    c.pending = null;
+    if (pend) for (const f of pend) f();
   }
 
   private onWorkerMessage(slot: { w: Worker; busy: boolean; job: Job | null }, d: { type: string; cx: number; cz: number } & Record<string, unknown>) {
@@ -417,14 +464,31 @@ export class World {
     const c = job.chunk;
     if (d.type === 'gen') {
       if (this.chunks.get(chunkKey(c.cx, c.cz)) !== c) return; // unloaded meanwhile
+      if (job.type === 'base') {
+        // an old save's chunk, generated again: what differs is what players changed
+        c.basing = false;
+        if (!c.ready || !c.needsBase) return;
+        const gen = d.blocks as Uint16Array, orig = new Map<number, number>();
+        for (let i = 0; i < gen.length; i++) if (gen[i] !== c.blocks[i]) orig.set(i, gen[i]);
+        c.base = { hash: chunkHash(gen), orig };
+        c.needsBase = false;
+        return;
+      }
       if (!c.loading) return; // the server sent the real thing while we were generating
-      if (c.expectHash !== null && chunkHash(d.blocks as Uint16Array) !== c.expectHash) {
+      const blocks = d.blocks as Uint16Array;
+      if (c.expectHash !== null && chunkHash(blocks) !== c.expectHash) {
         c.loading = false;
         c.localGen = false;
+        c.pending = null;
         this.onGenMismatch(c.cx, c.cz);
         return;
       }
-      this.acceptChunk(c, d.blocks as Uint16Array, d.biomes as Uint8Array, undefined, d.spawns as { type: string; x: number; y: number; z: number }[]);
+      // the server's changes on top of the generated terrain
+      const ch = c.genChanges;
+      if (ch) for (let k = 0; k < ch.i.length; k++) blocks[ch.i[k]] = ch.v[k];
+      const tiles = c.genTiles ?? undefined;
+      c.genChanges = c.genTiles = null;
+      this.acceptChunk(c, blocks, d.biomes as Uint8Array, 'gen', tiles, d.spawns as { type: string; x: number; y: number; z: number }[]);
       c.modified = !!(d.spawns as unknown[] | undefined)?.length; // remember that inhabitants were spawned
     } else if (d.type === 'mesh' || d.type === 'light') {
       c.meshing = false;
@@ -438,7 +502,9 @@ export class World {
   }
 
   serialize(c: Chunk): SavedChunk {
-    return { blocks: rleEncode(c.blocks), biomes: c.biomes, tiles: [...c.tiles.entries()] };
+    const s: SavedChunk = { blocks: rleEncode(c.blocks), biomes: c.biomes, tiles: [...c.tiles.entries()] };
+    if (c.base) s.base = { h: c.base.hash, i: Uint16Array.from(c.base.orig.keys()), v: Uint16Array.from(c.base.orig.values()) };
+    return s;
   }
 
   /** Persist all modified chunks. */

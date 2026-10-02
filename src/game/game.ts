@@ -33,6 +33,7 @@ import { Pistons } from './pistons';
 import { Devices } from './devices';
 import { Brewing } from './brewing';
 import { END_PLATFORM } from '../world/endgen';
+import { GENERATOR_VERSION } from '../world/worldgen';
 import { EnderDragon, buildExitPortal } from '../entity/dragon';
 import { tickFurnaces } from './furnace';
 import { SOUND_FOR } from './audio';
@@ -202,6 +203,7 @@ export class Game {
   // ------------------------------------------------------------------ world lifecycle
   async openWorld(meta: WorldMeta) {
     this.meta = meta;
+    meta.generatorVersion ??= GENERATOR_VERSION;
     this.time = meta.time ?? 0;
     this.ticks = 0;
     this.options.difficulty = meta.difficulty ?? 2;

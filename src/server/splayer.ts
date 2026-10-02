@@ -10,7 +10,7 @@ import { Achievements } from '../game/achievements';
 import type { BlockHit } from '../game/raycast';
 import type { Entity } from '../entity/entity';
 import { B } from '../world/blocks';
-import { rleEncode, Storage } from '../game/storage';
+import { rleEncode, rleDecode, Storage } from '../game/storage';
 import { ContainerScreen } from '../ui/containers';
 import { ServerUI, VirtualInput } from './sui';
 import { captureState, encodeValue, sig, netType, State } from '../net/replicate';
@@ -198,7 +198,7 @@ export class ServerPlayer {
       case 'need': {
         // the client's own generation didn't match: send the real chunk
         const k = chunkKey(Number(m.cx), Number(m.cz));
-        if (this.sentChunks.get(k) === 0) this.sentChunks.delete(k);
+        if (this.sentChunks.get(k) === 0) { this.sentChunks.delete(k); this.fullOnly.add(k); this.mismatches++; }
         break;
       }
       case 'dismount': if (this.entity.riding) g.asActor(this, () => this.entity.riding?.dismount()); break;
@@ -339,16 +339,12 @@ export class ServerPlayer {
 
   // ------------------------------------------------------------------ outgoing (end of each server tick)
   /** Called by the server for each block changed in this player's dimension this tick. */
+  /** A block changed: tell the client if it has that chunk (sent, or generating it: it queues the change). */
   blockChanged(x: number, y: number, z: number, v: number) {
-    const k = chunkKey(x >> 4, z >> 4), st = this.sentChunks.get(k);
-    if (st === 1) this.outBlocks.push(x, y, z, v);
-    // a chunk the client generated itself just changed: it needs the real thing now
-    else if (st === 0) this.sentChunks.delete(k);
+    if (this.sentChunks.has(chunkKey(x >> 4, z >> 4))) this.outBlocks.push(x, y, z, v);
   }
   tileChanged(x: number, y: number, z: number) {
-    const k = chunkKey(x >> 4, z >> 4), st = this.sentChunks.get(k);
-    if (st === 0) { this.sentChunks.delete(k); return; }
-    if (st !== 1) return;
+    if (!this.sentChunks.has(chunkKey(x >> 4, z >> 4))) return;
     const t = this.game.dims.get(this.dim)?.world.getTile(x, y, z);
     this.outTiles.push([x, y, z, t ? encodeValue(t) : null]);
   }
@@ -363,7 +359,7 @@ export class ServerPlayer {
     this.ready = false;
   }
 
-  holdsChunk(k: number) { return this.sentChunks.get(k) === 1; }
+  holdsChunk(k: number) { return this.sentChunks.has(k); }
 
   flush() {
     if (this.conn.closed) return;
@@ -441,11 +437,10 @@ export class ServerPlayer {
       const k = chunkKey(cx, cz);
       const c = w.getChunk(cx, cz);
       if (c?.ready) {
-        // untouched since it was generated: the client can make it itself (and checks the result)
-        if (c.genHash !== null && !c.modified && !w.savedKeys.has(cx + ',' + cz)) {
-          this.sentChunks.set(k, 0);
-          this.send({ t: 'gen', cx, cz, h: c.genHash });
-        } else { this.sendChunk(cx, cz, c); budget--; }
+        // the client generates the terrain itself and applies what players changed (checked against the hash)
+        if (c.base && this.mayGenerate(k)) this.sendGen(cx, cz, c.base.hash, Uint16Array.from(c.base.orig.keys()), c.blocks, [...c.tiles.entries()]);
+        else if (c.needsBase && this.mayGenerate(k)) continue; // being worked out
+        else { this.sendChunk(cx, cz, c); budget--; }
         continue;
       }
       if (d <= (near + 0.5) * (near + 0.5)) continue; // the server is loading it
@@ -464,10 +459,31 @@ export class ServerPlayer {
         // it may have loaded meanwhile (then that copy is the current one)
         const live = w.getChunk(cx, cz);
         if (live?.ready) { this.sendChunk(cx, cz, live); return; }
-        this.sentChunks.set(k, 1);
-        this.send({ t: 'chunk', cx, cz, blocks: saved.blocks, biomes: saved.biomes, tiles: encodeValue(saved.tiles ?? []) });
+        // saved with its base: just the changes; older saves: the whole chunk
+        if (saved.base && this.mayGenerate(k)) this.sendGen(cx, cz, saved.base.h, saved.base.i, rleDecode(saved.blocks, 16 * 16 * 256), (saved.tiles ?? []) as [number, unknown][]);
+        else {
+          this.sentChunks.set(k, 1);
+          this.send({ t: 'chunk', cx, cz, blocks: saved.blocks, biomes: saved.biomes, tiles: encodeValue(saved.tiles ?? []) });
+        }
       });
     }
+  }
+
+  /** Chunks whose own generation came out wrong on this client get full data from now on. */
+  private fullOnly = new Set<number>();
+  /** A client whose generator keeps disagreeing (a different engine's maths) just gets full chunks. */
+  private mismatches = 0;
+  private mayGenerate(k: number) {
+    // in the same page (single-player, the host's own view) handing over the data is free; generating isn't
+    return this.conn.kind !== 'local' && this.mismatches < 8 && !this.fullOnly.has(k);
+  }
+
+  /** "Generate it, check it hashes to h, then apply these changes": the values at the changed indices now. */
+  private sendGen(cx: number, cz: number, h: number, idx: Uint16Array, blocks: Uint16Array, tiles: [number, unknown][]) {
+    const v = new Uint16Array(idx.length);
+    for (let k = 0; k < idx.length; k++) v[k] = blocks[idx[k]];
+    this.sentChunks.set(chunkKey(cx, cz), 0);
+    this.send({ t: 'gen', cx, cz, h, ci: idx, cv: v, tiles: tiles.length ? encodeValue(tiles) : undefined });
   }
 
   private sendChunk(cx: number, cz: number, c: import('../world/world').Chunk) {

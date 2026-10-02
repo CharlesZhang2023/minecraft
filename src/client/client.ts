@@ -653,7 +653,12 @@ export class Client {
         break;
       }
       case 'unchunk': this.world?.dropChunk(m.cx as number, m.cz as number); break;
-      case 'gen': this.world?.generateChunk(m.cx as number, m.cz as number, typeof m.h === 'number' ? m.h : null); break;
+      case 'gen': {
+        const ch = m.ci instanceof Uint16Array && m.cv instanceof Uint16Array ? { i: m.ci, v: m.cv } : null;
+        const tiles = m.tiles ? (decodeValue(m.tiles, () => null) as [number, TileEntity][]) : null;
+        this.world?.generateChunk(m.cx as number, m.cz as number, typeof m.h === 'number' ? m.h : null, ch, tiles);
+        break;
+      }
       case 'tp': {
         const p = this.player;
         if (!p) break;

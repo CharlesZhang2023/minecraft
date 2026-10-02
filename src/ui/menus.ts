@@ -7,6 +7,7 @@ import { Storage, WorldMeta } from '../game/storage';
 import { hashString } from '../noise';
 import { getTexture } from '../render/textures';
 import { MultiplayerScreen, HostScreen } from './multiplayer';
+import { GENERATOR_VERSION } from '../world/worldgen';
 
 const SPLASHES = [
   'Now in JavaScript!', 'Also try Terraria!', '100% procedural!', 'Punching trees!', 'Blocky!', 'Made with WebGL 2!', 'Now with caves!',
@@ -141,7 +142,7 @@ async function startPanorama(ui: UI) {
 async function quickPlay(ui: UI) {
   const now = Date.now();
   const seed = (Math.random() * 2 ** 31) | 0;
-  const meta: WorldMeta = { id: 'w' + now.toString(36), name: 'New World', seed, seedText: String(seed), gameMode: 0, hardcore: false, created: now, lastPlayed: now, time: 0 };
+  const meta: WorldMeta = { id: 'w' + now.toString(36), name: 'New World', seed, seedText: String(seed), gameMode: 0, hardcore: false, created: now, lastPlayed: now, time: 0, generatorVersion: GENERATOR_VERSION };
   await Storage.saveWorld(meta);
   await playWorld(ui, meta);
 }
@@ -292,7 +293,7 @@ export class CreateWorldScreen extends Screen {
     const seed = text ? hashString(text) : (Math.random() * 2 ** 31) | 0;
     const meta: WorldMeta = {
       id: 'w' + now.toString(36), name: this.name.value.trim() || 'New World', seed, seedText: text || String(seed),
-      gameMode: this.mode === 2 ? 1 : 0, hardcore: this.mode === 1, created: now, lastPlayed: now, time: 0,
+      gameMode: this.mode === 2 ? 1 : 0, hardcore: this.mode === 1, created: now, lastPlayed: now, time: 0, generatorVersion: GENERATOR_VERSION,
     };
     await Storage.saveWorld(meta);
     await playWorld(this.ui, meta);

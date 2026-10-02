@@ -32,6 +32,8 @@ export interface WorldMeta {
   achievements?: string[];
   /** Everyone else who has played here (multiplayer), by name: position, inventory, dimension, achievements. */
   players?: Record<string, Record<string, unknown>>;
+  /** The terrain generator version the world was made with (worlds from before this was recorded count as 1). */
+  generatorVersion?: number;
   /** Let players other than the host use commands. */
   cheatsForAll?: boolean;
 }
@@ -104,10 +106,15 @@ export const Storage = {
   },
 };
 
+/** A chunk's generated state: its hash, and the original values at the indices players changed. */
+export interface SavedBase { h: number; i: Uint16Array; v: Uint16Array }
+
 export interface SavedChunk {
   blocks: Uint16Array; // RLE encoded pairs (value, count)
   biomes: Uint8Array;
   tiles?: unknown;
+  /** Saves from before multiplayer deltas don't have it (the server regenerates the chunk to work it out). */
+  base?: SavedBase;
 }
 
 export function rleEncode(a: Uint16Array): Uint16Array {

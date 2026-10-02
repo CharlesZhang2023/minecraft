@@ -25,6 +25,13 @@ export interface ChunkGenResult {
 
 export type Setter = (x: number, y: number, z: number, v: number, force?: boolean) => void;
 
+/**
+ * Version of the terrain generator (overworld, Nether and End). Bump it whenever generation changes what a seed
+ * produces. Worlds record the version they were made with, so old saves can be recognised (and, if ever needed,
+ * generated the old way) after the generator changes.
+ */
+export const GENERATOR_VERSION = 1;
+
 export class WorldGen {
   private cont: Octaves;
   private erosion: Octaves;
