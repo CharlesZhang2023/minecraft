@@ -230,6 +230,7 @@ export class UI {
       if (!first) this.previewBox = null;
     }
     const [mx, my] = this.toGui(g.input.mouseX, g.input.mouseY);
+    if (g.world && g.player && !g.panorama && !g.hideHud) g.nameTags(ctx);
     if (g.world && g.player && !g.panorama) this.hud.render(ctx);
     if (g.world && !g.panorama && !this.screen && !g.input.locked && !g.hideHud) {
       const t = 'Click to play';

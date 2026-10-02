@@ -16,6 +16,8 @@ export interface MoveInput {
 
 export class Player extends LivingEntity {
   inventory = new Inventory();
+  /** Shown above the player's head to everyone else (multiplayer). */
+  name = '';
   gameMode = GameMode.Survival;
   flying = false;
   food = 20;

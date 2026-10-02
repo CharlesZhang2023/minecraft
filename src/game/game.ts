@@ -304,23 +304,26 @@ export class Game {
   async close() {
     if (this.closed) return;
     this.closed = true;
-    for (const sp of [...this.players]) sp.conn.close('Server closed');
+    for (const sp of [...this.players]) sp.conn.close('The host closed the game');
     await this.saveWorld();
     for (const d of [...this.dims.keys()]) await this.unloadDim(d);
   }
 
   // ------------------------------------------------------------------ players
   /** A client connected. The owner is the person whose world this is (their data lives in meta.player). */
-  async addPlayer(conn: Conn, name: string, owner: boolean): Promise<ServerPlayer> {
+  async addPlayer(conn: Conn, name: string, owner: boolean, early: Msg[] = []): Promise<ServerPlayer> {
     const meta = this.meta!;
     const over = await this.loadDim('overworld');
     const sp = new ServerPlayer(this, conn, name, owner);
     const p = sp.entity;
     p.sp = sp;
+    p.name = name;
     const saved = owner ? (meta.player as Record<string, unknown> | undefined) : meta.players?.[name];
     let dimName: Dimension = 'overworld';
     if (saved) {
       p.load(saved);
+      // back where they left off: just wait for the ground to load
+      sp.pendingArrival = { x: p.x, y: p.y, z: p.z, toSpawn: false, stay: true };
       dimName = (owner ? meta.dimension : (saved as { dim?: Dimension }).dim) ?? 'overworld';
       sp.achievements.load(owner ? meta.achievements : (saved as { achievements?: string[] }).achievements);
     } else {
@@ -339,6 +342,7 @@ export class Game {
     this.players.push(sp);
     sp.send({ t: 'join', id: p.id, name, dim: dimName, seed: meta.seed, worldName: meta.name, hardcore: meta.hardcore, time: this.timeState(), owner });
     sp.teleported();
+    for (const m of early) sp.receive(m);
     if (!owner) this.say(`§e${name} joined the game`);
     this.onPlayersChanged();
     return sp;
@@ -376,7 +380,7 @@ export class Game {
     this.players.splice(i, 1);
     const dim = this.dims.get(sp.dim);
     if (dim) { const k = dim.entities.indexOf(sp.entity); if (k >= 0) dim.entities.splice(k, 1); }
-    if (!sp.conn.closed) sp.conn.close(reason);
+    if (!sp.conn.closed) sp.conn.close(reason === 'was kicked' ? 'kicked' : reason);
     if (!sp.owner) this.say(`§e${sp.name} ${reason}`);
     this.onPlayersChanged();
   }
@@ -459,7 +463,10 @@ export class Game {
     if (!w.chunkAt(Math.floor(a.x), Math.floor(a.z))) return false;
     if (w.loadProgress(a.x, a.z, 2) < 0.99) return false;
     sp.pendingArrival = null;
-    if (w.dimension === 'end') {
+    if (a.stay) {
+      // resuming: stay put (but don't leave anyone stuck inside blocks that changed while they were away)
+      if (p.isInsideOpaque() && !p.spectator) p.setPos(p.x, w.topSolidY(Math.floor(p.x), Math.floor(p.z)) + 1, p.z);
+    } else if (w.dimension === 'end') {
       // the obsidian arrival platform (rebuilt every time, like the real game)
       const c: [number, number, number, number][] = [];
       for (let dx = -2; dx <= 2; dx++)

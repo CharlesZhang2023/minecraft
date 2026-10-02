@@ -123,7 +123,7 @@ export class ServerPlayer {
   dim: Dimension = 'overworld';
   viewDistance = 8;
   /** Waiting for the ground under a portal / respawn spot to load. */
-  pendingArrival: { x: number; y: number; z: number; toSpawn: boolean } | null = null;
+  pendingArrival: { x: number; y: number; z: number; toSpawn: boolean; stay?: boolean } | null = null;
   portalTime = 0;
   portalCooldown = 0;
   traveling = false;
@@ -180,6 +180,12 @@ export class ServerPlayer {
       case 'close': g.asActor(this, () => { this.ui.fromClient = true; this.ui.open(null); this.ui.fromClient = false; }); break;
       case 'respawn': g.respawn(this); break;
       case 'wake': this.wake(); break;
+      case 'need': {
+        // the client's own generation didn't match: send the real chunk
+        const k = chunkKey(Number(m.cx), Number(m.cz));
+        if (this.sentChunks.get(k) === 0) this.sentChunks.delete(k);
+        break;
+      }
       case 'dismount': if (this.entity.riding) g.asActor(this, () => this.entity.riding?.dismount()); break;
     }
   }
@@ -325,7 +331,9 @@ export class ServerPlayer {
     else if (st === 0) this.sentChunks.delete(k);
   }
   tileChanged(x: number, y: number, z: number) {
-    if (this.sentChunks.get(chunkKey(x >> 4, z >> 4)) !== 1) return;
+    const k = chunkKey(x >> 4, z >> 4), st = this.sentChunks.get(k);
+    if (st === 0) { this.sentChunks.delete(k); return; }
+    if (st !== 1) return;
     const t = this.game.dims.get(this.dim)?.world.getTile(x, y, z);
     this.outTiles.push([x, y, z, t ? encodeValue(t) : null]);
   }
@@ -409,8 +417,7 @@ export class ServerPlayer {
         if (d > (r + 0.5) * (r + 0.5)) continue;
         const cx = pcx + dx, cz = pcz + dz, k = chunkKey(cx, cz);
         const st = this.sentChunks.get(k);
-        // generated ones get the real data once they come into simulation range
-        if (st === 1 || (st === 0 && d > (near + 0.5) * (near + 0.5))) continue;
+        if (st !== undefined) continue;
         want.push([d, cx, cz]);
       }
     want.sort((a, b) => a[0] - b[0]);
@@ -418,7 +425,14 @@ export class ServerPlayer {
       if (budget <= 0) break;
       const k = chunkKey(cx, cz);
       const c = w.getChunk(cx, cz);
-      if (c?.ready) { this.sendChunk(cx, cz, c); budget--; continue; }
+      if (c?.ready) {
+        // untouched since it was generated: the client can make it itself (and checks the result)
+        if (c.genHash !== null && !c.modified && !w.savedKeys.has(cx + ',' + cz)) {
+          this.sentChunks.set(k, 0);
+          this.send({ t: 'gen', cx, cz, h: c.genHash });
+        } else { this.sendChunk(cx, cz, c); budget--; }
+        continue;
+      }
       if (d <= (near + 0.5) * (near + 0.5)) continue; // the server is loading it
       const key = cx + ',' + cz;
       if (!w.savedKeys.has(key)) {

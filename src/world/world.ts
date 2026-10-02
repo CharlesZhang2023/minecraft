@@ -3,6 +3,7 @@ import { CHUNK_H, idOf, metaOf, BLOCKS, B, OPAQUE, LIGHT_OPACITY, LIGHT_EMIT } f
 import type { MeshResult } from './mesher';
 import { Storage, SavedChunk, rleEncode, rleDecode } from '../game/storage';
 import WorkerCtor from './worker.ts?worker&inline';
+import { chunkHash } from '../net/protocol';
 
 export const chunkKey = (cx: number, cz: number) => (cx + 0x8000) * 0x10000 + (cz + 0x8000);
 export const keyStr = (cx: number, cz: number) => cx + ',' + cz;
@@ -27,6 +28,10 @@ export class Chunk {
   urgent = false;
   /** Client: the server said this chunk is untouched terrain, so we generate it ourselves from the seed. */
   localGen = false;
+  /** Server: hash of the blocks as generated (only for chunks fresh from the generator). */
+  genHash: number | null = null;
+  /** Client: what the generated blocks must hash to (the server's copy); null = not checked. */
+  expectHash: number | null = null;
   mesh: unknown = null; // owned by the renderer
   tiles = new Map<number, TileEntity>();
   lastSeen = 0;
@@ -275,7 +280,7 @@ export class World {
   }
 
   /** Client: generate this chunk ourselves (the server says it's still exactly what the seed makes). */
-  generateChunk(cx: number, cz: number) {
+  generateChunk(cx: number, cz: number, hash: number | null = null) {
     const k = chunkKey(cx, cz);
     let c = this.chunks.get(k);
     if (c?.ready || c?.loading) return;
@@ -284,7 +289,11 @@ export class World {
       this.chunks.set(k, c);
     }
     c.localGen = true;
+    c.expectHash = hash;
   }
+
+  /** Client: terrain we generated came out different from the server's (another browser's maths): ask for it. */
+  onGenMismatch: (cx: number, cz: number) => void = () => {};
 
   /** Client: the server stopped tracking a chunk for us. */
   dropChunk(cx: number, cz: number) {
@@ -383,6 +392,8 @@ export class World {
   }
 
   private acceptChunk(c: Chunk, blocks: Uint16Array, biomes: Uint8Array, tiles?: [number, TileEntity][], spawns?: { type: string; x: number; y: number; z: number; data?: Record<string, unknown> }[]) {
+    // server: a fresh chunk's fingerprint, so clients can generate it themselves and check
+    if (this.role === 'server' && !this.savedKeys.has(keyStr(c.cx, c.cz))) c.genHash = chunkHash(blocks);
     c.blocks = blocks;
     c.biomes = biomes;
     c.ready = true;
@@ -407,6 +418,12 @@ export class World {
     if (d.type === 'gen') {
       if (this.chunks.get(chunkKey(c.cx, c.cz)) !== c) return; // unloaded meanwhile
       if (!c.loading) return; // the server sent the real thing while we were generating
+      if (c.expectHash !== null && chunkHash(d.blocks as Uint16Array) !== c.expectHash) {
+        c.loading = false;
+        c.localGen = false;
+        this.onGenMismatch(c.cx, c.cz);
+        return;
+      }
       this.acceptChunk(c, d.blocks as Uint16Array, d.biomes as Uint8Array, undefined, d.spawns as { type: string; x: number; y: number; z: number }[]);
       c.modified = !!(d.spawns as unknown[] | undefined)?.length; // remember that inhabitants were spawned
     } else if (d.type === 'mesh' || d.type === 'light') {

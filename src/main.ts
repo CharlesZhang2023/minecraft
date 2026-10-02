@@ -31,6 +31,13 @@ try {
     const g = game.server!, sp = g.players[0], d = g.dims.get(sp.dim);
     return { g, sp, p: sp.entity, d, w: d?.world };
   };
+  // development: two tabs can play together without a network (tests)
+  if (import.meta.env.DEV) {
+    (window as unknown as { mp: unknown }).mp = {
+      host: async (ch: string) => game.acceptGuest((await import('./net/bc')).bcConn(ch, 'host')),
+      join: async (ch: string) => game.joinRemote((await import('./net/bc')).bcConn(ch, 'guest')),
+    };
+  }
   game.start();
   // never lose progress: save when the tab is hidden or closed
   document.addEventListener('visibilitychange', () => {

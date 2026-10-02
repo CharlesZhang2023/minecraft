@@ -6,7 +6,7 @@ import type { Ctx } from './gui';
 import { Storage, WorldMeta } from '../game/storage';
 import { hashString } from '../noise';
 import { getTexture } from '../render/textures';
-import { GameMode } from '../game/player';
+import { MultiplayerScreen, HostScreen } from './multiplayer';
 
 const SPLASHES = [
   'Now in JavaScript!', 'Also try Terraria!', '100% procedural!', 'Punching trees!', 'Blocky!', 'Made with WebGL 2!', 'Now with caves!',
@@ -87,7 +87,7 @@ export class TitleScreen extends Screen {
     const x = W / 2 - 100, y = H / 4 + 48;
     this.widgets = [
       new Button(this.ui, x, y, 200, 20, 'Singleplayer', () => this.ui.open(new SelectWorldScreen(this.ui))),
-      Object.assign(new Button(this.ui, x, y + 24, 200, 20, 'Multiplayer', () => {}), { enabled: false }),
+      new Button(this.ui, x, y + 24, 200, 20, 'Multiplayer', () => this.ui.open(new MultiplayerScreen(this.ui, this))),
       new Button(this.ui, x, y + 48, 200, 20, 'Quick Play: New World', () => quickPlay(this.ui)),
       new Button(this.ui, x, y + 84, 98, 20, 'Options...', () => this.ui.open(new OptionsScreen(this.ui, this))),
       new Button(this.ui, x + 102, y + 84, 98, 20, 'Controls', () => this.ui.open(new ControlsScreen(this.ui, this))),
@@ -356,19 +356,20 @@ export class PauseScreen extends Screen {
     const y = H / 4 + 8;
     this.widgets = [
       new Button(this.ui, W / 2 - 100, y + 16, 200, 20, 'Back to Game', () => this.ui.close()),
-      Object.assign(new Button(this.ui, W / 2 - 100, y + 40, 98, 20, 'Advancements', () => {}), { enabled: false }),
+      // your own world: let others in (the real game's "Open to LAN"); in someone else's, nothing to open
+      Object.assign(new Button(this.ui, W / 2 - 100, y + 40, 98, 20, this.game.room || this.game.guests().length ? 'Players...' : 'Open to LAN', () => this.ui.open(new HostScreen(this.ui, this))), { enabled: !!this.game.server && !this.game.remote }),
       // phones have no F5: the camera toggle takes the Statistics slot
       device.touch
         ? new Button(this.ui, W / 2 + 2, y + 40, 98, 20, () => ['First Person', 'Back View', 'Front View'][this.game.thirdPerson], () => { this.game.thirdPerson = (this.game.thirdPerson + 1) % 3; })
         : Object.assign(new Button(this.ui, W / 2 + 2, y + 40, 98, 20, 'Statistics', () => {}), { enabled: false }),
       new Button(this.ui, W / 2 - 100, y + 64, 98, 20, 'Options...', () => this.ui.open(new OptionsScreen(this.ui, this))),
       new Button(this.ui, W / 2 + 2, y + 64, 98, 20, 'Controls', () => this.ui.open(new ControlsScreen(this.ui, this))),
-      new Button(this.ui, W / 2 - 100, y + 104, 200, 20, 'Save and Quit to Title', () => this.quit()),
+      new Button(this.ui, W / 2 - 100, y + 104, 200, 20, this.game.remote ? 'Disconnect' : 'Save and Quit to Title', () => this.quit()),
     ];
   }
   async quit() {
     const g = this.game;
-    this.ui.open(new LoadingScreen(this.ui, 'Saving world'));
+    this.ui.open(new LoadingScreen(this.ui, g.remote ? 'Disconnecting' : 'Saving world'));
     await g.closeWorld(true);
     this.ui.open(new TitleScreen(this.ui));
   }

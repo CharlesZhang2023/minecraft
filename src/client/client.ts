@@ -40,6 +40,9 @@ import { Game } from '../game/game';
 import type { Conn, Msg } from '../net/conn';
 import { loopbackPair } from '../net/conn';
 import { makePuppet, applyState, decodeValue, syncInventory, State } from '../net/replicate';
+import { RoomHost } from '../net/signal';
+import { fingerprint, cleanName, MAX_PLAYERS } from '../net/protocol';
+import type { ServerPlayer } from '../server/splayer';
 
 export const TICK_MS = 50;
 
@@ -149,6 +152,12 @@ export class Client {
   serverOpening = false;
   /** What was typed in chat, for the up-arrow. */
   chatHistory = { history: [] as string[] };
+  /** Hosting: the room others join with its code (and find in the nearby list). */
+  room: RoomHost | null = null;
+  /** The room's connection to the signaling service dropped (players already in keep playing). */
+  roomLost = false;
+  /** Connections that haven't introduced themselves yet. */
+  private pendingGuests: { conn: Conn; since: number }[] = [];
 
   constructor(glCanvas: HTMLCanvasElement, uiCanvas: HTMLCanvasElement) {
     this.options = loadOptions();
@@ -234,6 +243,75 @@ export class Client {
     await server.addPlayer(theirs, this.options.playerName || 'Player', true);
   }
 
+  // ------------------------------------------------------------------ playing with others
+  /** Open this world to other players: an online room with a code (and, if `lan`, listed for nearby devices). */
+  async openToOthers(lan: boolean): Promise<RoomHost> {
+    if (!this.server || this.remote) throw new Error('Only the person whose world it is can open it');
+    if (this.room && !this.roomLost) return this.room;
+    this.room?.close();
+    const room = await RoomHost.open({ lan, name: this.server.meta?.name || 'Minecraft World' });
+    room.onGuest = (c) => this.acceptGuest(c);
+    room.onLost = () => { this.roomLost = true; this.ui.chat.add('§cLost the connection to the game service: new players can\'t join until you open the world again'); };
+    this.room = room;
+    this.roomLost = false;
+    room.players = this.server.players.length;
+    return room;
+  }
+
+  stopHosting() {
+    this.room?.close();
+    this.room = null;
+  }
+
+  /** A connection from someone who wants to join (through the room or offline pairing). */
+  acceptGuest(conn: Conn) {
+    this.pendingGuests.push({ conn, since: performance.now() });
+  }
+
+  /** Let guests in once they've said who they are (and they're running the same game). */
+  private checkGuests() {
+    const server = this.server;
+    for (const g of [...this.pendingGuests]) {
+      const drop = (why: string) => { g.conn.close(why); this.pendingGuests.splice(this.pendingGuests.indexOf(g), 1); };
+      if (g.conn.closed || !server || server.closed) { drop('The host closed the game'); continue; }
+      const msgs = g.conn.poll();
+      const hello = msgs.find((m) => m.t === 'hello');
+      if (!hello) {
+        if (msgs.length) g.conn.close('Bad handshake');
+        else if (performance.now() - g.since > 15000) drop('Timed out');
+        continue;
+      }
+      const name = cleanName(hello.name);
+      if (hello.v !== fingerprint()) { drop('The host is running a different version of the game: reload the page'); continue; }
+      if (!name) { drop('Pick a name first (Multiplayer screen)'); continue; }
+      if (server.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) { drop(`Someone called ${name} is already playing`); continue; }
+      if (server.players.length >= MAX_PLAYERS) { drop('The game is full'); continue; }
+      this.pendingGuests.splice(this.pendingGuests.indexOf(g), 1);
+      server.addPlayer(g.conn, name, false, msgs.filter((m) => m !== hello)).then(() => {
+        if (this.room) this.room.players = server.players.length;
+      }).catch(() => g.conn.close('Could not join'));
+    }
+  }
+
+  /** The host's player list (everyone but the host). */
+  guests(): ServerPlayer[] {
+    return this.server?.players.filter((p) => !p.owner) ?? [];
+  }
+
+  kick(sp: ServerPlayer) {
+    this.server?.removePlayer(sp, 'was kicked');
+    if (this.room && this.server) this.room.players = this.server.players.length;
+  }
+
+  /** Play in someone else's world over an open connection. */
+  async joinRemote(conn: Conn) {
+    await this.closeWorld(false);
+    conn.send({ t: 'hello', name: this.options.playerName, v: fingerprint() });
+    this.connect(conn, true);
+    const loading = new LoadingScreen(this.ui, 'Joining world');
+    this.ui.open(loading);
+  }
+
   /** The title screen's backdrop: a world generated and drawn locally, nobody in it. */
   private openPanorama(meta: WorldMeta) {
     this.panorama = true;
@@ -262,6 +340,7 @@ export class Client {
     this.world = world;
     world.onMesh = (c, r) => this.renderer.uploadChunk(c, r);
     world.onUnload = (c) => this.renderer.freeChunk(c);
+    world.onGenMismatch = (cx, cz) => this.conn?.send({ t: 'need', cx, cz });
     this.particles = new Particles(world);
     this.weather = new Weather(this as unknown as Game);
     this.interact = new ClientInteract(this);
@@ -280,6 +359,9 @@ export class Client {
   }
 
   async closeWorld(_save = true) {
+    this.stopHosting();
+    for (const g of this.pendingGuests) g.conn.close('The host closed the game');
+    this.pendingGuests = [];
     const server = this.server, conn = this.conn;
     this.conn = null;
     this.server = null;
@@ -340,6 +422,7 @@ export class Client {
     }
     if (n >= 10) this.acc = 0;
     if (!this.server && this.conn) this.receive();
+    if (this.pendingGuests.length) this.checkGuests();
     this.ui.tick(dt);
     this.partial = paused ? 1 : this.acc / TICK_MS;
     this.ui.touch.update();
@@ -570,7 +653,7 @@ export class Client {
         break;
       }
       case 'unchunk': this.world?.dropChunk(m.cx as number, m.cz as number); break;
-      case 'gen': this.world?.generateChunk(m.cx as number, m.cz as number); break;
+      case 'gen': this.world?.generateChunk(m.cx as number, m.cz as number, typeof m.h === 'number' ? m.h : null); break;
       case 'tp': {
         const p = this.player;
         if (!p) break;
@@ -1041,6 +1124,26 @@ export class Client {
       r.gl.polygonOffset(-1, -10);
       r.drawDyn(m, { blend: true, fullbright: true, alphaCut: 0.01 });
       r.gl.disable(r.gl.POLYGON_OFFSET_FILL);
+    }
+  }
+
+  /** Other players' names over their heads (dimmer through walls and while they sneak). */
+  nameTags(ctx: CanvasRenderingContext2D) {
+    const r = this.renderer, cam = this.cam, t = this.partial, gui = this.gui;
+    const mul = (m: Float32Array | number[], v: number[]) => [0, 1, 2, 3].map((i) => m[i] * v[0] + m[4 + i] * v[1] + m[8 + i] * v[2] + m[12 + i] * v[3]);
+    for (const e of this.entities) {
+      if (!(e instanceof Player) || e.dead || !e.name || e.spectator) continue;
+      const x = e.lerpX(t) - cam.x, y = e.lerpY(t) + e.height + 0.45 - cam.y, z = e.lerpZ(t) - cam.z;
+      if (x * x + y * y + z * z > 64 * 64) continue;
+      const c = mul(r.proj as unknown as number[], mul(r.view as unknown as number[], [x, y, z, 1]));
+      if (c[3] < 0.1) continue;
+      const sx = ((c[0] / c[3] + 1) / 2) * gui.w, sy = ((1 - c[1] / c[3]) / 2) * gui.h;
+      const w = gui.font.width(e.name);
+      const d = Math.hypot(x, y, z) || 1;
+      const seen = !raycastBlocks(this.world!, cam.x, cam.y, cam.z, x / d, y / d, z / d, d - 0.5);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(Math.round(sx - w / 2 - 1), Math.round(sy - 9), w + 2, 9);
+      gui.text(ctx, e.name, Math.round(sx - w / 2), Math.round(sy - 8), seen && !e.sneaking ? '#FFFFFF' : 'rgba(255,255,255,0.35)', false);
     }
   }
 

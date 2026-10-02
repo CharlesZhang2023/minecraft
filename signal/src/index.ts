@@ -4,7 +4,9 @@
 //
 //   GET /health                                   → "ok"
 //   GET /room/<CODE>?role=host&key=<secret>       → WebSocket, as the room's host (key lets it reconnect)
+//       &lan=1&name=<world>                         ... and list it for devices on the same network
 //   GET /room/<CODE>?role=guest                   → WebSocket, as a guest
+//   GET /lan                                      → {rooms: [{code, name, players}]} listed from your network
 // Also served under /signal/... (mc.iloveust.com proxies /signal/ here so the game can stay same-origin).
 //
 // Messages are JSON text frames:
@@ -12,6 +14,7 @@
 //   → host   {t:'join', id} / {t:'leave', id}
 //   → anyone {t:'signal', from, data}        relayed from {t:'signal', to, data}; guests can only talk to the host
 //   host →   {t:'kick', id}
+//   host →   {t:'list', name, players}       keeps a listed room fresh (every ~25 s)
 //   {t:'ping'} is answered with {t:'pong'} without waking the room.
 // Close codes: 4001 room taken, 4002 replaced by a reconnect, 4003 kicked, 4004 no host, 4008 bad/too many
 // messages, 4010 host left, 4029 room full.
@@ -19,12 +22,15 @@ import { DurableObject } from 'cloudflare:workers';
 
 interface Env {
   ROOMS: DurableObjectNamespace<Room>;
+  LOBBY: DurableObjectNamespace<Lobby>;
+  /** openresty's proxy sends the player's real address with this secret (direct requests use Cloudflare's). */
+  PROXY_SECRET?: string;
   TURN_HOST: string;
   TURN_SECRET?: string;
   ALLOWED_ORIGINS: string;
 }
 
-interface Peer { id: string; role: 'host' | 'guest'; key?: string; replaced?: boolean }
+interface Peer { id: string; role: 'host' | 'guest'; key?: string; replaced?: boolean; lan?: string; name?: string }
 
 const MAX_GUESTS = 16;
 const MAX_MESSAGE = 16 * 1024;
@@ -36,14 +42,60 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/signal(?=\/)/, '');
     if (path === '/health') return new Response('ok');
+    if (path === '/lan') {
+      const net = netKey(clientIp(req, env));
+      const rooms = net ? await env.LOBBY.get(env.LOBBY.idFromName(net)).list() : [];
+      return Response.json({ rooms }, { headers: { 'Cache-Control': 'no-store', ...cors(req, env) } });
+    }
     const m = path.match(/^\/room\/([^/]+)$/);
     if (!m || !CODE.test(m[1])) return new Response('not found', { status: 404 });
     if (req.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('expected a websocket', { status: 426 });
     if (!originOk(req.headers.get('Origin'), env)) return new Response('forbidden', { status: 403 });
     const code = m[1].toUpperCase();
-    return env.ROOMS.get(env.ROOMS.idFromName(code)).fetch(req);
+    // the room learns which network its host is on (for the nearby-games list), never the address itself
+    const headers = new Headers(req.headers);
+    headers.set('X-Net', netKey(clientIp(req, env)) ?? '');
+    return env.ROOMS.get(env.ROOMS.idFromName(code)).fetch(new Request(req, { headers }));
   },
 } satisfies ExportedHandler<Env>;
+
+function clientIp(req: Request, env: Env): string | null {
+  const proxied = !!env.PROXY_SECRET && req.headers.get('X-Proxy-Secret') === env.PROXY_SECRET;
+  return (proxied ? req.headers.get('X-Client-IP') : null) ?? req.headers.get('CF-Connecting-IP');
+}
+
+/** Devices on one network share a public IPv4 address, or an IPv6 /64 prefix. */
+function netKey(ip: string | null): string | null {
+  if (!ip) return null;
+  if (!ip.includes(':')) return ip;
+  const [head, tail = ''] = ip.split('::');
+  const a = head ? head.split(':') : [], b = tail ? tail.split(':') : [];
+  const full = [...a, ...new Array(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b];
+  return full.slice(0, 4).map((g) => parseInt(g || '0', 16).toString(16)).join(':') + '::/64';
+}
+
+function cors(req: Request, env: Env): Record<string, string> {
+  const o = req.headers.get('Origin');
+  return o && originOk(o, env) ? { 'Access-Control-Allow-Origin': o, Vary: 'Origin' } : {};
+}
+
+/** Games listed per network, for "nearby games" (entries vanish if their host stops refreshing them). */
+export class Lobby extends DurableObject<Env> {
+  async register(code: string, name: string, players: number) {
+    await this.ctx.storage.put('room:' + code, { code, name: name.slice(0, 32), players: Math.max(1, Math.min(99, players | 0)), at: Date.now() });
+  }
+  async unregister(code: string) {
+    await this.ctx.storage.delete('room:' + code);
+  }
+  async list() {
+    const now = Date.now(), out: { code: string; name: string; players: number }[] = [];
+    for (const [k, v] of await this.ctx.storage.list<{ code: string; name: string; players: number; at: number }>({ prefix: 'room:' })) {
+      if (now - v.at > 70000) await this.ctx.storage.delete(k);
+      else out.push({ code: v.code, name: v.name, players: v.players });
+    }
+    return out;
+  }
+}
 
 function originOk(origin: string | null, env: Env) {
   if (!origin) return false;
@@ -92,6 +144,12 @@ export class Room extends DurableObject<Env> {
         old.close(4002, 'replaced');
       }
       peer = { id: 'host', role, key };
+      const net = req.headers.get('X-Net');
+      if (url.searchParams.get('lan') === '1' && net) {
+        peer.lan = net;
+        peer.name = (url.searchParams.get('name') ?? 'Minecraft world').slice(0, 32);
+        await this.env.LOBBY.get(this.env.LOBBY.idFromName(net)).register(code, peer.name, 1);
+      }
     } else {
       if (!hosts.length) return refuse(4004, 'no such room');
       if (this.ctx.getWebSockets('guest').length >= MAX_GUESTS) return refuse(4029, 'room full');
@@ -99,7 +157,7 @@ export class Room extends DurableObject<Env> {
     }
 
     this.ctx.acceptWebSocket(server, role === 'host' ? ['host'] : ['guest', peer.id]);
-    server.serializeAttachment(peer);
+    server.serializeAttachment({ ...peer, code });
     const ice = await this.iceServers(`${code}-${peer.id}`);
     if (role === 'host') {
       const peers = this.ctx.getWebSockets('guest').map((g) => (g.deserializeAttachment() as Peer).id);
@@ -114,7 +172,7 @@ export class Room extends DurableObject<Env> {
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
     const me = ws.deserializeAttachment() as Peer;
     if (typeof raw !== 'string' || raw.length > MAX_MESSAGE || !this.allow(me.id)) return ws.close(4008, 'bad or too many messages');
-    let m: { t?: unknown; to?: unknown; id?: unknown; data?: unknown };
+    let m: { t?: unknown; to?: unknown; id?: unknown; data?: unknown; name?: unknown; players?: unknown };
     try {
       m = JSON.parse(raw);
     } catch {
@@ -126,6 +184,10 @@ export class Room extends DurableObject<Env> {
       for (const t of target) t.send(JSON.stringify({ t: 'signal', from: me.id, data: m.data }));
     } else if (m.t === 'kick' && me.role === 'host' && typeof m.id === 'string' && m.id !== 'host') {
       for (const g of this.ctx.getWebSockets(m.id)) g.close(4003, 'kicked');
+    } else if (m.t === 'list' && me.role === 'host' && me.lan) {
+      const code = this.code(ws);
+      const name = typeof (m as { name?: unknown }).name === 'string' ? ((m as { name: string }).name).slice(0, 32) : me.name ?? '';
+      if (code) await this.env.LOBBY.get(this.env.LOBBY.idFromName(me.lan)).register(code, name, Number((m as { players?: unknown }).players) || 1);
     }
   }
 
@@ -137,8 +199,14 @@ export class Room extends DurableObject<Env> {
     this.gone(ws, 1011);
   }
 
+  /** The room's code (kept on each socket, since a hibernated room forgets everything else). */
+  private code(ws: WebSocket) {
+    return (ws.deserializeAttachment() as Peer & { code?: string }).code ?? null;
+  }
+
   private gone(ws: WebSocket, code: number) {
-    const me = ws.deserializeAttachment() as Peer;
+    const me = ws.deserializeAttachment() as Peer & { code?: string };
+    if (me.role === 'host' && me.lan && me.code && !me.replaced) this.ctx.waitUntil(this.env.LOBBY.get(this.env.LOBBY.idFromName(me.lan)).unregister(me.code));
     this.buckets.delete(me.id);
     try {
       ws.close(code >= 3000 && code < 5000 ? code : 1000);
