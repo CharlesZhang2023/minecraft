@@ -3,6 +3,7 @@
 // The dragon flies through blocks (except obsidian, bedrock and end stone), swoops at the player, shoves things
 // with its wings and bites with its head. Its body is made of several hit boxes; only the head takes full
 // damage. End crystals on the pillars heal it until they are destroyed.
+import { openGateway } from '../game/gateways';
 import { LivingEntity, DamageSource } from './living';
 import { Entity } from './entity';
 import type { World } from '../world/world';
@@ -433,6 +434,7 @@ export function finishDragonFight(g: Game) {
   g.achievements.unlock('theEnd2');
   g.ui.chat.add('§dThe Ender Dragon has been slain. The exit portal opens beneath you.');
   buildExitPortal(g);
+  openGateway(g);
 }
 
 /**

@@ -160,15 +160,20 @@ export class Spawner {
       if (biome.id === BIOME.DESERT || biome.id === BIOME.OCEAN || biome.id === BIOME.BEACH || biome.id === BIOME.RIVER) continue;
       const wolfy = biome.id === BIOME.TAIGA || biome.id === BIOME.SNOWY_TAIGA || biome.id === BIOME.FOREST;
       const types = wolfy && this.rng.int(3) === 0 ? ['wolf'] : biome.cold ? ['sheep', 'sheep', 'pig', 'chicken'] : ['pig', 'cow', 'sheep', 'sheep', 'chicken', 'cow'];
-      const type = types[this.rng.int(types.length)];
-      const count = 2 + this.rng.int(3);
+      let type = types[this.rng.int(types.length)];
+      let count = 2 + this.rng.int(3);
+      // herds of horses (now and then with a donkey) roam the plains and savanna, sharing a coat colour
+      const horsey = biome.id === BIOME.PLAINS || biome.id === BIOME.SAVANNA;
+      let herd = -1;
+      if (horsey && this.rng.int(biome.id === BIOME.PLAINS ? 3 : 5) === 0) { type = 'horse'; count = 2 + this.rng.int(5); herd = this.rng.int(7); }
       for (let i = 0; i < count; i++) {
         const x = x0 + this.rng.int(7) - 3, z = z0 + this.rng.int(7) - 3;
         const y = w.topSolidY(x, z) + 1;
         if (y <= 0 || w.getId(x, y - 1, z) !== B.GRASS) continue;
         if (!this.spawnable(x, y, z, 2)) continue;
         if (Math.hypot(x - p.x, z - p.z) < 16) continue;
-        g.interact!.spawnMob(type, x + 0.5, y, z + 0.5);
+        const m = g.interact!.spawnMob(herd >= 0 && this.rng.int(10) === 0 ? 'donkey' : type, x + 0.5, y, z + 0.5);
+        if (m && herd >= 0 && (m as unknown as { kind: string }).kind === 'horse') (m as unknown as { color: number }).color = herd;
       }
     }
   }

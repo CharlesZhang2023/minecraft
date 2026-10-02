@@ -687,3 +687,161 @@ export function silverfishSkin(): Skin {
   s.set(13, 6, hx('#101010')); s.set(14, 6, hx('#101010'));
   return s;
 }
+
+// ------------------------------------------------------------------ horses (1.8 ModelHorse proportions)
+// Texture 128x128. The head group (neck, head, muzzle, ears, mane) shares the neck pivot so it moves as one.
+const HORSE_UV = {
+  neck: [0, 0], head: [24, 0], muzzle: [24, 12], jaw: [48, 0], ear: [66, 0], longEar: [72, 0], mane: [78, 0],
+  tailBase: [90, 0], tailMid: [90, 5], tailTip: [90, 16], body: [0, 30], thigh: [68, 30], shin: [86, 30], hoof: [98, 30], foreleg: [68, 44],
+  saddle: [0, 64], saddleFront: [36, 64], saddleBack: [48, 64], strap: [70, 64], stirrup: [76, 64], bag: [0, 80],
+} as const;
+export function horseModel(long: boolean, inflate = 0): ModelDef {
+  const U = HORSE_UV, o = { inflate };
+  const ears = long
+    ? [box(0.45, -16, 4, 2, 7, 1, U.longEar[0], U.longEar[1], o), box(-2.45, -16, 4, 2, 7, 1, U.longEar[0], U.longEar[1], { mirror: true, inflate })]
+    : [box(0.45, -12, 4, 2, 3, 1, U.ear[0], U.ear[1], o), box(-2.45, -12, 4, 2, 3, 1, U.ear[0], U.ear[1], { mirror: true, inflate })];
+  const leg = (front: boolean, mirror: boolean) => [
+    front ? box(-1.9, -1, -2.1, 3, 8, 4, U.foreleg[0], U.foreleg[1], { mirror, inflate }) : box(-2.5, -2, -2.5, 4, 9, 5, U.thigh[0], U.thigh[1], { mirror, inflate }),
+    box(-2, 7, -1.5, 3, 5, 3, U.shin[0], U.shin[1], { mirror, inflate }),
+    box(-2.5, 12.1, -2, 4, 3, 4, U.hoof[0], U.hoof[1], { mirror, inflate }),
+  ];
+  return {
+    texW: 128, texH: 128,
+    parts: [
+      part('head', 0, 4, -10, [
+        box(-2.05, -9.8, -2, 4, 14, 8, U.neck[0], U.neck[1], o),
+        box(-2.5, -10, -1.5, 5, 5, 7, U.head[0], U.head[1], o),
+        box(-2, -10, -7, 4, 3, 6, U.muzzle[0], U.muzzle[1], o),
+        box(-2, -7, -6.5, 4, 2, 5, U.jaw[0], U.jaw[1], o),
+        ...ears,
+        box(-1, -11.5, 5, 2, 16, 4, U.mane[0], U.mane[1], o),
+      ], { rx: Math.PI / 6 }),
+      part('body', 0, 11, 9, [box(-5, -8, -19, 10, 10, 24, U.body[0], U.body[1], o)]),
+      part('tail', 0, 3, 14, [box(-1, -1, 0, 2, 2, 3, U.tailBase[0], U.tailBase[1], o), box(-1.5, -2, 3, 3, 4, 7, U.tailMid[0], U.tailMid[1], o), box(-1.5, -1.5, 9.5, 3, 4, 6, U.tailTip[0], U.tailTip[1], o)], { rx: -1.1 }),
+      part('leg1', 4, 9, 11, leg(false, false)),
+      part('leg2', -4, 9, 11, leg(false, true)),
+      part('leg3', 4, 9, -8, leg(true, false)),
+      part('leg4', -4, 9, -8, leg(true, true)),
+      part('saddle', 0, 2, 2, [
+        box(-5, 0, -3, 10, 1, 8, U.saddle[0], U.saddle[1]), box(-1.5, -1, -3, 3, 1, 2, U.saddleFront[0], U.saddleFront[1]), box(-4, -1, 3, 8, 1, 2, U.saddleBack[0], U.saddleBack[1]),
+        box(5, 0, 1, 1, 6, 1, U.strap[0], U.strap[1]), box(-6, 0, 1, 1, 6, 1, U.strap[0], U.strap[1]),
+        box(4.5, 6, 0, 2, 2, 3, U.stirrup[0], U.stirrup[1]), box(-6.5, 6, 0, 2, 2, 3, U.stirrup[0], U.stirrup[1]),
+      ]),
+      part('bags', 0, 0, 0, [box(5, 3, 4, 3, 8, 8, U.bag[0], U.bag[1]), box(-8, 3, 4, 3, 8, 8, U.bag[0], U.bag[1], { mirror: true })]),
+    ],
+  };
+}
+
+const HORSE_COATS: [string, string][] = [
+  ['#e9e4da', '#cfc8bb'], // white
+  ['#c8a06a', '#a27c4a'], // creamy
+  ['#9a5528', '#7a3e1a'], // chestnut
+  ['#6a4226', '#4e2f19'], // brown
+  ['#2c2622', '#1c1814'], // black
+  ['#7c7570', '#5e5854'], // gray
+  ['#40291a', '#2c1c10'], // dark brown
+];
+const HORSE_MANES = ['#bdb6aa', '#7a5a34', '#5a2a10', '#2a1a0e', '#121010', '#3a3634', '#1a100a'];
+
+/** Paint every box of the horse model; `coat` picks the colour for a face pixel (region name, face, x, y). */
+function paintHorse(s: Skin, coat: (region: string, f: Face, x: number, y: number, w: number, h: number) => [number, number, number] | null) {
+  const U = HORSE_UV;
+  const reg = (name: keyof typeof HORSE_UV, w: number, h: number, d: number) => s.paintBox(U[name][0], U[name][1], w, h, d, (f, x, y, fw, fh) => coat(name, f, x, y, fw, fh));
+  reg('neck', 4, 14, 8); reg('head', 5, 5, 7); reg('muzzle', 4, 3, 6); reg('jaw', 4, 2, 5); reg('ear', 2, 3, 1); reg('longEar', 2, 7, 1); reg('mane', 2, 16, 4);
+  reg('tailBase', 2, 2, 3); reg('tailMid', 3, 4, 7); reg('tailTip', 3, 4, 6); reg('body', 10, 10, 24); reg('thigh', 4, 9, 5); reg('shin', 3, 5, 3); reg('hoof', 4, 3, 4); reg('foreleg', 3, 8, 4);
+}
+
+function horseSaddle(s: Skin, r: Random) {
+  const U = HORSE_UV;
+  const leather = (f: Face, x: number, y: number) => vary(f === 'top' && (x === 0 || y === 0) ? hx('#8a5428') : hx('#6a3c1c'), r, 0.06);
+  s.paintBox(U.saddle[0], U.saddle[1], 10, 1, 8, leather);
+  s.paintBox(U.saddleFront[0], U.saddleFront[1], 3, 1, 2, leather);
+  s.paintBox(U.saddleBack[0], U.saddleBack[1], 8, 1, 2, leather);
+  s.paintBox(U.strap[0], U.strap[1], 1, 6, 1, () => hx('#3a2414'));
+  s.paintBox(U.stirrup[0], U.stirrup[1], 2, 2, 3, () => vary(hx('#a8a8a8'), r, 0.08));
+  s.paintBox(U.bag[0], U.bag[1], 3, 8, 8, (f, x, y) => (y === 1 ? hx('#3a2414') : vary(hx('#8a5a2c'), r, 0.06)));
+}
+
+const isHead = (n: string) => n === 'head' || n === 'muzzle' || n === 'jaw' || n === 'neck' || n === 'ear' || n === 'longEar';
+const isLeg = (n: string) => n === 'thigh' || n === 'shin' || n === 'foreleg' || n === 'hoof';
+
+export function horseSkin(color: number, markings: number): Skin {
+  const s = new Skin(128, 128);
+  const r = new Random(900 + color * 7 + markings);
+  const [base, dark] = HORSE_COATS[color].map(hx);
+  const mane = hx(HORSE_MANES[color]);
+  const white = hx('#ece9e2'), black = hx('#1a1614');
+  const spots = Array.from({ length: 40 }, () => [r.int(128), r.int(128)]);
+  const blobs = Array.from({ length: 7 }, () => [r.int(128), 30 + r.int(40), 4 + r.int(6)]);
+  paintHorse(s, (n, f, x, y, w, h) => {
+    const U = HORSE_UV[n as keyof typeof HORSE_UV];
+    const gx = U[0] + x, gy = U[1] + y;
+    if (n === 'mane' || n === 'tailMid' || n === 'tailTip' || n === 'tailBase') return vary(r.int(4) ? mane : shade3(mane, 1.25), r, 0.08);
+    if (n === 'hoof') return vary(hx('#3c3632'), r, 0.06);
+    let c = vary(r.int(5) ? base : dark, r, 0.04);
+    // shading: belly and lower legs a touch darker
+    if ((n === 'body' && f === 'bottom') || (isLeg(n) && y > h * 0.6)) c = shade3(c, 0.88);
+    if (n === 'head' && f !== 'top' && f !== 'bottom' && (f === 'left' || f === 'right') && y === 2 && x === Math.floor(w * 0.3)) return hx('#0e0c0a'); // eyes
+    if (n === 'muzzle' && f === 'front' && y === 1 && (x === 0 || x === w - 1)) return hx('#181412'); // nostrils
+    switch (markings) {
+      case 1: // white socks and a blaze
+        if ((n === 'shin' || (n === 'foreleg' && y > 5)) ) return vary(white, r, 0.03);
+        if ((n === 'muzzle' || n === 'head') && f === 'top' && x >= 1 && x <= w - 2) return vary(white, r, 0.03);
+        if (n === 'muzzle' && f === 'front') return vary(white, r, 0.03);
+        break;
+      case 2: // white field: big patches
+        if (blobs.some(([bx, by, br]) => Math.hypot(gx - bx, gy - by) < br) || (n === 'shin' && y > 1)) return vary(white, r, 0.03);
+        break;
+      case 3: // white dots
+        if (!isHead(n) && spots.some(([sx, sy]) => Math.abs(gx - sx) + Math.abs(gy - sy) < 1.5)) return vary(white, r, 0.03);
+        break;
+      case 4: // black dots
+        if (!isHead(n) && spots.some(([sx, sy]) => Math.abs(gx - sx) + Math.abs(gy - sy) < 1.5)) return vary(black, r, 0.03);
+        break;
+    }
+    return c;
+  });
+  horseSaddle(s, r);
+  return s;
+}
+
+export function donkeySkin(mule: boolean): Skin {
+  const s = new Skin(128, 128);
+  const r = new Random(mule ? 77 : 66);
+  const base = hx(mule ? '#6a4630' : '#8a7c6c'), dark = hx(mule ? '#523422' : '#6e6254'), pale = hx(mule ? '#a88a6a' : '#cfc4b4');
+  const mane = hx(mule ? '#2c1c10' : '#4a3e34');
+  paintHorse(s, (n, f, x, y, w, h) => {
+    if (n === 'mane' || n.startsWith('tail')) return vary(mane, r, 0.08);
+    if (n === 'hoof') return vary(hx('#3c3632'), r, 0.06);
+    if (n === 'head' && (f === 'left' || f === 'right') && y === 2 && x === Math.floor(w * 0.3)) return hx('#0e0c0a');
+    // pale muzzle and belly, a dark stripe down the back
+    if (n === 'muzzle' || n === 'jaw') return vary(pale, r, 0.04);
+    if (n === 'body' && f === 'bottom') return vary(pale, r, 0.04);
+    if (n === 'body' && f === 'top' && (x === 4 || x === 5)) return vary(mane, r, 0.06);
+    if (n === 'longEar' && f === 'front') return vary(shade3(base, 0.7), r, 0.05);
+    if (isLeg(n) && y > h * 0.7) return vary(dark, r, 0.05);
+    return vary(r.int(5) ? base : dark, r, 0.04);
+  });
+  horseSaddle(s, r);
+  return s;
+}
+
+/** Horse armour layer (drawn on a slightly inflated model): plates on the head, neck, body and upper legs. */
+export function horseArmorSkin(kind: string): Skin {
+  const s = new Skin(128, 128);
+  const r = new Random(31);
+  const [hi, mid, lo] = ({ iron: ['#eeeeee', '#c4c4c4', '#8a8a8a'], gold: ['#fff6a8', '#f0c830', '#b08a10'], diamond: ['#d0fff6', '#4ae0d0', '#1a8a80'] } as Record<string, string[]>)[kind].map(hx);
+  paintHorse(s, (n, f, x, y, w, h) => {
+    if (n === 'mane' || n.startsWith('tail') || n === 'hoof' || n === 'shin' || n === 'ear' || n === 'longEar' || n === 'jaw') return null;
+    if (n === 'thigh' || n === 'foreleg') { if (y > h * 0.6) return null; }
+    if (n === 'body' && f === 'bottom') return null;
+    if (n === 'head' && (f === 'left' || f === 'right') && y === 2 && x === Math.floor(w * 0.3)) return null; // eye holes
+    const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1;
+    return vary(edge ? lo : (x + y) % 5 === 0 ? hi : mid, r, 0.04);
+  });
+  return s;
+}
+
+function shade3(c: [number, number, number], f: number): [number, number, number] {
+  return c.map((v) => Math.max(0, Math.min(255, Math.round(v * f)))) as [number, number, number];
+}

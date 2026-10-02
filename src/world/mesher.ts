@@ -7,6 +7,7 @@ import {
 } from './blocks';
 import { BIOMES } from './biomes';
 import { modelBoxes, facing6CubeFaces } from './models';
+import { railShape, railTexture, isAscending } from './rails';
 
 const R = 48;
 const RA = R * R;
@@ -50,9 +51,11 @@ class Buf {
   v(x: number, y: number, z: number, u: number, vv: number, layer: number, s: number, bl: number, col: number, a: number) {
     const o = this.verts++;
     const o16 = o * 8, o8 = o * 16;
-    this.u16[o16] = Math.round((x + 16) * 16);
-    this.u16[o16 + 1] = Math.round((y + 16) * 16);
-    this.u16[o16 + 2] = Math.round((z + 16) * 16);
+    // positions in 1/128 block steps: fine enough for thin layers (redstone dust 1/64 above the ground, the line
+    // up a step 1/64 off the wall) to stay off the faces behind them instead of z-fighting with them
+    this.u16[o16] = Math.round((x + 16) * 128);
+    this.u16[o16 + 1] = Math.round((y + 16) * 128);
+    this.u16[o16 + 2] = Math.round((z + 16) * 128);
     this.u16[o16 + 3] = layer;
     this.u8[o8 + 8] = Math.round(u * 8);
     this.u8[o8 + 9] = Math.round(vv * 8);
@@ -308,6 +311,7 @@ export function buildChunk(chunks: Uint16Array[], biomes: Uint8Array[], hasSky =
           case Render.Torch: meshTorch(i, v, x, y, z); break;
           case Render.Crops: meshCrops(i, v, x, y, z); break;
           case Render.Model: meshModel(i, v, id, def, x, y, z, col); break;
+          case Render.Rail: meshRail(i, v, def, x, y, z); break;
         }
       }
   }
@@ -485,6 +489,36 @@ function meshCross(i: number, id: number, def: BlockDef, x: number, y: number, z
   }
   quadBoth(buf, [[x0, y, z0], [x1, y, z1], [x1, y + 1, z1], [x0, y + 1, z0]], CROSS_UV, tex, s, b, c, 1);
   quadBoth(buf, [[x0, y, z1], [x1, y, z0], [x1, y + 1, z0], [x0, y + 1, z1]], CROSS_UV, tex, s, b, c, 1);
+}
+
+/**
+ * Track: one quad just above the ground, or a slope up to the next block. The texture runs north-south; it's
+ * turned for east-west track, and the corner piece (joining south and east) is turned for the other curves.
+ */
+function meshRail(i: number, v: number, def: BlockDef, x: number, y: number, z: number) {
+  const shape = railShape(v);
+  const tex = railTexture(v, def.faces);
+  const turns = [0, 1, 1, 1, 0, 0, 0, 1, 2, 3][shape];
+  // height of each corner (x0z0, x1z0, x1z1, x0z1) above the block's floor
+  const lo = 1 / 16, hi = 1 + 1 / 16;
+  const h = [lo, lo, lo, lo];
+  if (isAscending(shape)) {
+    const up = [[1, 2], [0, 3], [0, 1], [2, 3]][shape - 2];
+    for (const c of up) h[c] = hi;
+  }
+  const cx = [0, 1, 1, 0], cz = [0, 0, 1, 1];
+  const pts: number[][] = [], uv: number[][] = [];
+  for (let k = 0; k < 4; k++) {
+    // texture coordinate seen at this corner, turning the texture clockwise (seen from above) `turns` times
+    let a = cx[k] * 16, b = cz[k] * 16;
+    for (let r = 0; r < turns; r++) { const t = a; a = b; b = 16 - t; }
+    pts.push([x + cx[k], y + h[k], z + cz[k]]);
+    uv.push([a, b]);
+  }
+  const s = sky[i], b = blk[i];
+  // a slope is lit from the block above it, where most of it is
+  const top = isAscending(shape) ? i + RA : i;
+  quadBoth(opaqueBuf, pts, uv, tex, Math.max(s, sky[top]), Math.max(b, blk[top]), WHITE, 1);
 }
 
 function meshCrops(i: number, v: number, x: number, y: number, z: number) {

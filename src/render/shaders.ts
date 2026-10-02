@@ -49,7 +49,7 @@ out vec2 v_light;
 out vec3 v_dist;
 flat out int v_masked;
 void main() {
-  vec3 p = vec3(a_pos.xyz) / 16.0 - 16.0 + u_offset;
+  vec3 p = vec3(a_pos.xyz) / 128.0 - 16.0 + u_offset;
   gl_Position = u_viewProj * vec4(p, 1.0);
   v_uv = vec3(a_uvl.xy / 128.0, float(a_pos.w & 0x7fffu));
   v_masked = int(a_pos.w >> 15u);
@@ -189,6 +189,8 @@ uniform vec3 u_sunDir;
 uniform float u_stars;
 uniform float u_celestial;
 uniform float u_end;
+uniform sampler2D u_endSky;
+uniform float u_endLod;
 in vec2 v_ndc;
 out vec4 o;
 float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -203,11 +205,9 @@ void main() {
     if (a.x >= a.y && a.x >= a.z) { uv = d.zy / a.x; face = d.x > 0.0 ? 0.0 : 1.0; }
     else if (a.y >= a.z) { uv = d.xz / a.y; face = d.y > 0.0 ? 2.0 : 3.0; }
     else { uv = d.xy / a.z; face = d.z > 0.0 ? 4.0 : 5.0; }
-    vec2 cell = floor((uv * 0.5 + 0.5) * 22.0);
-    float h = hash(vec3(cell, face + 1.0)), h2 = hash(vec3(cell * 0.31 + 5.0, face + 9.0));
-    vec3 e = vec3(0.075, 0.055, 0.105) * (0.5 + 1.0 * h) + vec3(0.025, 0.0, 0.035) * h2;
-    // slightly lighter toward the horizon so the void under the island reads as depth
-    e += u_fogColor * smoothstep(0.35, -0.6, up) * 0.6;
+    // vanilla: the end_sky texture tiled 16 times across each face of a box, tinted to 40/255
+    vec2 st = (uv * 0.5 + 0.5) * 16.0 + vec2(face * 0.37, face * 0.61);
+    vec3 e = textureLod(u_endSky, st, u_endLod).rgb * (40.0 / 255.0);
     o = vec4(e, 1.0);
     return;
   }

@@ -163,19 +163,26 @@ export function facing6CubeFaces(id: number, meta: number, tex: Int32Array, rot:
   } else tex[frontFace] = def.faces[6];
 }
 
+const wireComp = (v: number) => {
+  const id = idOf(v);
+  return id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH || id === B.REDSTONE_BLOCK || id === B.DETECTOR_RAIL;
+};
+
 /** Which horizontal sides (N,E,S,W) a redstone wire connects to (including up/down steps). */
 export function wireConnections(nb: Neighbor): boolean[] {
-  const comp = (v: number) => {
-    const id = idOf(v);
-    return id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH || id === B.REDSTONE_BLOCK;
-  };
   const aboveOpaque = OPAQUE[idOf(nb(0, 1, 0))] === 1;
   return HORIZ.map(([dx, dz]) => {
-    if (comp(nb(dx, 0, dz))) return true;
+    if (wireComp(nb(dx, 0, dz))) return true;
     if (!aboveOpaque && idOf(nb(dx, 1, dz)) === B.REDSTONE_WIRE) return true;
     if (OPAQUE[idOf(nb(dx, 0, dz))] !== 1 && idOf(nb(dx, -1, dz)) === B.REDSTONE_WIRE) return true;
     return false;
   });
+}
+
+/** Sides (N,E,S,W) where the wire climbs the face of a solid block to dust on top of it. */
+export function wireClimbs(nb: Neighbor): boolean[] {
+  if (OPAQUE[idOf(nb(0, 1, 0))] === 1) return [false, false, false, false];
+  return HORIZ.map(([dx, dz]) => OPAQUE[idOf(nb(dx, 0, dz))] === 1 && idOf(nb(dx, 1, dz)) === B.REDSTONE_WIRE);
 }
 
 const connectsFence = (self: number, v: number) => {
@@ -225,6 +232,8 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
     }
     case B.END_PORTAL:
       return [box(0, 0, 0, 16, 12, 16, T.endPortal, { skip: 0b110111 })];
+    case B.END_GATEWAY:
+      return [box(0, 0, 0, 16, 16, 16, T.endPortal)];
     case B.DRAGON_EGG: {
       // an egg built from stacked slices (widest near the bottom third)
       const t = f[0];
@@ -288,17 +297,20 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
     case B.NETHER_PORTAL:
       return meta & 1 ? [box(6, 0, 0, 10, 16, 16, T.portal, { cullSame: true })] : [box(0, 0, 6, 16, 16, 10, T.portal, { cullSame: true })];
     case B.REDSTONE_WIRE: {
+      // one quad on the ground (a texture per connection shape) plus a line up the face of any block it climbs
       const h = 0.25;
-      const out: Box[] = [box(0, 0, 0, 16, h, 16, T.dustDot, { skip: 0b110011 })];
-      if (nb) {
-        const conn = wireConnections(nb);
-        const arms: [number, number, number, number, number][] = [[0, 0, 16, 8, 0], [8, 0, 16, 16, 1], [0, 8, 16, 16, 0], [0, 0, 8, 16, 1]];
-        HORIZ.forEach((_, i) => {
-          if (!conn[i]) return;
-          const [ax0, az0, ax1, az1, r] = [arms[i][0], arms[i][1], arms[i][2], arms[i][3], arms[i][4]];
-          out.push(box(ax0, 0.01, az0, ax1, h + 0.01, az1, T.dustLine, { skip: 0b110111, rot: [0, 0, 0, r, 0, 0] }));
-        });
-      }
+      if (!nb) return [box(0, 0, 0, 16, h, 16, T.dustDot, { skip: 0b110111 })];
+      const conn = wireConnections(nb), up = wireClimbs(nb);
+      let mask = 0;
+      conn.forEach((c, i) => { if (c) mask |= 1 << i; });
+      const out: Box[] = [box(0, 0, 0, 16, h, 16, T.dust[mask], { skip: 0b110111 })];
+      // N, E, S, W: a thin plate against that side, showing only its face toward this block
+      const plates: [number, number, number, number, number][] = [[0, 0, 16, h, 0b011111], [16 - h, 0, 16, 16, 0b111110], [0, 16 - h, 16, 16, 0b101111], [0, 0, h, 16, 0b111101]];
+      up.forEach((u, i) => {
+        if (!u) return;
+        const [x0, z0, x1, z1, skip] = plates[i];
+        out.push(box(x0, 0, z0, x1, 16, z1, T.dustLine, { skip }));
+      });
       return out;
     }
     case B.LEVER: {
@@ -442,7 +454,12 @@ export function selectionShapes(v: number, nb?: Neighbor): Shape[] {
       const cx = 0.5 + dx * 0.34, cz = 0.5 + dz * 0.34;
       return [{ x0: cx - 0.16, y0: 0.2, z0: cz - 0.16, x1: cx + 0.16, y1: 0.8, z1: cz + 0.16 }];
     }
+    case Render.Rail: {
+      const s = metaOf(v) & (id === B.RAIL ? 15 : 7);
+      return [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: s >= 2 && s <= 5 ? 10 / 16 : 2 / 16, z1: 1 }];
+    }
     case Render.Model: {
+      if (id === B.REDSTONE_WIRE) return [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1 / 16, z1: 1 }];
       const shapes = modelBoxes(v, nb).map(toShape);
       if (id === B.LADDER) return collisionShapes(v, nb);
       if (id === B.LILY_PAD) return [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1 / 16, z1: 1 }];

@@ -1,3 +1,4 @@
+import { enterGateway } from '../game/gateways';
 import { Entity } from './entity';
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
@@ -290,6 +291,12 @@ export class Snowball extends Entity {
     const nx = this.x + this.vx, ny = this.y + this.vy, nz = this.z + this.vz;
     const ent = this.game.interact!.projectileHitEntity(this, nx, ny, nz);
     const id = this.world.getId(Math.floor(nx), Math.floor(ny), Math.floor(nz));
+    if (id === B.END_GATEWAY && this.kind === 'ender_pearl' && this.shooter === this.game.player) {
+      // a pearl thrown through an End gateway takes its thrower along
+      enterGateway(this.game, Math.floor(nx), Math.floor(ny), Math.floor(nz));
+      this.removed = true;
+      return;
+    }
     if (ent || BLOCKS[id].solid) {
       for (let i = 0; i < 8; i++) this.game.particles?.add({ x: this.x, y: this.y, z: this.z, vx: (Math.random() - 0.5) * 0.15, vy: Math.random() * 0.15, vz: (Math.random() - 0.5) * 0.15, layer: this.game.interact!.spriteLayer(this.kind), u0: 0.3, v0: 0.3, u1: 0.55, v1: 0.55, size: 0.06, life: 10 });
       if (this.kind === 'egg' && Math.random() < 0.125) this.game.interact!.spawnMob('chicken', this.x, this.y, this.z, true);

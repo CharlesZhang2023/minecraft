@@ -1,8 +1,8 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
 import type { Game } from './game';
-import { B, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater } from '../world/blocks';
+import { B, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail } from '../world/blocks';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, I2, I3, I4, stack, ItemDef, POTION_ITEMS } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, stack, ItemDef, POTION_ITEMS } from './items';
 import { ThrownPotion } from '../entity/potion';
 import { POTION_BY_KEY } from './potiondata';
 import { newBrewingTile } from './brewing';
@@ -11,6 +11,8 @@ import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { PrimedTnt, Arrow, Snowball, XpOrb, ItemEntity, FallingBlock, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
+import { Minecart, placeOnRail } from '../entity/minecart';
+import { layRail } from './tracks';
 import { EndCrystal } from '../entity/dragon';
 import { FishingHook } from '../entity/fishing';
 import { createEntity } from '../entity/registry';
@@ -452,6 +454,17 @@ export class Interaction {
       this.consume(1);
       return true;
     }
+    if (held.id === I5.MINECART) {
+      const at = placeOnRail(w, t.x, t.y, t.z);
+      if (!at) return false;
+      const c = new Minecart(w, g);
+      c.setPos(t.x + 0.5, at.y, t.z + 0.5);
+      c.yaw = c.pyaw = at.yaw;
+      g.addEntity(c);
+      g.playBlockSound(B.IRON_BLOCK, t.x, t.y, t.z, 'place');
+      this.consume(1);
+      return true;
+    }
     switch (held.id) {
       case I.BONE_MEAL:
         if (g.ticker!.fertilize(t.x, t.y, t.z)) {
@@ -606,7 +619,8 @@ export class Interaction {
       if (hit && hit.face === 3) {
         const b = new Boat(w, g);
         const onWater = w.getId(hit.x, hit.y, hit.z) === B.WATER;
-        b.setPos(hit.hx, hit.y + (onWater ? 0.9 : 1), hit.hz);
+        // on water: straight at the waterline it floats at
+        b.setPos(hit.hx, hit.y + (onWater ? 0.52 : 1), hit.hz);
         b.yaw = b.pyaw = p.yaw;
         g.addEntity(b);
         this.consume(1);
@@ -791,6 +805,7 @@ export class Interaction {
     else if (isPiston(blockId) || blockId === B.DISPENSER || blockId === B.DROPPER) meta = this.facingFromEntity(x, y, z);
     else if (blockId === B.OBSERVER) meta = this.facingFromEntity(x, y, z) ^ 1;
     else if (blockId === B.HOPPER) { meta = FACE_TO_FACING6[face] ^ 1; if (meta === 1) meta = 0; }
+    else if (isRail(blockId)) meta = facing & 1 ? 1 : 0;
     const v = pack(blockId, meta);
     if (blockId === B.OAK_DOOR) {
       if (!BLOCKS[w.getId(x, y + 1, z)].replaceable || !BLOCKS[w.getId(x, y - 1, z)].solid) return false;
@@ -834,6 +849,7 @@ export class Interaction {
     if (id === B.COMPARATOR) { w.setTile(x, y, z, { type: 'comparator', out: 0 }); g.ticker!.schedule(x, y, z, 2); }
     if (id === B.ANVIL) g.ticker!.schedule(x, y, z, 2);
     if (isPiston(id) || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER) g.redstone.update(x, y, z);
+    if (isRail(id)) { layRail(w, x, y, z, g.redstone.isPowered(x, y, z)); g.redstone.update(x, y, z); }
     if (id === B.SAND || id === B.GRAVEL) g.ticker!.schedule(x, y, z, 2);
     g.playBlockSound(soundBlock, x, y, z, 'place');
     this.consume(1);
@@ -863,7 +879,7 @@ export class Interaction {
       e.deflect(d.x, d.y, d.z);
       return;
     }
-    if (e instanceof Boat) {
+    if (e instanceof Boat || e instanceof Minecart) {
       e.attacked(p.creative);
       return;
     }

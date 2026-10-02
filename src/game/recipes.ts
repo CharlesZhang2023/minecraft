@@ -1,6 +1,6 @@
 // Crafting & smelting recipes.
 import { B, WOOL_COLORS } from '../world/blocks';
-import { I, I2, I3, I4, TOOLS, ARMOR, ItemStack, stack, getItem } from './items';
+import { I, I2, I3, I4, I5, TOOLS, ARMOR, ItemStack, stack, getItem } from './items';
 
 interface Shaped { pattern: string[]; key: Record<string, number | number[]>; out: ItemStack }
 interface Shapeless { ingredients: (number | number[])[]; out: ItemStack }
@@ -249,3 +249,11 @@ export const SMELTING: Record<number, { out: number; xp: number }> = {
   [B.NETHERRACK]: { out: I3.NETHER_BRICK, xp: 0.1 },
   [B.NETHER_QUARTZ_ORE]: { out: I.QUARTZ, xp: 0.2 },
 };
+// rails and horses
+S(['I I', 'ISI', 'I I'], { I: I.IRON_INGOT, S: I.STICK }, B.RAIL, 16);
+S(['G G', 'GSG', 'GRG'], { G: I.GOLD_INGOT, S: I.STICK, R: I.REDSTONE }, B.POWERED_RAIL, 6);
+S(['I I', 'IPI', 'IRI'], { I: I.IRON_INGOT, P: B.STONE_PRESSURE_PLATE, R: I.REDSTONE }, B.DETECTOR_RAIL, 6);
+S(['ISI', 'ITI', 'ISI'], { I: I.IRON_INGOT, S: I.STICK, T: B.REDSTONE_TORCH }, B.ACTIVATOR_RAIL, 6);
+S(['I I', 'III'], { I: I.IRON_INGOT }, I5.MINECART);
+S(['###', '###', '###'], { '#': I.WHEAT }, B.HAY_BLOCK);
+L([B.HAY_BLOCK], I.WHEAT, 9);

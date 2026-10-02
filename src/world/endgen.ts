@@ -46,8 +46,9 @@ export class EndGen {
       const thick = Math.pow(1 - t, 0.65) * 30 + 2 + this.n2.sample2(wx / 14, wz / 14) * 5 * Math.min(1, t * 2 + 0.3);
       return [Math.round(top - Math.max(2, thick)), top];
     }
-    if (d > 700) {
-      const gate = Math.min(1, (d - 700) / 200);
+    // the outer islands start past 1024 blocks, like vanilla: the dragon's gateways are the way out there
+    if (d > 1024) {
+      const gate = Math.min(1, (d - 1024) / 200);
       const v = this.island.sample2(wx / 95, wz / 95) * 0.9 + 0.12 * gate - 0.12;
       if (v > 0.26) {
         const top = Math.round(54 + v * 14 + this.n1.sample2(wx / 20, wz / 20) * 1.5);

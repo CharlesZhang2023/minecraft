@@ -473,7 +473,7 @@ export class Spider extends Monster {
 }
 
 // ------------------------------------------------------------------ passive
-abstract class Animal extends Mob {
+export abstract class Animal extends Mob {
   temptItems: number[] = [I.WHEAT];
   override xp = 1 + rng.int(3);
 
@@ -488,14 +488,15 @@ abstract class Animal extends Mob {
     }
     // breeding: find partner in love
     if (this.loveTicks > 0) {
-      const mate = this.game.entities.find((e) => e !== this && e.constructor === this.constructor && (e as Animal).loveTicks > 0 && !(e as Animal).dead && e.distanceTo(this) < 8) as Animal | undefined;
+      const mate = this.game.entities.find((e) => e !== this && e instanceof Animal && this.canMateWith(e) && (e as Animal).loveTicks > 0 && !(e as Animal).dead && e.distanceTo(this) < 8) as Animal | undefined;
       if (mate) {
         this.lookTarget = mate;
         if (this.distanceTo(mate) > 1.8) this.moveToward(mate.x, mate.z, this.speedAttr * this.speedAttr);
         else if (this.id < mate.id) {
           this.loveTicks = mate.loveTicks = 0;
           this.breedCooldown = mate.breedCooldown = 6000;
-          const baby = this.game.interact!.spawnMob(this.typeName.toLowerCase(), this.x, this.y, this.z, true);
+          const baby = this.game.interact!.spawnMob(this.babyType(mate), this.x, this.y, this.z, true);
+          if (baby) this.bred(baby as Mob, mate);
           if (baby) for (let i = 0; i < 7; i++) this.game.particles?.heart(this.x + rng.next() - 0.5, this.y + 0.8, this.z + rng.next() - 0.5);
           const o = new XpOrb(this.world, this.game, 1 + rng.int(7));
           o.setPos(this.x, this.y + 0.5, this.z);
@@ -523,6 +524,13 @@ abstract class Animal extends Mob {
     this.panicTicks = 60;
     this.path = null;
   }
+
+  /** Which animals this one can breed with (its own kind, unless overridden). */
+  canMateWith(o: Animal) { return o.constructor === this.constructor; }
+  /** Mob type of the young (the same kind, unless overridden). */
+  babyType(_mate?: Animal) { return this.typeName.toLowerCase(); }
+  /** A baby was just born to this animal and its mate. */
+  bred(_baby: Mob, _mate: Animal) {}
 
   interact(game: Game, held: ItemStack | null): boolean {
     if (held && this.temptItems.includes(held.id) && !this.baby && this.breedCooldown === 0 && this.loveTicks === 0) {

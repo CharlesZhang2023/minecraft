@@ -1,7 +1,7 @@
 // 16x16 item sprites as hand-authored pixel art. Outlines are added automatically.
 import { Img, RGB, newImg, hex, set, get, art, shade, S } from './pixels';
 import { POTION_SPRITES } from '../game/potiondata';
-import { SPAWN_EGGS, EXTRA_EGGS } from '../game/items';
+import { SPAWN_EGGS, EXTRA_EGGS, EXTRA_EGGS2 } from '../game/items';
 
 type Pal = Record<string, RGB | [number, number, number, number]>;
 const sprites: Record<string, () => Img> = {};
@@ -867,7 +867,7 @@ sprite('glass_bottle', [
   '....g......g....',
   '.....gggggg.....',
 ], { c: hex('#8a6035'), g: GLASS, w: hex('#ffffff') }, '#4a5a6a');
-for (const e of [...SPAWN_EGGS, ...EXTRA_EGGS]) {
+for (const e of [...SPAWN_EGGS, ...EXTRA_EGGS, ...EXTRA_EGGS2]) {
   const E = rgb(e.c1), sp = rgb(e.c2);
   sprite(`${e.mob}_spawn_egg`, [
     '',
@@ -884,6 +884,46 @@ for (const e of [...SPAWN_EGGS, ...EXTRA_EGGS]) {
     '....eEEEEsEe....',
     '.....eeeeee.....',
   ], { e: shade(E, 0.7), E, H: [Math.min(255, E[0] + 60), Math.min(255, E[1] + 60), Math.min(255, E[2] + 60)], s: sp }, '#101010');
+}
+// ------------------------------------------------------------------ rails and horses
+sprite('minecart', [
+  '', '', '', '', '',
+  '.hHHHHHHHHHHHHd.',
+  '.Hiiiiiiiiiiiid.',
+  '.HiIIIIIIIIIIid.',
+  '.HiIIIIIIIIIIid.',
+  '..HIIIIIIIIIId..',
+  '..HdddddddddDd..',
+  '...ww......ww...',
+  '...ww......ww...',
+], { h: hex('#e8e8e8'), H: hex('#c8c8c8'), i: hex('#4a4a4a'), I: hex('#8c8c8c'), d: hex('#5a5a5a'), D: hex('#3a3a3a'), w: hex('#2a2a2a') }, '#1a1a1a');
+sprite('saddle', [
+  '', '', '',
+  '.....bbbbb......',
+  '...bBBBBBBbb....',
+  '..bBLLLBBBBBb...',
+  '..bBBBBBBBBBBb..',
+  '...bbBBBBBBBBb..',
+  '.....bbbbbbbb...',
+  '.....s.....s....',
+  '.....s.....s....',
+  '....ii....ii....',
+], { b: hex('#5a3418'), B: hex('#8a5428'), L: hex('#b07440'), s: hex('#3a2010'), i: hex('#b0b0b0') }, '#2a1408');
+for (const [mat, H, M, D] of [['iron', '#e8e8e8', '#b8b8b8', '#707070'], ['golden', '#fff4a0', '#f0c830', '#a07810'], ['diamond', '#c0fff4', '#40e0d0', '#188880']] as const) {
+  sprite(`${mat}_horse_armor`, [
+    '', '',
+    '..........hh....',
+    '.........hMMd...',
+    '........hMMMMd..',
+    '.......hMMMdMd..',
+    '......hMMMd.dd..',
+    '..hhhhMMMMd.....',
+    '.hMMMMMMMMd.....',
+    '.hMMMMMMMMd.....',
+    '.hMMddddMMd.....',
+    '.hMd....hMd.....',
+    '.hd......hd.....',
+  ], { h: hex(H), M: hex(M), d: hex(D) }, '#202020');
 }
 sprite('enchanted_book', [
   '', '', '',

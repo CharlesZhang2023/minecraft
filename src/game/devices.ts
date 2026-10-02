@@ -205,7 +205,7 @@ export class Devices {
       const below = w.getId(fx, fy - 1, fz) === B.WATER;
       if (water || below) {
         const b = new Boat(w, g);
-        b.setPos(fx + 0.5, water ? fy + 0.9 : fy, fz + 0.5);
+        b.setPos(fx + 0.5, water ? fy + 0.52 : fy, fz + 0.5);
         b.yaw = b.pyaw = [0, 0, 180, 0, 90, 270][f];
         g.addEntity(b); take(); done(); return;
       }

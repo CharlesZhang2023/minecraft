@@ -25,6 +25,10 @@ export interface WorldMeta {
   dragonEggPending?: boolean;
   enderChest?: unknown[];
   endPoemSeen?: boolean;
+  /** End gateways opened by dragon kills and their return gateways on the outer islands. */
+  gateways?: import('./gateways').Gateway[];
+  /** Islands made for gateways that pointed into empty void, built once their chunk loads. */
+  endIslands?: { x: number; y: number; z: number; seed: number; built?: boolean }[];
   achievements?: string[];
 }
 

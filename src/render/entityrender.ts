@@ -8,12 +8,15 @@ import { LivingEntity } from '../entity/living';
 import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball } from '../entity/item';
 import { ThrownPotion } from '../entity/potion';
 import { getItem, I } from '../game/items';
-import { BLOCKS, TEXTURES, Render, B, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE } from '../world/blocks';
+import { BLOCKS, TEXTURES, Render, B, T, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE } from '../world/blocks';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
 import { getTexture } from './textures';
 import { Player } from '../game/player';
 import { Boat } from '../entity/boat';
+import { Minecart } from '../entity/minecart';
+import { Horse } from '../entity/horse';
+import { HORSE_ARMOR } from '../game/items';
 import { FishingHook } from '../entity/fishing';
 import { EnderDragon, EndCrystal, dragonPose, DRAGON_SCALE } from '../entity/dragon';
 import { EyeOfEnder } from '../entity/eye';
@@ -40,6 +43,7 @@ export class EntityRenderer {
       sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(), blaze: M.blazeModel(),
       armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(), enderman: M.endermanModel(), slimeInner: M.slimeInnerModel(), slimeOuter: M.slimeOuterModel(), squid: M.squidModel(), bat: M.batModel(), wolf: M.wolfModel(),
       silverfish: M.silverfishModel(), crystal: M.crystalModel(), dragon: dragonModel(),
+      horse: M.horseModel(false), donkey: M.horseModel(true), horseArmor: M.horseModel(false, 0.35),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
@@ -49,6 +53,7 @@ export class EntityRenderer {
       silverfish: M.silverfishSkin(), crystal: M.crystalSkin(), dragon: dragonSkin(),
     };
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
+    for (const k of ['iron', 'gold', 'diamond']) { const sk = M.horseArmorSkin(k); this.skins.set('horseArmor_' + k, r.makeTexture(sk.data, sk.w)); }
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
     for (const m of M.ARMOR_MATERIALS) for (const l of [1, 2] as const) { const sk = M.armorSkin(m, l); this.skins.set(`armor_${m}_${l}`, r.makeTexture(sk.data, sk.w)); }
     this.handMesh = new DynMesh(gl);
@@ -182,6 +187,7 @@ export class EntityRenderer {
       else if (e instanceof EyeOfEnder) this.billboard(dyn, x, y + 0.12, z, 0.4, TEXTURES.indexOf('item/ender_eye'), 0xffffff, 15, 15);
       else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, e.small ? 0.35 : 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
       else if (e instanceof Boat) this.drawBoat(dyn, e, x, y, z, t, sky, blk);
+      else if (e instanceof Minecart) this.drawMinecart(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof FishingHook) {
         this.billboard(dyn, x, y + 0.12, z, 0.35, TEXTURES.indexOf('item/fishing_bobber'), 0xffffff, sky, blk);
         this.fishingLine(game, e, x, y, z, t);
@@ -194,6 +200,13 @@ export class EntityRenderer {
       const d = e.beam as EnderDragon;
       if (d.dead) continue;
       this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + 1.2 - cam.y, e.lerpZ(t) - cam.z, d.lerpX(t) - cam.x, d.lerpY(t) - 0.5 - cam.y, d.lerpZ(t) - cam.z, e.age + t);
+    }
+    // an End gateway that was just opened or used: a beam straight up and down through it
+    const gb = game.gatewayBeam;
+    if (gb && game.ticks < gb.until && w.dimension === 'end') {
+      const bx = gb.x + 0.5 - cam.x, by = gb.y + 0.5 - cam.y, bz = gb.z + 0.5 - cam.z;
+      this.beam(dyn, bx, by, bz, bx, by + 80, bz, game.ticks + t);
+      this.beam(dyn, bx, by, bz, bx, by - 80, bz, game.ticks + t);
     }
     // blocks being moved by pistons
     for (const [bv, bx, by, bz] of game.pistons.renderList(t)) {
@@ -209,6 +222,7 @@ export class EntityRenderer {
       this.drawItemEntity(dyn, a.e, ix, iy, iz, t, 15, 0, true);
     }
     this.r.drawDyn(dyn, { cull: false });
+    this.boatMasks(game, list, t);
     // soft round shadows under entities (vanilla-style, projected on block tops)
     const sh = this.r.dyn;
     sh.reset();
@@ -416,6 +430,7 @@ export class EntityRenderer {
     const pose: Record<string, [number, number, number]> = {};
     const c = Math.cos;
     switch (model) {
+      case 'horse': this.drawHorse(e as Horse, base, t, light, overlay, hp, netHead, ls, lsa, age); break;
       case 'dragon': this.drawDragon(e as EnderDragon, x, y, z, t, sky, blk); return;
       case 'crystal': this.drawCrystal(e as EndCrystal, x, y, z, t, sky, blk); return;
       case 'silverfish': {
@@ -898,39 +913,142 @@ export class EntityRenderer {
   }
 
   private drawBoat(mesh: DynMesh, e: Boat, x: number, y: number, z: number, t: number, sky: number, blk: number) {
+    const m = this.boatMatrix(e, x, y, z, t);
+    const layer = BLOCKS[B.OAK_PLANKS].faces[0];
+    // hull (1.9 proportions: 1.75 long along z, 1.25 wide): floor, two long sides, bow and stern
+    const hull: number[][] = [
+      [-0.5, 0.125, -0.75, 0.5, 0.3, 0.75],
+      [-0.625, 0.125, -0.875, -0.5, 0.6875, 0.875],
+      [0.5, 0.125, -0.875, 0.625, 0.6875, 0.875],
+      [-0.5, 0.125, 0.75, 0.5, 0.6875, 0.875],
+      [-0.5, 0.125, -0.875, 0.5, 0.6875, -0.75],
+    ];
+    for (const b of hull) this.woodBox(mesh, m, b, layer, sky, blk);
+    // oars: pivot on the gunwale, sweep back and forth while rowing
+    for (const side of [0, 1]) {
+      const a = e.pPaddle[side] + (e.paddle[side] - e.pPaddle[side]) * t;
+      const sx = side === 0 ? 0.625 : -0.625;
+      const pm = mat4();
+      translate(pm, m, sx, 0.6, 0.1);
+      rotateY(pm, pm, (side === 0 ? 1 : -1) * (Math.PI / 8 + Math.sin(a) * 0.6));
+      rotateZ(pm, pm, (side === 0 ? -1 : 1) * (Math.PI / 5 + (Math.cos(a) * 0.5 + 0.5) * 0.25));
+      const dir = side === 0 ? 1 : -1;
+      const shaft = dir > 0 ? [-0.25, -0.03, -0.03, 0.9, 0.03, 0.03] : [-0.9, -0.03, -0.03, 0.25, 0.03, 0.03];
+      const blade = dir > 0 ? [0.6, -0.015, -0.12, 1.05, 0.015, 0.12] : [-1.05, -0.015, -0.12, -0.6, 0.015, 0.12];
+      this.woodBox(mesh, pm, shaft, layer, sky, blk);
+      this.woodBox(mesh, pm, blade, layer, sky, blk);
+    }
+  }
+
+  /** Iron tub, 20 x 16 px and 10 px deep, lying along its direction of travel and tipped on slopes. */
+  private drawMinecart(mesh: DynMesh, e: Minecart, x: number, y: number, z: number, t: number, sky: number, blk: number) {
+    let dy = e.yaw - e.pyaw;
+    dy = ((dy % 360) + 540) % 360 - 180;
+    const yaw = e.pyaw + dy * t, pitch = e.ppitch + (e.pitch - e.ppitch) * t;
+    const m = mat4();
+    identity(m);
+    translate(m, m, x, y, z);
+    rotateY(m, m, (-yaw * Math.PI) / 180);
+    rotateZ(m, m, (pitch * Math.PI) / 180);
+    if (e.hurtTime > 0) rotateX(m, m, Math.sin(e.hurtTime - t) * (e.hurtTime - t) * 0.02 * e.hurtDir);
+    const out = T.minecart, inner = T.minecartInside;
+    this.woodBox(mesh, m, [-0.625, 0.0625, -0.5, 0.625, 0.1875, 0.5], inner, sky, blk);
+    this.woodBox(mesh, m, [-0.625, 0.0625, -0.5, 0.625, 0.6875, -0.375], out, sky, blk);
+    this.woodBox(mesh, m, [-0.625, 0.0625, 0.375, 0.625, 0.6875, 0.5], out, sky, blk);
+    this.woodBox(mesh, m, [-0.625, 0.0625, -0.375, -0.5, 0.6875, 0.375], out, sky, blk);
+    this.woodBox(mesh, m, [0.5, 0.0625, -0.375, 0.625, 0.6875, 0.375], out, sky, blk);
+  }
+
+  /** Skin texture for a horse, made the first time that coat is seen. */
+  private horseSkin(h: Horse): string {
+    const key = h.skinKey;
+    if (!this.skins.has(key)) {
+      const sk = h.kind === 'horse' ? M.horseSkin(h.color, h.markings) : M.donkeySkin(h.kind === 'mule');
+      this.skins.set(key, this.r.makeTexture(sk.data, sk.w));
+    }
+    return key;
+  }
+
+  /** Horse pose: diagonal gait, head bob, grazing, rearing, tail swish; then saddle, chest bags and armour. */
+  private drawHorse(h: Horse, base: Mat4, t: number, light: [number, number], overlay: [number, number, number, number], hp: number, netHead: number, ls: number, lsa: number, age: number) {
+    const c = Math.cos;
+    const rear = h.pRear + (h.rear - h.pRear) * t, eat = h.pEat + (h.eat - h.pEat) * t;
+    const pose: Record<string, [number, number, number]> = {};
+    const swing = c(ls * 0.6662) * 1.0 * lsa, swing2 = c(ls * 0.6662 + Math.PI) * 1.0 * lsa;
+    const headPitch = Math.max(-0.5, Math.min(0.6, hp));
+    pose.head = [Math.PI / 6 + headPitch * (1 - eat) + eat * 2.1 - rear * 0.7 + Math.sin(ls * 0.6662 * 2) * 0.05 * lsa, netHead * (1 - eat), 0];
+    pose.leg1 = [swing * (1 - rear) + rear * 0.3, 0, 0];
+    pose.leg2 = [swing2 * (1 - rear) + rear * 0.3, 0, 0];
+    pose.leg3 = [swing2 * (1 - rear) - rear * 1.2, 0, 0];
+    pose.leg4 = [swing * (1 - rear) - rear * 0.9, 0, 0];
+    const swish = h.tailSwish > 0 ? Math.sin((h.tailSwish - t) * 0.8) * 0.5 : 0;
+    pose.tail = [-1.1 + lsa * 0.4 + rear * 0.6, 0, swish + Math.sin(age * 0.05) * 0.04];
+    pose.body = [0, 0, 0];
+    pose.saddle = [0, 0, 0];
+    pose.bags = [0, 0, 0];
+    // rearing tips the whole horse up about its hind feet
+    let b = base;
+    if (rear > 0.01) {
+      b = mat4();
+      translate(b, base, 0, 21 / 16, 11 / 16);
+      rotateX(b, b, -rear * 0.8);
+      translate(b, b, 0, -21 / 16, -11 / 16);
+    }
+    const skip = new Set<string>();
+    if (!h.saddle) skip.add('saddle');
+    if (!h.chest) skip.add('bags');
+    const model = h.kind === 'horse' ? 'horse' : 'donkey';
+    this.drawModel(model, this.horseSkin(h), b, pose, light, overlay, skip);
+    const ar = h.armorItem ? HORSE_ARMOR[h.armorItem.id] : undefined;
+    if (ar) this.drawModel('horseArmor', 'horseArmor_' + ar.kind, b, pose, light, overlay, new Set(['saddle', 'bags', 'tail']));
+  }
+
+  private boatMatrix(e: Boat, x: number, y: number, z: number, t: number) {
     const yaw = e.pyaw + (e.yaw - e.pyaw) * t;
     const m = mat4();
     identity(m);
     translate(m, m, x, y, z);
     rotateY(m, m, (-yaw * Math.PI) / 180);
     if (e.hurtTime > 0) rotateZ(m, m, Math.sin(e.hurtTime - t) * (e.hurtTime - t) * 0.02 * e.hurtDir);
-    const layer = BLOCKS[B.OAK_PLANKS].faces[0];
-    // hull: floor + four walls (in blocks, boat 1.5 long along z, 1 wide)
-    const parts: number[][] = [
-      [-0.5, 0.0, -0.75, 0.5, 0.1875, 0.75],
-      [-0.5, 0.1875, -0.8125, 0.5, 0.5, -0.6875],
-      [-0.5, 0.1875, 0.6875, 0.5, 0.5, 0.8125],
-      [-0.5625, 0.1875, -0.75, -0.4375, 0.5, 0.75],
-      [0.4375, 0.1875, -0.75, 0.5625, 0.5, 0.75],
+    return m;
+  }
+
+  /** A plank-textured box (local coords x0..z1) transformed by m, shaded like block faces. */
+  private woodBox(mesh: DynMesh, m: Mat4, [x0, y0, z0, x1, y1, z1]: number[], layer: number, sky: number, blk: number) {
+    const P = (px: number, py: number, pz: number) => [m[0] * px + m[4] * py + m[8] * pz + m[12], m[1] * px + m[5] * py + m[9] * pz + m[13], m[2] * px + m[6] * py + m[10] * pz + m[14]];
+    const faces: [number[][], number, number, number][] = [
+      [[P(x0, y0, z0), P(x0, y0, z1), P(x0, y1, z1), P(x0, y1, z0)], 0.6, z1 - z0, y1 - y0],
+      [[P(x1, y0, z1), P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1)], 0.6, z1 - z0, y1 - y0],
+      [[P(x0, y0, z0), P(x1, y0, z0), P(x1, y0, z1), P(x0, y0, z1)], 0.5, x1 - x0, z1 - z0],
+      [[P(x0, y1, z0), P(x0, y1, z1), P(x1, y1, z1), P(x1, y1, z0)], 1, x1 - x0, z1 - z0],
+      [[P(x1, y0, z0), P(x0, y0, z0), P(x0, y1, z0), P(x1, y1, z0)], 0.8, x1 - x0, y1 - y0],
+      [[P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], 0.8, x1 - x0, y1 - y0],
     ];
-    const shade = [0.6, 0.6, 0.5, 1, 0.8, 0.8];
-    for (const [x0, y0, z0, x1, y1, z1] of parts) {
-      const P = (px: number, py: number, pz: number) => [m[0] * px + m[4] * py + m[8] * pz + m[12], m[1] * px + m[5] * py + m[9] * pz + m[13], m[2] * px + m[6] * py + m[10] * pz + m[14]];
-      const faces: [number[][], number][] = [
-        [[P(x0, y0, z0), P(x0, y0, z1), P(x0, y1, z1), P(x0, y1, z0)], 0],
-        [[P(x1, y0, z1), P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1)], 1],
-        [[P(x0, y0, z0), P(x1, y0, z0), P(x1, y0, z1), P(x0, y0, z1)], 2],
-        [[P(x0, y1, z0), P(x0, y1, z1), P(x1, y1, z1), P(x1, y1, z0)], 3],
-        [[P(x1, y0, z0), P(x0, y0, z0), P(x0, y1, z0), P(x1, y1, z0)], 4],
-        [[P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], 5],
-      ];
-      for (const [pts, f] of faces) {
-        const c = Math.round(shade[f] * 255);
-        const col = (c << 16) | (c << 8) | c;
-        const uv = [[0, 1], [1, 1], [1, 0], [0, 0]];
-        for (let k = 0; k < 4; k++) mesh.v(pts[k][0], pts[k][1], pts[k][2], uv[k][0], uv[k][1] * 0.5, layer, col, 1, sky, blk);
-      }
+    for (const [pts, shade, du, dv] of faces) {
+      const c = Math.round(shade * 255);
+      const col = (c << 16) | (c << 8) | c;
+      const u = Math.min(1, du), v = Math.min(1, dv);
+      const uv = [[0, v], [u, v], [u, 0], [0, 0]];
+      for (let k = 0; k < 4; k++) mesh.v(pts[k][0], pts[k][1], pts[k][2], uv[k][0], uv[k][1], layer, col, 1, sky, blk);
     }
+  }
+
+  /** Depth-only plane inside each boat's hull, so the water surface drawn later doesn't show inside it. */
+  private boatMasks(game: Game, list: Entity[], t: number) {
+    const cam = this.r.cam, mesh = this.r.dyn, gl = this.r.gl;
+    mesh.reset();
+    for (const e of list) {
+      if (!(e instanceof Boat)) continue;
+      const m = this.boatMatrix(e, e.lerpX(t) - cam.x, e.lerpY(t) - cam.y, e.lerpZ(t) - cam.z, t);
+      const P = (px: number, pz: number) => [m[0] * px + m[4] * e.maskY + m[8] * pz + m[12], m[1] * px + m[5] * e.maskY + m[9] * pz + m[13], m[2] * px + m[6] * e.maskY + m[10] * pz + m[14]];
+      const pts = [P(-0.5, -0.75), P(-0.5, 0.75), P(0.5, 0.75), P(0.5, -0.75)];
+      for (const q of pts) mesh.v(q[0], q[1], q[2], 0, 0, 0, 0xffffff, 1, 15, 15);
+    }
+    if (!mesh.count) return;
+    void game;
+    gl.colorMask(false, false, false, false);
+    this.r.drawDyn(mesh, { cull: false, alphaCut: -1, fullbright: true });
+    gl.colorMask(true, true, true, true);
   }
 
   private drawArrow(mesh: DynMesh, e: Arrow, x: number, y: number, z: number, t: number, sky: number, blk: number) {
@@ -948,7 +1066,7 @@ export class EntityRenderer {
   }
 
   /** Player model in the inventory screen, drawn into a GUI rectangle. */
-  renderPreview(game: Game, box: { x: number; y: number; w: number; h: number; yaw: number; pitch: number }, guiScale: number) {
+  renderPreview(game: Game, box: { x: number; y: number; w: number; h: number; yaw: number; pitch: number; entity?: Entity }, guiScale: number) {
     const gl = this.r.gl, p = game.player!;
     const sx = Math.round(box.x * guiScale), sw = Math.round(box.w * guiScale), sh = Math.round(box.h * guiScale);
     const sy = this.r.height - Math.round((box.y + box.h) * guiScale);
@@ -977,6 +1095,22 @@ export class EntityRenderer {
     };
     const saved = this.r.env;
     this.r.env = { ...saved, fogStart: 1e5, fogEnd: 1e5 + 1, sunBright: 1, gamma: 0.5 };
+    if (box.entity instanceof Horse) {
+      // the horse screen: side-on view of the horse, turning a little with the mouse
+      const hb = mat4();
+      identity(hb);
+      translate(hb, hb, 0, -0.75, -3);
+      rotateX(hb, hb, -box.pitch * 0.25 + 0.15);
+      rotateY(hb, hb, Math.PI * 0.75 - box.yaw * 0.5);
+      scale(hb, hb, -0.62, -0.62, 0.62);
+      translate(hb, hb, 0, -1.501, 0);
+      this.drawHorse(box.entity, hb, 1, [15, 15], [0, 0, 0, 0], 0, 0, 0, 0, box.entity.age);
+      this.r.env = saved;
+      gl.disable(gl.SCISSOR_TEST);
+      gl.viewport(0, 0, this.r.width, this.r.height);
+      this.currentVP = this.r.viewProj;
+      return;
+    }
     this.drawModel('biped', 'steve', base, pose, [15, 15], [0, 0, 0, 0], new Set(['hat']));
     this.drawArmor(p.inventory.armor, base, pose, [15, 15], [0, 0, 0, 0]);
     const it = p.inventory.held();

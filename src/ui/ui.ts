@@ -1,4 +1,6 @@
 // UI manager: screen stack, HUD, chat, input routing, item drawing.
+import type { Horse } from '../entity/horse';
+import type { Entity } from '../entity/entity';
 import type { Game } from '../game/game';
 import { Gui, Ctx } from './gui';
 import { Hud, drawDurability } from './hud';
@@ -25,7 +27,7 @@ export class UI {
   touch: TouchControls;
   private lastGuiW = 0;
   private lastGuiH = 0;
-  previewBox: { x: number; y: number; w: number; h: number; yaw: number; pitch: number } | null = null;
+  previewBox: { x: number; y: number; w: number; h: number; yaw: number; pitch: number; entity?: Entity } | null = null;
 
   constructor(public game: Game) {
     this.gui = game.gui;
@@ -100,8 +102,12 @@ export class UI {
   openFurnace(x: number, y: number, z: number) { this.open(new Containers.FurnaceScreen(this, x, y, z)); }
   openChest(x: number, y: number, z: number) { this.open(new Containers.ChestScreen(this, x, y, z)); }
   openEnderChest(x: number, y: number, z: number) { this.open(new Containers.EnderChestScreen(this, x, y, z)); }
+  openHorse(h: Horse) { this.open(new Containers.HorseScreen(this, h)); }
   openInventory() {
     const p = this.game.player!;
+    // on a tame horse, E opens the horse's inventory
+    const h = p.riding as Horse | null;
+    if (h && (h as Partial<Horse>).chestItems && h.tame) { this.openHorse(h); return; }
     this.game.achievements.unlock('openInventory');
     this.open(p.creative ? new Containers.CreativeScreen(this) : new Containers.InventoryScreen(this));
   }

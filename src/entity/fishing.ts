@@ -4,7 +4,7 @@ import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import type { Player } from '../game/player';
 import { B, BLOCKS, idOf, metaOf } from '../world/blocks';
-import { I, I2, I3, stack, ItemStack } from '../game/items';
+import { I, I2, I3, stack, ItemStack, I5 } from '../game/items';
 import { level, randomBook, rollEnchants } from '../game/enchant';
 import { Random } from '../noise';
 
@@ -123,10 +123,11 @@ export class FishingHook extends Entity {
       const [id, n] = junk[rng.int(junk.length)];
       return stack(id, n);
     }
-    const t = rng.int(6);
+    const t = rng.int(7);
     if (t === 0) return randomBook(rng);
     if (t === 1) return stack(I3.NAME_TAG);
     if (t === 2) return stack(B.LILY_PAD);
+    if (t === 6) return stack(I5.SADDLE);
     const it = stack(t === 3 ? I.BOW : I2.FISHING_ROD);
     it.damage = rng.int(20);
     it.ench = rollEnchants(it, 30, rng);

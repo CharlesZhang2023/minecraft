@@ -11,6 +11,7 @@ import {
 } from '../world/blocks';
 import { repeaterLocked } from '../world/models';
 import { containerLevel } from './devices';
+import { railPowered, switchRail } from './tracks';
 
 // D6 order: +x, -x, +y, -y, +z, -z
 const D6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] as const;
@@ -52,6 +53,9 @@ export class Redstone {
         return !strong || this.attachD6(v) === d ? 15 : 0;
       case B.STONE_PRESSURE_PLATE:
         if (!m) return 0;
+        return !strong || d === DOWN ? 15 : 0;
+      case B.DETECTOR_RAIL:
+        if (!(m & 8)) return 0;
         return !strong || d === DOWN ? 15 : 0;
       case B.REDSTONE_TORCH:
         if (strong) return d === UP ? 15 : 0;
@@ -101,7 +105,7 @@ export class Redstone {
   private connectsToWire(x: number, y: number, z: number, h: number): boolean {
     const v = this.w.get(x, y, z);
     const id = idOf(v), m = metaOf(v);
-    if (id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || isRedstoneTorch(id) || id === B.REDSTONE_BLOCK || id === B.COMPARATOR) return true;
+    if (id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || isRedstoneTorch(id) || id === B.REDSTONE_BLOCK || id === B.COMPARATOR || id === B.DETECTOR_RAIL) return true;
     if (isRepeater(id)) return ((m & 3) & 1) === (h & 1);
     if (id === B.OBSERVER) { const [dx, dz] = HORIZ[h]; const [fx, fy, fz] = FACING6[m & 7]; return fy === 0 && fx === dx && fz === dz; }
     return false;
@@ -334,6 +338,14 @@ export class Redstone {
         if (p !== ((m & 8) !== 0)) this.setMetaKeepTile(x, y, z, pack(id, p ? m | 8 : m & 7));
         return;
       }
+      case B.POWERED_RAIL: case B.ACTIVATOR_RAIL: {
+        const p = railPowered(w, (a, b, c) => this.isPowered(a, b, c), x, y, z);
+        if (p !== ((m & 8) !== 0)) w.set(x, y, z, pack(id, p ? m | 8 : m & 7));
+        return;
+      }
+      case B.RAIL:
+        switchRail(w, x, y, z, this.isPowered(x, y, z));
+        return;
     }
     if (isRedstoneTorch(id)) {
       const a = this.attachD6(v);
@@ -405,6 +417,12 @@ export class Redstone {
       case B.DISPENSER: case B.DROPPER:
         g.devices.dispense(x, y, z);
         return true;
+      case B.DETECTOR_RAIL:
+        // stays pressed while a minecart is on it, checked every 20 ticks like vanilla
+        if (!(m & 8)) return true;
+        if (!g.minecartOn(x, y, z)) w.set(x, y, z, pack(id, m & 7));
+        else g.ticker!.schedule(x, y, z, 20);
+        return true;
     }
     return false;
   }
@@ -456,6 +474,14 @@ export class Redstone {
         }
       }
     }
+  }
+
+  /** A minecart rolled onto a detector rail. */
+  pressDetector(x: number, y: number, z: number) {
+    const v = this.w.get(x, y, z);
+    if (idOf(v) !== B.DETECTOR_RAIL || metaOf(v) & 8) return;
+    this.w.set(x, y, z, pack(B.DETECTOR_RAIL, metaOf(v) | 8));
+    this.game.ticker!.schedule(x, y, z, 20);
   }
 
   toggleLever(x: number, y: number, z: number) {

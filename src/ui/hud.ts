@@ -5,6 +5,7 @@ import type { Ctx } from './gui';
 import { getItem, ItemStack } from '../game/items';
 import { B } from '../world/blocks';
 import { EnderDragon } from '../entity/dragon';
+import { LivingEntity } from '../entity/living';
 import { device } from '../game/device';
 import { touchHotbar } from './touchlayout';
 
@@ -94,9 +95,24 @@ export class Hud {
       }
     }
     const survival = !p.creative;
+    // riding something alive (a horse): its jump bar takes the XP bar's place, its health the food bar's
+    const mount = p.riding as (LivingEntity & { jumpBar?: number; controllable?: boolean }) | null;
+    const mountLiving = mount instanceof LivingEntity ? mount : null;
+    if (mountLiving && mountLiving.controllable) {
+      const xy = H - 29, f = mountLiving.jumpBar ?? 0;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(hx, xy, 182, 5);
+      ctx.fillStyle = '#3a3a52';
+      ctx.fillRect(hx + 1, xy + 1, 180, 3);
+      ctx.fillStyle = '#9fb4ff';
+      ctx.fillRect(hx + 1, xy + 1, Math.floor(180 * f), 3);
+      ctx.fillStyle = '#5a6ad0';
+      ctx.fillRect(hx + 1, xy + 3, Math.floor(180 * f), 1);
+    }
     if (survival) {
       // XP bar
       const xy = H - 29;
+      if (!mountLiving?.controllable) {
       ctx.fillStyle = '#000000';
       ctx.fillRect(hx, xy, 182, 5);
       ctx.fillStyle = '#2a2a2a';
@@ -110,6 +126,7 @@ export class Hud {
         const tx = cx - gui.font.width(t) / 2, ty = H - 35;
         for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) gui.font.draw(ctx, t, tx + ox, ty + oy, '#000000', false);
         gui.font.draw(ctx, t, tx, ty, '#80FF20', false);
+      }
       }
       // hearts: above the hotbar's left half, or along the top left on touch screens (food top right),
       // with the extra rows stacking up from the hotbar, or down from the top edge
@@ -152,8 +169,19 @@ export class Hud {
           ctx.drawImage(a >= 2 ? gui.sprites.armor : a === 1 ? gui.sprites.armorHalf : gui.sprites.armorEmpty, x, y);
         }
       }
+      // a mount's hearts (rows of ten, stacking away from the hotbar) replace the food bar
+      if (mountLiving) {
+        const hearts = Math.ceil(mountLiving.maxHealth / 2);
+        for (let i = 0; i < hearts; i++) {
+          const x = foodX - (i % 10) * 8, y = heartsY + rowDir * Math.floor(i / 10) * 10;
+          ctx.drawImage(gui.sprites.heartEmpty, x, y);
+          const hp = Math.ceil(mountLiving.health) - i * 2;
+          if (hp >= 2) ctx.drawImage(gui.sprites.heart, x, y);
+          else if (hp === 1) ctx.drawImage(gui.sprites.heart, 0, 0, 5, 9, x, y, 5, 9);
+        }
+      }
       // food
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 10 && !mountLiving; i++) {
         const x = foodX - i * 8;
         let y = heartsY;
         if (p.saturation <= 0 && this.ticks % (p.food * 3 + 1) === 0) y += ((i * 13 + this.ticks) % 3) - 1;

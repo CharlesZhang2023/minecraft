@@ -261,7 +261,11 @@ export class TouchControls {
       t.id2 = b.id;
       this.pressed.add(b.id);
       if (b.id === 'jump') { inp.virtual.add('Space'); inp.pressedQ.push('Space'); }
-      else if (b.id === 'sneak' && !this.flying) this.sneak = !this.sneak;
+      else if (b.id === 'sneak' && !this.flying) {
+        // riding: the middle button gets off instead of latching a sneak
+        if (p.riding) p.riding.dismount();
+        else this.sneak = !this.sneak;
+      }
       return;
     }
     const cell = this.hotbarCell(gx, gy);

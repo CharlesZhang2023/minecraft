@@ -59,6 +59,7 @@ export class Renderer {
   dynProg: Program;
   entityProg: Program;
   skyProg: Program;
+  endSkyTex: WebGLTexture;
   sunProg: Program;
   cloudProg: Program;
   lineProg: Program;
@@ -132,6 +133,15 @@ export class Renderer {
     // sun & moon
     this.sunTex = this.makeTexture(sunImage(), 32);
     this.moonTex = this.makeTexture(moonImage(), 32);
+    // End sky: tiling noise with mipmaps, so the fine grain doesn't shimmer
+    this.endSkyTex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, this.endSkyTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 128, 128, 0, gl.RGBA, gl.UNSIGNED_BYTE, endSkyImage());
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    gl.generateMipmap(gl.TEXTURE_2D);
     this.sunVao = gl.createVertexArray()!;
     this.sunVbo = gl.createBuffer()!;
     gl.bindVertexArray(this.sunVao);
@@ -388,6 +398,12 @@ export class Renderer {
     gl.uniform1f(u.u_stars, 0);
     gl.uniform1f(u.u_celestial, 0);
     gl.uniform1f(u.u_end, 1);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.endSkyTex);
+    gl.uniform1i(u.u_endSky, 0);
+    // about one texel per pixel at the middle of a face (2048 texels across 90 degrees)
+    const fov = ((this.cam?.fov ?? 70) * Math.PI) / 180;
+    gl.uniform1f(u.u_endLod, Math.max(0, Math.log2((2048 * Math.tan(fov / 2)) / this.height) - 0.3));
     gl.bindVertexArray(this.emptyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.uniform1f(u.u_end, 0);
@@ -652,3 +668,33 @@ function moonImage(): Img {
   }
   return img;
 }
+
+/** 128x128 tiling texture for the End's sky: grey-violet static over soft blotches, like vanilla's end_sky. */
+function endSkyImage(): Uint8Array {
+  const N = 128, img = new Uint8Array(N * N * 4);
+  let seed = 0x5eed1234;
+  const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
+  // tileable value noise at a few scales
+  const layer = (cells: number) => {
+    const g = new Float32Array(cells * cells).map(() => rnd());
+    return (x: number, y: number) => {
+      const fx = (x / N) * cells, fy = (y / N) * cells;
+      const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+      const at = (a: number, b: number) => g[((b + cells) % cells) * cells + ((a + cells) % cells)];
+      const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      return (at(x0, y0) * (1 - sx) + at(x0 + 1, y0) * sx) * (1 - sy) + (at(x0, y0 + 1) * (1 - sx) + at(x0 + 1, y0 + 1) * sx) * sy;
+    };
+  };
+  const big = layer(4), mid = layer(16), fine = layer(64);
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++) {
+      const v = 0.42 + big(x, y) * 0.22 + mid(x, y) * 0.16 + fine(x, y) * 0.1 + (rnd() - 0.5) * 0.28;
+      const i = (y * N + x) * 4;
+      img[i] = Math.max(0, Math.min(255, v * 235));
+      img[i + 1] = Math.max(0, Math.min(255, v * 212));
+      img[i + 2] = Math.max(0, Math.min(255, v * 255));
+      img[i + 3] = 255;
+    }
+  return img;
+}
+

@@ -21,6 +21,8 @@ import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { ItemEntity, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
+import { Minecart } from '../entity/minecart';
+import { buildPending, enterGateway } from './gateways';
 import { BlockTicker } from './blockticks';
 import { Interaction } from './interact';
 import { Spawner } from '../entity/spawner';
@@ -75,6 +77,8 @@ export class Game {
   private acc = 0;
   private last = performance.now();
   partial = 0;
+  /** A gateway that was just opened or used shines a beam for a while. */
+  gatewayBeam: { x: number; y: number; z: number; until: number } | null = null;
   target: BlockHit | null = null;
   targetEntity: Entity | null = null;
   /** Which hit box of the targeted entity the crosshair is on (only multi-part entities name them). */
@@ -536,6 +540,7 @@ export class Game {
     if (this.doDaylightCycle) this.time++;
     if (this.dimension === 'overworld') this.weather!.tick();
     if (this.dimension === 'end' && this.meta?.dragonKilled && this.ticks % 20 === 0) buildExitPortal(this);
+    if (this.dimension === 'end') buildPending(this);
     this.portalTick();
 
     // ---------- player input
@@ -631,6 +636,11 @@ export class Game {
       for (let x = Math.floor(b.x0); x <= Math.floor(b.x1) && !inEndPortal; x++)
         for (let y = Math.floor(b.y0); y <= Math.floor(b.y1) && !inEndPortal; y++)
           for (let z = Math.floor(b.z0); z <= Math.floor(b.z1) && !inEndPortal; z++) if (w.getId(x, y, z) === B.END_PORTAL) inEndPortal = true;
+    if (this.dimension === 'end' && this.portalCooldown === 0 && !p.dead) {
+      for (let x = Math.floor(b.x0); x <= Math.floor(b.x1); x++)
+        for (let y = Math.floor(b.y0); y <= Math.floor(b.y1); y++)
+          for (let z = Math.floor(b.z0); z <= Math.floor(b.z1); z++) if (w.getId(x, y, z) === B.END_GATEWAY) { enterGateway(this, x, y, z); return; }
+    }
     if (inEndPortal) {
       this.portalCooldown = 60;
       if (this.dimension === 'overworld') this.travel('end');
@@ -742,7 +752,7 @@ export class Game {
     let best: Entity | null = null, bestPart: string | null = null;
     let bestT = this.target ? this.target.t : Math.min(reach, 3.5);
     for (const e of this.entities) {
-      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat)) continue; }
+      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat) && !(e instanceof Minecart)) continue; }
       if (e === this.player?.riding) continue;
       for (const b of e.hitBoxes()) {
         const g = 0.1;
@@ -753,6 +763,11 @@ export class Game {
     this.targetEntity = best;
     this.targetPart = bestPart;
     if (best) this.target = null;
+  }
+
+  /** Is a minecart sitting on the rail at (x, y, z)? (detector rails) */
+  minecartOn(x: number, y: number, z: number) {
+    return this.entities.some((e) => e instanceof Minecart && !e.removed && Math.floor(e.x) === x && Math.floor(e.z) === z && Math.floor(e.y + 0.1) - y >= 0 && Math.floor(e.y + 0.1) - y <= 1);
   }
 
   // ------------------------------------------------------------------ helpers used by gameplay systems

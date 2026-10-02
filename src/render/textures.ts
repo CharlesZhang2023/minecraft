@@ -1138,17 +1138,138 @@ function portalFrame(frame: number): Img {
 gens.nether_portal = () => portalFrame(0);
 
 // ---------------------------------------------------------------- redstone
+// Dust is drawn as one quad per block (no overlapping layers to z-fight), so each connection shape gets its
+// own texture: mask bits are N, E, S, W. Alone: a dot. One side or two opposite sides: a straight line right
+// across the block. Corners, T's and crosses: the dot with arms.
+const dustDotPx = (x: number, y: number) => {
+  const d = Math.hypot(x - 7.5, y - 7.5);
+  return d < 2 ? 2 : d < 3.2 || (d < 4.5 && (x * 7 + y * 3) % 5 < 2) ? 1 : 0;
+};
+const dustLinePx = (along: number, across: number) => {
+  // a 2px core with ragged 1px edges, like vanilla's redstone_dust_line
+  if (across === 7 || across === 8) return 2;
+  if ((across === 6 || across === 9) && ((along * 5 + across * 3) % 7) < 4) return 1;
+  return 0;
+};
 gens.redstone_dust_dot = () => {
   const img = newImg();
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const d = Math.hypot(x - 7.5, y - 7.5);
-    if (d < 3.2 || (d < 4.5 && (x + y) % 3 === 0)) set(img, x, y, d < 2 ? [255, 255, 255] : [200, 200, 200]);
+    const v = dustDotPx(x, y);
+    if (v) set(img, x, y, v === 2 ? [255, 255, 255] : [200, 200, 200]);
   }
   return img;
 };
-gens.redstone_dust_line = (r) => {
+gens.redstone_dust_line = () => {
   const img = newImg();
-  for (let y = 0; y < S; y++) for (let x = 6; x < 10; x++) if (x === 7 || x === 8 || r.int(3) === 0) set(img, x, y, x === 7 || x === 8 ? [255, 255, 255] : [190, 190, 190]);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const v = dustLinePx(y, x);
+    if (v) set(img, x, y, v === 2 ? [255, 255, 255] : [190, 190, 190]);
+  }
+  return img;
+};
+for (let m = 0; m < 16; m++) gens['redstone_dust_' + m] = () => {
+  const img = newImg();
+  const n = !!(m & 1), e = !!(m & 2), so = !!(m & 4), w = !!(m & 8);
+  const count = +n + +e + +so + +w;
+  const ns = (n || so) && !e && !w, ew = (e || w) && !n && !so;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    let v = 0;
+    if (count === 0) v = dustDotPx(x, y);
+    else if (ns) v = dustLinePx(y, x);
+    else if (ew) v = dustLinePx(x, y);
+    else {
+      v = dustDotPx(x, y);
+      if (n && y <= 8) v = Math.max(v, dustLinePx(y, x));
+      if (so && y >= 7) v = Math.max(v, dustLinePx(y, x));
+      if (w && x <= 8) v = Math.max(v, dustLinePx(x, y));
+      if (e && x >= 7) v = Math.max(v, dustLinePx(x, y));
+    }
+    if (v) set(img, x, y, v === 2 ? [255, 255, 255] : [195, 195, 195]);
+  }
+  return img;
+};
+// ---------------------------------------------------------------- rails
+// Track runs north-south (along the texture's height): wooden ties across, two rails at columns 2-3 and 12-13.
+type RailStyle = { rail: [RGB, RGB]; tie: [RGB, RGB]; middle?: (x: number, y: number) => RGB | null };
+const IRON_RAIL: [RGB, RGB] = [hex('#b5b5b5'), hex('#6b6b6b')];
+const GOLD_RAIL: [RGB, RGB] = [hex('#fbe26a'), hex('#b8901c')];
+const TIE: [RGB, RGB] = [hex('#7a5c34'), hex('#4f3a20')];
+function railImg(r: Random, st: RailStyle): Img {
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const tieRow = y % 4 === 1 || y % 4 === 2;
+    if (tieRow && x >= 1 && x <= 14) set(img, x, y, shade(y % 4 === 1 ? st.tie[0] : st.tie[1], 0.92 + r.next() * 0.16));
+    const m = st.middle?.(x, y);
+    if (m) set(img, x, y, m);
+    if (x === 2 || x === 12) set(img, x, y, st.rail[0]);
+    if (x === 3 || x === 13) set(img, x, y, st.rail[1]);
+  }
+  return img;
+}
+gens.rail = (r) => railImg(r, { rail: IRON_RAIL, tie: TIE });
+gens.rail_corner = (r) => {
+  // a quarter turn joining the bottom (south) and right (east) edges
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = 16 - (x + 0.5), dy = 16 - (y + 0.5);
+    const rr = Math.hypot(dx, dy), a = Math.atan2(dy, dx) / (Math.PI / 2);
+    const tie = (a * 4.6) % 1 < 0.42 && rr > 1.2 && rr < 15.2;
+    if (tie) set(img, x, y, shade(TIE[(a * 4.6) % 1 < 0.21 ? 0 : 1], 0.92 + r.next() * 0.16));
+    if ((rr >= 2.5 && rr < 3.5) || (rr >= 12.5 && rr < 13.5)) set(img, x, y, IRON_RAIL[1]);
+    if ((rr >= 3.5 && rr < 4.5) || (rr >= 13.5 && rr < 14.5)) set(img, x, y, IRON_RAIL[0]);
+  }
+  return img;
+};
+const redLine = (on: boolean) => (x: number, y: number): RGB | null => (x === 7 || x === 8) && y % 4 !== 0 ? (on ? (x === 7 ? hex('#ff3a2a') : hex('#d01a10')) : x === 7 ? hex('#6a1410') : hex('#4c0d0a')) : null;
+gens.powered_rail = (r) => railImg(r, { rail: GOLD_RAIL, tie: TIE, middle: redLine(false) });
+gens.powered_rail_on = (r) => railImg(r, { rail: GOLD_RAIL, tie: TIE, middle: redLine(true) });
+const plate = (on: boolean) => (x: number, y: number): RGB | null => {
+  if (x < 5 || x > 10 || y < 3 || y > 12) return null;
+  if ((x === 7 || x === 8) && (y === 5 || y === 10)) return on ? hex('#ff3a2a') : hex('#5c120e');
+  return x === 5 || y === 3 ? hex('#9a9a9a') : x === 10 || y === 12 ? hex('#5a5a5a') : hex('#7a7a7a');
+};
+gens.detector_rail = (r) => railImg(r, { rail: IRON_RAIL, tie: TIE, middle: plate(false) });
+gens.detector_rail_on = (r) => railImg(r, { rail: IRON_RAIL, tie: TIE, middle: plate(true) });
+const DARK_TIE: [RGB, RGB] = [hex('#5a4a3a'), hex('#3a2e24')];
+gens.activator_rail = (r) => railImg(r, { rail: IRON_RAIL, tie: DARK_TIE, middle: redLine(false) });
+gens.activator_rail_on = (r) => railImg(r, { rail: IRON_RAIL, tie: DARK_TIE, middle: redLine(true) });
+// hay bale: straw with two red-brown bands round the sides
+gens.hay_block_side = (r) => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    let c = shade(hex(r.int(3) ? '#c9a92c' : '#a88a1e'), 0.9 + r.next() * 0.2);
+    if (x % 3 === 0 && r.int(2)) c = shade(c, 0.82);
+    if (y === 3 || y === 4 || y === 11 || y === 12) c = shade(hex('#8a3c1c'), 0.9 + r.next() * 0.2);
+    set(img, x, y, c);
+  }
+  return img;
+};
+gens.hay_block_top = (r) => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const d = Math.hypot(x - 7.5, y - 7.5);
+    let c = shade(hex(r.int(3) ? '#c9a92c' : '#b0921f'), 0.88 + r.next() * 0.2);
+    if (Math.abs(Math.sin(d * 1.3)) < 0.25) c = shade(c, 0.8);
+    if (x === 3 || x === 4 || x === 11 || x === 12) c = shade(hex('#8a3c1c'), 0.9 + r.next() * 0.2);
+    set(img, x, y, c);
+  }
+  return img;
+};
+// minecart body: riveted iron plates
+gens.minecart = (r) => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    let c = shade(hex('#8c8c8c'), 0.9 + r.next() * 0.12);
+    if (y === 0 || x === 0) c = hex('#b0b0b0');
+    if (y === 15 || x === 15) c = hex('#4e4e4e');
+    if ((x === 2 || x === 13) && (y === 2 || y === 13)) c = hex('#c8c8c8');
+    set(img, x, y, c);
+  }
+  return img;
+};
+gens.minecart_inside = (r) => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) set(img, x, y, shade(hex('#5e5e5e'), 0.88 + r.next() * 0.14 - (x % 5 === 0 ? 0.12 : 0)));
   return img;
 };
 gens.lever = () => { const img = newImg(); for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) set(img, x, y, x < 8 ? hex('#8a6b3c') : hex('#6b5130')); return img; };

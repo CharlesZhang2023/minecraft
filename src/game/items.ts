@@ -30,7 +30,7 @@ const byName = new Map<string, ItemDef>();
 // block items
 for (const b of BLOCKS) {
   if (!b.item || b.id === 0) continue;
-  const flat = b.render === Render.Cross || b.render === Render.Torch || b.id === B.LADDER || b.id === B.LILY_PAD || b.id === B.GLASS_PANE;
+  const flat = b.render === Render.Cross || b.render === Render.Torch || b.render === Render.Rail || b.id === B.LADDER || b.id === B.LILY_PAD || b.id === B.GLASS_PANE;
   const d: ItemDef = { id: b.id, name: b.name, display: b.display, maxStack: 64, block: b.id, flatBlock: flat };
   if (b.flammable && b.sound === 'wood') d.fuel = 300;
   if (b.name.endsWith('_sapling')) d.fuel = 100;
@@ -233,6 +233,26 @@ for (const e of EXTRA_EGGS) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn
 export const I4 = {
   END_CRYSTAL: item('end_crystal', 'End Crystal', { rarity: 'rare' }),
 };
+
+// Rails and horses (appended after I4: ids must stay stable)
+export const I5 = {
+  MINECART: item('minecart', 'Minecart', { maxStack: 1 }),
+  SADDLE: item('saddle', 'Saddle', { maxStack: 1 }),
+  IRON_HORSE_ARMOR: item('iron_horse_armor', 'Iron Horse Armor', { maxStack: 1 }),
+  GOLDEN_HORSE_ARMOR: item('golden_horse_armor', 'Gold Horse Armor', { maxStack: 1 }),
+  DIAMOND_HORSE_ARMOR: item('diamond_horse_armor', 'Diamond Horse Armor', { maxStack: 1 }),
+};
+/** Protection of each horse armour (vanilla: iron 5, gold 7, diamond 11). */
+export const HORSE_ARMOR: Record<number, { points: number; kind: string }> = {
+  [I5.IRON_HORSE_ARMOR]: { points: 5, kind: 'iron' },
+  [I5.GOLDEN_HORSE_ARMOR]: { points: 7, kind: 'gold' },
+  [I5.DIAMOND_HORSE_ARMOR]: { points: 11, kind: 'diamond' },
+};
+export const EXTRA_EGGS2: { mob: string; display: string; c1: number; c2: number }[] = [
+  { mob: 'horse', display: 'Horse', c1: 0xc09e7d, c2: 0xeee500 },
+  { mob: 'donkey', display: 'Donkey', c1: 0x534539, c2: 0x867566 },
+];
+for (const e of EXTRA_EGGS2) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
 
 export function itemByName(name: string): ItemDef | undefined {
   return byName.get(name);

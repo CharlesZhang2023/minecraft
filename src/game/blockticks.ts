@@ -5,10 +5,12 @@ import { B, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQ
 import { WorldGen, Setter } from '../world/worldgen';
 import { Random } from '../noise';
 import { FallingBlock } from '../entity/item';
-import { I, I3, stack, TOOLS, ARMOR } from './items';
+import { I, I3, I5, stack, TOOLS, ARMOR } from './items';
 import { randomBook } from './enchant';
 import { portalCanStay } from './portal';
 import { inStronghold } from '../world/stronghold';
+import { railCanStay } from './tracks';
+import { isRail } from '../world/rails';
 
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
 const DIRS6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] as const;
@@ -91,6 +93,7 @@ export class BlockTicker {
     const below = w.getId(x, y - 1, z);
     const def = BLOCKS[id];
     if (id === B.REDSTONE_WIRE || id === B.STONE_PRESSURE_PLATE) return OPAQUE[below] === 1;
+    if (isRail(id)) return railCanStay(w, x, y, z, v);
     if (id === B.LEVER || id === B.STONE_BUTTON) {
       const at = meta & 7;
       if (at === 0) return OPAQUE[below] === 1;
@@ -555,6 +558,7 @@ export class BlockTicker {
       [I.ENDER_PEARL, 1, 1], [I.IRON_INGOT, 1, 5], [I.APPLE, 1, 3], [I.BREAD, 1, 3], [I.REDSTONE, 4, 9], [TOOLS.iron_pickaxe, 1, 1],
       [TOOLS.iron_sword, 1, 1], [ARMOR.iron_helmet, 1, 1], [ARMOR.iron_chestplate, 1, 1], [ARMOR.iron_leggings, 1, 1], [ARMOR.iron_boots, 1, 1],
       [I.GOLDEN_APPLE, 1, 1], [I.COAL, 3, 8], [I.BOOK, 1, 2], [I3.ENCHANTED_BOOK, 1, 1], [I.PAPER, 2, 6],
+      [I5.SADDLE, 1, 1], [I5.IRON_HORSE_ARMOR, 1, 1], [I5.GOLDEN_HORSE_ARMOR, 1, 1], [I5.DIAMOND_HORSE_ARMOR, 1, 1],
     ];
     const n = 4 + this.rng.int(5);
     for (let k = 0; k < n; k++) {
@@ -564,12 +568,13 @@ export class BlockTicker {
     return items;
   }
 
-  /** Nether fortress chest (1.8 table, minus horse gear). */
+  /** Nether fortress chest (1.8 table). */
   private fortressLoot() {
     const items: ({ id: number; count: number } | null)[] = new Array(27).fill(null);
     const table: [number, number, number][] = [
       [I.DIAMOND, 1, 3], [I.IRON_INGOT, 1, 5], [I.GOLD_INGOT, 1, 3], [TOOLS.golden_sword, 1, 1], [ARMOR.golden_chestplate, 1, 1],
       [I.FLINT_AND_STEEL, 1, 1], [I3.NETHER_WART, 3, 7], [B.OBSIDIAN, 2, 4], [I3.BLAZE_ROD, 1, 2],
+      [I5.SADDLE, 1, 1], [I5.GOLDEN_HORSE_ARMOR, 1, 1], [I5.IRON_HORSE_ARMOR, 1, 1], [I5.DIAMOND_HORSE_ARMOR, 1, 1],
     ];
     const n = 2 + this.rng.int(4);
     for (let k = 0; k < n; k++) {
@@ -586,6 +591,7 @@ export class BlockTicker {
       [I.STRING, 1, 4], [I.BUCKET, 1, 1], [I.GOLDEN_APPLE, 1, 1], [I.COAL, 3, 8], [I.BONE, 2, 6], [I.ROTTEN_FLESH, 2, 6],
       [TOOLS.iron_pickaxe, 1, 1], [ARMOR.iron_chestplate, 1, 1], [I.DIAMOND, 1, 2], [I.APPLE, 1, 3], [I.ENDER_PEARL, 1, 1],
       [I3.ENCHANTED_BOOK, 1, 1], [I3.NAME_TAG, 1, 1], [I3.NETHER_WART, 1, 3], [I3.CARROT, 1, 3], [I3.POTATO, 1, 3],
+      [I5.SADDLE, 1, 1], [I5.SADDLE, 1, 1], [I5.IRON_HORSE_ARMOR, 1, 1], [I5.GOLDEN_HORSE_ARMOR, 1, 1], [I5.DIAMOND_HORSE_ARMOR, 1, 1],
     ];
     const n = 4 + this.rng.int(5);
     for (let k = 0; k < n; k++) {

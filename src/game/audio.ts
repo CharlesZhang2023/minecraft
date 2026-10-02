@@ -233,6 +233,53 @@ const GENS: Record<string, Gen> = {
     for (let k = 0; k < 2; k++) mixInto(b, env(tone(Math.floor(SR * 0.12), 500 + r.next() * 150, 350, 'saw', 0.05, 20), 0.005, 0.11, 2), 0.6, Math.floor(k * SR * 0.16));
     return normalize(bandpass(b, 250, 2500), 0.6);
   },
+  // horses: a whinny that rises then falls with a fast trill, snorts, hoof clops on the ground
+  'horse.say': (r) => {
+    const n = SR * 1.0;
+    const b = new Float32Array(n);
+    const f0 = 700 + r.next() * 150;
+    mixInto(b, env(tone(Math.floor(SR * 0.35), f0 * 0.7, f0 * 1.25, 'saw', 0.06, 28), 0.03, 0.3, 1.2), 0.7);
+    mixInto(b, env(tone(Math.floor(SR * 0.6), f0 * 1.2, f0 * 0.45, 'saw', 0.14, 24), 0.01, 0.58, 1.6), 0.8, Math.floor(SR * 0.3));
+    return normalize(bandpass(b, 300, 4000), 0.6);
+  },
+  'horse.hurt': (r) => normalize(bandpass(env(tone(SR * 0.35, 900 + r.next() * 150, 500, 'saw', 0.12, 30), 0.005, 0.32, 2), 300, 3500), 0.6),
+  'horse.angry': (r) => {
+    const n = SR * 0.9;
+    const b = env(bandpass(noise(n, r), 250, 1400), 0.01, 0.3, 2);
+    mixInto(b, env(tone(Math.floor(SR * 0.55), 950 + r.next() * 100, 420, 'saw', 0.16, 26), 0.01, 0.5, 1.6), 0.9, Math.floor(SR * 0.3));
+    return normalize(bandpass(b, 200, 4000), 0.65);
+  },
+  'horse.breathe': (r) => normalize(env(bandpass(noise(SR * 0.5, r), 200, 1200), 0.1, 0.4, 1.5), 0.35),
+  'horse.step': (r) => {
+    const b = new Float32Array(SR * 0.16);
+    mixInto(b, env(bandpass(noise(SR * 0.05, r), 300, 2200), 0.001, 0.05, 3), 1);
+    mixInto(b, env(tone(SR * 0.05, 260 + r.next() * 60, 180, 'tri'), 0.001, 0.05, 3), 0.6);
+    return normalize(b, 0.5);
+  },
+  'horse.gallop': (r) => {
+    const b = new Float32Array(SR * 0.3);
+    for (let k = 0; k < 3; k++) mixInto(b, env(bandpass(noise(SR * 0.05, r), 250, 2000), 0.001, 0.05, 3), 0.7 + r.next() * 0.3, Math.floor((k * 0.07 + r.next() * 0.02) * SR));
+    return normalize(b, 0.55);
+  },
+  'horse.jump': (r) => normalize(env(bandpass(noise(SR * 0.4, r), 150, 1100), 0.01, 0.35, 1.5), 0.5),
+  'horse.land': (r) => normalize(env(lowpass(noise(SR * 0.3, r), 500), 0.002, 0.25, 2.5), 0.7),
+  'horse.saddle': (r) => normalize(env(bandpass(noise(SR * 0.35, r), 400, 2400), 0.02, 0.3, 1.5), 0.5),
+  'horse.armor': (r) => {
+    const b = new Float32Array(SR * 0.5);
+    for (let k = 0; k < 4; k++) mixInto(b, env(tone(SR * 0.2, 1800 + r.next() * 1200, 1500, 'square'), 0.001, 0.18, 3), 0.4, Math.floor(r.next() * SR * 0.25));
+    return normalize(bandpass(b, 800, 6000), 0.45);
+  },
+  'horse.eat': (r) => normalize(env(grains(SR * 0.4, r, 14, 300, 2500, 0.03), 0.01, 0.38, 1.4), 0.5),
+  // donkey: a two-part hee-haw
+  'donkey.say': (r) => {
+    const b = new Float32Array(SR * 1.2);
+    for (let k = 0; k < 2; k++) {
+      mixInto(b, env(tone(Math.floor(SR * 0.28), 900 + r.next() * 80, 1100, 'saw', 0.05, 30), 0.02, 0.25, 1.4), 0.6, Math.floor(k * SR * 0.6));
+      mixInto(b, env(tone(Math.floor(SR * 0.3), 260 + r.next() * 30, 200, 'saw', 0.04, 20), 0.03, 0.27, 1.4), 0.9, Math.floor((k * 0.6 + 0.28) * SR));
+    }
+    return normalize(bandpass(b, 150, 3500), 0.6);
+  },
+  'minecart.roll': (r) => normalize(env(bandpass(noise(SR * 1.0, r), 150, 1500), 0.2, 0.8, 1), 0.3),
   'wolf.hurt': (r) => normalize(bandpass(env(tone(SR * 0.3, 900 + r.next() * 100, 600, 'saw', 0.1, 25), 0.005, 0.28, 2), 300, 3000), 0.6),
   'bat.idle': (r) => {
     const n = SR * 0.25;

@@ -2,7 +2,7 @@
 import { Screen, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, POTION_ITEMS, itemByName } from '../game/items';
+import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, POTION_ITEMS, itemByName, HORSE_ARMOR } from '../game/items';
 import { craft, SMELTING } from '../game/recipes';
 import { addToSlots } from '../game/inventory';
 import { BLOCKS, Render, B, isLeaves, isSapling, isStairs, isSlab } from '../world/blocks';
@@ -10,6 +10,7 @@ import { COOK_TIME, FurnaceTile } from '../game/furnace';
 import { enchName, ENCHANTS } from '../game/enchant';
 import { drawEffectList } from './effects';
 import { POTION_BY_KEY, effectLine } from '../game/potiondata';
+import type { Horse } from '../entity/horse';
 
 export interface Slot {
   x: number; y: number;
@@ -622,16 +623,70 @@ export class EnderChestScreen extends ContainerScreen {
   }
 }
 
+// ------------------------------------------------------------------ horse
+/** Saddle (and armour for horses) on the left, the horse itself, and a donkey or mule's chest if it has one. */
+export class HorseScreen extends ContainerScreen {
+  title = 'Horse';
+  constructor(ui: UI, public horse: Horse) { super(ui); }
+  override buildSlots() {
+    const h = this.horse;
+    this.slots.push({ x: 8, y: 18, get: () => h.saddle, set: (s) => { const had = !!h.saddle; h.saddle = s; if (s && !had) this.game.audio.play('horse.saddle', h, 0.5, 1); }, group: 'saddle', limit: 1, canPlace: (s) => s.id === I5.SADDLE });
+    if (h.canWearArmor) this.slots.push({ x: 8, y: 36, get: () => h.armorItem, set: (s) => { const had = !!h.armorItem; h.setArmor(s); if (s && !had) this.game.audio.play('horse.armor', h, 0.5, 1); }, group: 'harmor', limit: 1, canPlace: (s) => !!HORSE_ARMOR[s.id] });
+    if (h.chest)
+      for (let r = 0; r < 3; r++)
+        for (let c = 0; c < 5; c++) {
+          const i = r * 5 + c;
+          this.slots.push({ x: 80 + c * 18, y: 18 + r * 18, get: () => h.chestItems[i], set: (s) => (h.chestItems[i] = s), group: 'chest' });
+        }
+    this.addPlayerSlots();
+  }
+  override quickTargets(s: Slot, st: ItemStack): string[] {
+    if (s.group === 'saddle' || s.group === 'harmor' || s.group === 'chest') return ['hotbar', 'main'];
+    if (st.id === I5.SADDLE && !this.horse.saddle) return ['saddle'];
+    if (HORSE_ARMOR[st.id] && this.horse.canWearArmor && !this.horse.armorItem) return ['harmor'];
+    return this.horse.chest ? ['chest'] : super.quickTargets(s, st);
+  }
+  override drawBackground(ctx: Ctx, mx: number, my: number) {
+    const L = this.left, T = this.top;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(L + 25, T + 17, 54, 54);
+    ctx.clearRect(L + 26, T + 18, 52, 52);
+    this.ui.previewBox = { x: L + 26, y: T + 18, w: 52, h: 52, yaw: Math.atan((L + 52 - mx) / 40), pitch: Math.atan((T + 40 - my) / 40), entity: this.horse };
+  }
+  override drawForeground(ctx: Ctx) {
+    const L = this.left, T = this.top;
+    // empty-slot hints, like vanilla's faint saddle and armour outlines
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    if (!this.horse.saddle) this.ui.drawItem(ctx, { id: I5.SADDLE, count: 1 }, L + 8, T + 18);
+    if (this.horse.canWearArmor && !this.horse.armorItem) this.ui.drawItem(ctx, { id: I5.IRON_HORSE_ARMOR, count: 1 }, L + 8, T + 36);
+    ctx.restore();
+    const name = (this.horse as unknown as { customName?: string }).customName ?? { horse: 'Horse', donkey: 'Donkey', mule: 'Mule' }[this.horse.kind];
+    this.label(ctx, name, 8, 6);
+    this.label(ctx, 'Inventory', 8, 72);
+  }
+  override tick() {
+    super.tick();
+    const h = this.horse, p = this.player;
+    if (h.dead || h.removed || h.distanceTo(p) > 8) this.ui.close();
+  }
+  override onClose() {
+    this.ui.previewBox = null;
+    super.onClose();
+  }
+}
+
 // ------------------------------------------------------------------ creative
 type Tab = { name: string; icon: number; items: () => ItemStack[] };
 const one = (id: number): ItemStack => ({ id, count: 1 });
 const defs = () => [...ITEMS.values()].filter((d) => d.id !== 0);
 const REDSTONE_IDS = [I.REDSTONE, B.REDSTONE_TORCH, I3.REPEATER, I3.COMPARATOR, B.REDSTONE_BLOCK, B.LEVER, B.STONE_BUTTON, B.STONE_PRESSURE_PLATE,
-  B.PISTON, B.STICKY_PISTON, B.OBSERVER, B.DISPENSER, B.DROPPER, B.HOPPER, B.REDSTONE_LAMP, B.TNT, I.OAK_DOOR];
+  B.PISTON, B.STICKY_PISTON, B.SLIME_BLOCK, B.OBSERVER, B.DISPENSER, B.DROPPER, B.HOPPER, B.REDSTONE_LAMP, B.TNT, I.OAK_DOOR, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL];
+const TRANSPORT_IDS = [B.RAIL, B.POWERED_RAIL, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL, I5.MINECART, I2.BOAT, I5.SADDLE, I5.IRON_HORSE_ARMOR, I5.GOLDEN_HORSE_ARMOR, I5.DIAMOND_HORSE_ARMOR];
 const BREWING_IDS = [I3.GLASS_BOTTLE, I.GHAST_TEAR, I3.FERMENTED_SPIDER_EYE, I2.BLAZE_POWDER, I3.MAGMA_CREAM, I3.BREWING_STAND, I3.GLISTERING_MELON, I.SPIDER_EYE];
 const MISC_IDS = [I.BUCKET, I.WATER_BUCKET, I.LAVA_BUCKET, I.MILK_BUCKET, I.FIRE_CHARGE, I2.ENDER_EYE, I4.END_CRYSTAL, I.PAPER, I.BOOK, I2.SLIME_BALL, I.BONE_MEAL, I.SNOWBALL];
 const TOOL_ENCH = ['efficiency', 'silk_touch', 'unbreaking', 'fortune', 'luck_of_the_sea', 'lure'];
-const special = new Set<number>([...REDSTONE_IDS, ...BREWING_IDS, ...MISC_IDS, I2.BOAT, I3.ENCHANTED_BOOK]);
+const special = new Set<number>([...REDSTONE_IDS, ...BREWING_IDS, ...MISC_IDS, ...TRANSPORT_IDS, I3.ENCHANTED_BOOK]);
 const isFood = (d: ItemDef) => !!d.food && !d.potion;
 const isTool = (d: ItemDef) => (!!d.tool && d.tool.type !== 'sword') || [I.FLINT_AND_STEEL, I.COMPASS, I.CLOCK, I2.FISHING_ROD, I3.NAME_TAG].includes(d.id);
 const isCombat = (d: ItemDef) => d.tool?.type === 'sword' || !!d.armor || d.id === I.BOW || d.id === I.ARROW || d.id === I.EGG || d.id === I.ENDER_PEARL;
@@ -655,7 +710,7 @@ const TABS: Tab[] = [
   { name: 'Building Blocks', icon: B.BRICKS, items: general(isBuilding) },
   { name: 'Decoration Blocks', icon: B.POPPY, items: general(isDecoration) },
   { name: 'Redstone', icon: I.REDSTONE, items: () => REDSTONE_IDS.map(one) },
-  { name: 'Transportation', icon: I2.BOAT, items: () => [one(I2.BOAT)] },
+  { name: 'Transportation', icon: B.POWERED_RAIL, items: () => TRANSPORT_IDS.map(one) },
   { name: 'Miscellaneous', icon: I.LAVA_BUCKET, items: () => [...MISC_IDS.map(one), ...defs().filter((d) => d.egg).map((d) => one(d.id))] },
   { name: 'Search Items', icon: I.COMPASS, items: () => [...defs().filter((d) => d.id !== I3.ENCHANTED_BOOK).map((d) => one(d.id)), ...books(() => true, true)] },
   { name: 'Foodstuffs', icon: I.APPLE, items: general(isFood) },

@@ -2,6 +2,7 @@ import { LivingEntity, DamageSource } from '../entity/living';
 import type { Entity } from '../entity/entity';
 import type { World } from '../world/world';
 import { Inventory } from './inventory';
+import type { Mount } from '../entity/mount';
 
 export enum GameMode { Survival = 0, Creative = 1, Adventure = 2, Spectator = 3 }
 
@@ -47,7 +48,7 @@ export class Player extends LivingEntity {
   lastHurtDirection = 0;
   portalCooldown = 0;
   score = 0;
-  riding: { dismount(): void; yaw: number; x: number; y: number; z: number } | null = null;
+  riding: Mount | null = null;
   fishHook: { reel(): number; discard(): void; x: number; y: number; z: number } | null = null;
 
   constructor(world: World) {
@@ -96,6 +97,8 @@ export class Player extends LivingEntity {
 
   override tick() {
     if (this.riding) {
+      this.bodyYaw = this.riding.bodyFollows ? this.riding.yaw : this.yaw;
+      this.headYaw = this.yaw;
       this.pEyeOffset = this.eyeOffset;
       this.eyeOffset = 1.62;
       this.pDistWalked = this.distWalked;

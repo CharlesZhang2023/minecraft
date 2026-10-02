@@ -19,6 +19,7 @@ export enum Render {
   Torch,
   Crops,
   Model, // arbitrary box list, see models.ts
+  Rail, // flat or sloped track, see mesher.ts
 }
 
 export type Tool = 'pickaxe' | 'axe' | 'shovel' | 'hoe' | 'sword' | 'shears' | null;
@@ -127,6 +128,7 @@ export function blockByName(name: string): BlockDef | undefined {
   return byName.get(name);
 }
 
+const RAIL: Opts = { render: Render.Rail, solid: false, opaque: false, lightOpacity: 0, hardness: 0.7, sound: 'metal', needsSupport: true };
 const plant: Opts = { render: Render.Cross, solid: false, hardness: 0, sound: 'grass', needsSupport: true };
 const stone: Opts = { hardness: 1.5, tool: 'pickaxe', harvestLevel: 0, sound: 'stone', blastResistance: 30 };
 const ore = (lvl: number): Opts => ({ hardness: 3, tool: 'pickaxe', harvestLevel: lvl, sound: 'stone', blastResistance: 15 });
@@ -295,6 +297,14 @@ export const B = {
   DRAGON_EGG: reg('dragon_egg', 'Dragon Egg', { render: Render.Model, tex: 'dragon_egg', hardness: 3, gravity: true, opaque: false, lightOpacity: 0, light: 1, blastResistance: 45 }),
   IRON_BARS: reg('iron_bars', 'Iron Bars', { render: Render.Model, tex: 'iron_bars', hardness: 5, tool: 'pickaxe', harvestLevel: 0, sound: 'metal', opaque: false, lightOpacity: 0, blastResistance: 30 }),
   ENDER_CHEST: reg('ender_chest', 'Ender Chest', { render: Render.Model, top: 'ender_chest_top', side: 'ender_chest_side', front: 'ender_chest_front', hardness: 22.5, tool: 'pickaxe', harvestLevel: 0, opaque: false, lightOpacity: 0, light: 7, blastResistance: 3000, drop: 'obsidian' }),
+  // rails and End gateways (appended: ids must stay stable). Rail meta: shape 0-9 (0 N-S, 1 E-W, 2-5 ascending
+  // east/west/north/south, 6-9 curves SE/SW/NW/NE); the special rails only go straight (0-5) and use bit 8 for on.
+  RAIL: reg('rail', 'Rail', { ...RAIL, tex: 'rail' }),
+  POWERED_RAIL: reg('powered_rail', 'Powered Rail', { ...RAIL, tex: 'powered_rail' }),
+  DETECTOR_RAIL: reg('detector_rail', 'Detector Rail', { ...RAIL, tex: 'detector_rail' }),
+  ACTIVATOR_RAIL: reg('activator_rail', 'Activator Rail', { ...RAIL, tex: 'activator_rail' }),
+  HAY_BLOCK: reg('hay_block', 'Hay Bale', { top: 'hay_block_top', side: 'hay_block_side', hardness: 0.5, sound: 'grass', flammable: true }),
+  END_GATEWAY: reg('end_gateway', 'End Gateway', { render: Render.Model, tex: 'end_portal', solid: false, opaque: false, lightOpacity: 0, light: 15, hardness: -1, blastResistance: 18000000, item: false, drop: null, selectable: false, sound: 'none' }),
 } as const;
 
 export const BLOCK_COUNT = BLOCKS.length;
@@ -358,6 +368,14 @@ export const T = {
   portal: tex('nether_portal'),
   dustDot: tex('redstone_dust_dot'),
   dustLine: tex('redstone_dust_line'),
+  railCorner: tex('rail_corner'),
+  poweredRailOn: tex('powered_rail_on'),
+  detectorRailOn: tex('detector_rail_on'),
+  activatorRailOn: tex('activator_rail_on'),
+  minecart: tex('minecart'),
+  minecartInside: tex('minecart_inside'),
+  /** Dust top by connection mask (bits N, E, S, W). */
+  dust: Array.from({ length: 16 }, (_, m) => tex('redstone_dust_' + m)),
   lever: tex('lever'),
   cobble: tex('cobblestone'),
   stone: tex('stone'),
@@ -406,7 +424,8 @@ export const isPiston = (id: number) => id === B.PISTON || id === B.STICKY_PISTO
 export const isRedstoneComponent = (id: number) =>
   id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || isRedstoneTorch(id) ||
   id === B.REDSTONE_LAMP || id === B.LIT_REDSTONE_LAMP || id === B.REDSTONE_BLOCK || id === B.OAK_DOOR || id === B.TNT ||
-  isDiode(id) || isPiston(id) || id === B.OBSERVER || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER;
+  isDiode(id) || isPiston(id) || id === B.OBSERVER || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER || isRail(id);
+export const isRail = (id: number) => id === B.RAIL || id === B.POWERED_RAIL || id === B.DETECTOR_RAIL || id === B.ACTIVATOR_RAIL;
 
 /** 6-way facing (vanilla order): 0 down, 1 up, 2 north, 3 south, 4 west, 5 east. */
 export const FACING6: ReadonlyArray<readonly [number, number, number]> = [[0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]];
