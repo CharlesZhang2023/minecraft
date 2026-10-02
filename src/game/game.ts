@@ -330,8 +330,10 @@ export class Game {
       p.setGameMode(meta.gameMode);
       const sp0 = meta.spawn;
       p.spawnX = sp0?.[0] ?? 0; p.spawnY = sp0?.[1] ?? -1; p.spawnZ = sp0?.[2] ?? 0;
-      p.setPos(p.spawnX + 0.5, 200, p.spawnZ + 0.5);
-      sp.pendingArrival = { x: p.spawnX + 0.5, y: p.spawnY, z: p.spawnZ + 0.5, toSpawn: true };
+      // newcomers land a few blocks around the spawn point, not all inside each other (like the real game)
+      const ox = owner ? 0 : Math.floor(this.rng.next() * 7) - 3, oz = owner ? 0 : Math.floor(this.rng.next() * 7) - 3;
+      p.setPos(p.spawnX + ox + 0.5, 200, p.spawnZ + oz + 0.5);
+      sp.pendingArrival = { x: p.spawnX + ox + 0.5, y: p.spawnY, z: p.spawnZ + oz + 0.5, toSpawn: true };
     }
     const dim = dimName === 'overworld' ? over : await this.loadDim(dimName);
     sp.dim = dimName;
@@ -457,8 +459,9 @@ export class Game {
     if (!w) return false;
     if (a.toSpawn && sp.dim === 'overworld' && !this.meta?.spawn && !this.resolveWorldSpawn(w)) return false;
     if (a.toSpawn && p.spawnY < 0 && this.meta?.spawn) {
+      const ox = a.x - p.spawnX, oz = a.z - p.spawnZ;
       [p.spawnX, p.spawnY, p.spawnZ] = this.meta.spawn;
-      a.x = p.spawnX + 0.5; a.z = p.spawnZ + 0.5;
+      a.x = p.spawnX + ox; a.z = p.spawnZ + oz;
     }
     if (!w.chunkAt(Math.floor(a.x), Math.floor(a.z))) return false;
     if (w.loadProgress(a.x, a.z, 2) < 0.99) return false;
