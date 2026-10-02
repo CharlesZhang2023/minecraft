@@ -20,7 +20,11 @@ function detect(): boolean {
 /** The physical screen is upright. Asked of the screen, not the viewport, so an open soft keyboard doesn't flip it. */
 function portraitScreen(): boolean {
   const t = screen.orientation?.type;
-  return t ? t.startsWith('portrait') : screen.height > screen.width;
+  if (t) return t.startsWith('portrait');
+  // older iOS: no screen.orientation, and screen.width/height never swap, but window.orientation does
+  const wo = (window as unknown as { orientation?: number }).orientation;
+  if (typeof wo === 'number') return wo % 180 === 0;
+  return window.innerHeight > window.innerWidth;
 }
 
 const listeners: (() => void)[] = [];

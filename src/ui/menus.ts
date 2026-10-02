@@ -396,7 +396,7 @@ export class OptionsScreen extends Screen {
       new Button(this.ui, x1, r1, 150, 20, () => `Difficulty: ${['Peaceful', 'Easy', 'Normal', 'Hard'][o.difficulty]}`, () => { if (this.game.meta?.hardcore) return; o.difficulty = (o.difficulty + 1) % 4; save(); }),
       new Slider(this.ui, x0, r2, 150, 20, (o.renderDistance - 2) / 14, (v) => `Render Distance: ${Math.round(2 + v * 14)} chunks`, (v) => { o.renderDistance = Math.round(2 + v * 14); save(); }, 14),
       new Slider(this.ui, x1, r2, 150, 20, o.gamma, (v) => `Brightness: ${v === 0 ? 'Moody' : v === 1 ? 'Bright' : '+' + Math.round(v * 100) + '%'}`, (v) => { o.gamma = v; save(); }),
-      new Slider(this.ui, x0, r3, 150, 20, o.sensitivity, (v) => `Sensitivity: ${Math.round(v * 200)}%`, (v) => { o.sensitivity = v; save(); }),
+      new Slider(this.ui, x0, r3, 150, 20, o.sensitivity, (v) => `${device.touch ? 'Mouse ' : ''}Sensitivity: ${Math.round(v * 200)}%`, (v) => { o.sensitivity = v; save(); }),
       new Button(this.ui, x1, r3, 150, 20, () => `GUI Scale: ${o.guiScale === 0 ? 'Auto' : o.guiScale}`, () => { o.guiScale = (o.guiScale + 1) % 5; save(); this.init(); }),
       new Button(this.ui, x0, r4, 150, 20, () => `View Bobbing: ${onoff(o.viewBobbing)}`, () => { o.viewBobbing = !o.viewBobbing; save(); }),
       new Button(this.ui, x1, r4, 150, 20, () => `Clouds: ${o.clouds ? 'Fancy' : 'OFF'}`, () => { o.clouds = !o.clouds; save(); }),
@@ -432,6 +432,9 @@ export class ControlsScreen extends Screen {
       this.widgets.push(
         new Button(this.ui, W / 2 - 155, 30, 150, 20, () => `Movement: ${o.touchMove === 'joystick' ? 'Joystick' : 'D-Pad'}`, () => { o.touchMove = o.touchMove === 'joystick' ? 'dpad' : 'joystick'; save(); }),
         new Button(this.ui, W / 2 + 5, 30, 150, 20, () => `Aim: ${o.touchAim === 'crosshair' ? 'Crosshair' : 'Touch'}`, () => { o.touchAim = o.touchAim === 'crosshair' ? 'touch' : 'crosshair'; save(); }),
+        new Slider(this.ui, W / 2 - 155, 54, 150, 20, o.touchSensX, (v) => `Look Across: ${Math.round(v * 200)}%`, (v) => { o.touchSensX = v; save(); }),
+        new Slider(this.ui, W / 2 + 5, 54, 150, 20, o.touchSensY, (v) => `Look Up/Down: ${Math.round(v * 200)}%`, (v) => { o.touchSensY = v; save(); }),
+        new Button(this.ui, W / 2 - 155, 78, 150, 20, () => `Swipe Up: ${o.touchInvertY ? 'Look Up' : 'Look Down'}`, () => { o.touchInvertY = !o.touchInvertY; save(); }),
       );
     }
   }
@@ -468,7 +471,7 @@ export class ControlsScreen extends Screen {
       ['Attack / Feed', aim ? 'Tap the mob' : 'Tap with a mob in the crosshair'],
       ['Eat / Draw bow', 'Hold'], ['Drop Item', 'Hold a hotbar slot'], ['Inventory', '... on the hotbar'],
     ];
-    const top = 58, step = Math.min(11, (this.gui.h - 34 - top) / rows.length);
+    const top = 104, step = Math.min(11, (this.gui.h - 34 - top) / rows.length);
     rows.forEach(([a, b], i) => {
       const y = top + i * step;
       this.gui.text(ctx, a, W / 2 - 150, y, '#FFFFFF');

@@ -482,12 +482,16 @@ export class Game {
     const p = this.player;
     if (!p || !this.input.locked || this.ui.screen) return;
     if (p.sleeping) return;
-    const s = this.options.sensitivity * 0.6 + 0.2;
-    const f = s * s * s * 8 * 0.15;
-    p.yaw += dx * f;
-    p.pitch = clamp(p.pitch + dy * f * (this.options.invertY ? -1 : 1), -90, 90);
-    p.pyaw += dx * f;
-    p.ppitch = clamp(p.ppitch + dy * f * (this.options.invertY ? -1 : 1), -90, 90);
+    const o = this.options;
+    const curve = (v: number) => { const s = v * 0.6 + 0.2; return s * s * s * 8 * 0.15; };
+    // touch: separate across / up-down speeds, and by default the view is dragged with the finger
+    // (swipe up, look down); the mouse keeps one speed and its own invert setting
+    const fx = curve(device.touch ? o.touchSensX : o.sensitivity);
+    const fy = device.touch ? curve(o.touchSensY) * (o.touchInvertY ? 1 : -1) : curve(o.sensitivity) * (o.invertY ? -1 : 1);
+    p.yaw += dx * fx;
+    p.pitch = clamp(p.pitch + dy * fy, -90, 90);
+    p.pyaw += dx * fx;
+    p.ppitch = clamp(p.ppitch + dy * fy, -90, 90);
   }
 
   tick() {
