@@ -434,7 +434,7 @@ export class ControlsScreen extends Screen {
         new Button(this.ui, W / 2 + 5, 30, 150, 20, () => `Aim: ${o.touchAim === 'crosshair' ? 'Crosshair' : 'Touch'}`, () => { o.touchAim = o.touchAim === 'crosshair' ? 'touch' : 'crosshair'; save(); }),
         new Slider(this.ui, W / 2 - 155, 54, 150, 20, o.touchSensX, (v) => `Look Across: ${Math.round(v * 200)}%`, (v) => { o.touchSensX = v; save(); }),
         new Slider(this.ui, W / 2 + 5, 54, 150, 20, o.touchSensY, (v) => `Look Up/Down: ${Math.round(v * 200)}%`, (v) => { o.touchSensY = v; save(); }),
-        new Button(this.ui, W / 2 - 155, 78, 150, 20, () => `Swipe Up: ${o.touchInvertY ? 'Look Up' : 'Look Down'}`, () => { o.touchInvertY = !o.touchInvertY; save(); }),
+        new Button(this.ui, W / 2 - 155, 78, 150, 20, () => `Swipe Up: ${o.touchSwipeDown ? 'Look Down' : 'Look Up'}`, () => { o.touchSwipeDown = !o.touchSwipeDown; save(); }),
       );
     }
   }

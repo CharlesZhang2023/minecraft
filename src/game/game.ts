@@ -484,10 +484,10 @@ export class Game {
     if (p.sleeping) return;
     const o = this.options;
     const curve = (v: number) => { const s = v * 0.6 + 0.2; return s * s * s * 8 * 0.15; };
-    // touch: separate across / up-down speeds, and by default the view is dragged with the finger
-    // (swipe up, look down); the mouse keeps one speed and its own invert setting
+    // touch: separate across / up-down speeds, swipe up looks up unless set to drag the view with the
+    // finger; the mouse keeps one speed and its own invert setting
     const fx = curve(device.touch ? o.touchSensX : o.sensitivity);
-    const fy = device.touch ? curve(o.touchSensY) * (o.touchInvertY ? 1 : -1) : curve(o.sensitivity) * (o.invertY ? -1 : 1);
+    const fy = device.touch ? curve(o.touchSensY) * (o.touchSwipeDown ? -1 : 1) : curve(o.sensitivity) * (o.invertY ? -1 : 1);
     p.yaw += dx * fx;
     p.pitch = clamp(p.pitch + dy * fy, -90, 90);
     p.pyaw += dx * fx;

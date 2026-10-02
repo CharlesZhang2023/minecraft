@@ -65,7 +65,8 @@ export class Hud {
     if (g.hideHud) return;
     const cx = Math.floor(W / 2);
     // crosshair (inverted colours)
-    if (!g.showDebug && g.thirdPerson === 0 && !g.touchAim()) {
+    if (!g.showDebug && g.thirdPerson === 0 && !device.touch) this.crosshair(ctx);
+    else if (!g.showDebug && g.thirdPerson === 0 && !g.touchAim()) {
       ctx.save();
       ctx.globalCompositeOperation = 'difference';
       ctx.fillStyle = '#ffffff';
@@ -188,6 +189,23 @@ export class Hud {
     if (!this.ui.screen && !g.hideHud) drawEffectsHud(ctx, this.ui);
     this.bossBar(ctx);
     this.renderChatAndText(ctx);
+  }
+
+  /**
+   * Mouse play: the crosshair in device pixels, so its middle pixel sits on the exact centre of the view
+   * (the ray the game picks blocks with) instead of up to half a GUI pixel right of and below it.
+   */
+  private crosshair(ctx: Ctx) {
+    const s = this.ui.gui.scale, c = ctx.canvas;
+    const x = Math.round(c.width / 2 - s / 2), y = Math.round(c.height / 2 - s / 2);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'difference';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x - 4 * s, y, 9 * s, s);
+    ctx.fillRect(x, y - 4 * s, s, 4 * s);
+    ctx.fillRect(x, y + s, s, 4 * s);
+    ctx.restore();
   }
 
   /** The Ender Dragon's health bar across the top of the screen. */
