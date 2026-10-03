@@ -1,0 +1,10 @@
+{
+  "id": "kinetic",
+  "version": "1.0.0",
+  "name": "Kinetics",
+  "description": "Rotational power: hand cranks and windmills turn shafts that drive millstones. Look at a machine to see its speed.",
+  "authors": ["Minecraft Web Edition"],
+  "environment": "*",
+  "icon": "#8a6a3a",
+  "depends": { "minecraft": ">=1.0.0" }
+}

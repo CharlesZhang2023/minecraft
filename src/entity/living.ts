@@ -2,6 +2,8 @@ import { Entity } from './entity';
 import type { World } from '../world/world';
 import { BLOCKS, B } from '../world/blocks';
 import { EFFECTS, potionColor } from '../game/potiondata';
+import { Events } from '../mod/events';
+import { live } from '../mod/hooks';
 
 export interface ActiveEffect { id: string; amp: number; dur: number }
 
@@ -75,6 +77,8 @@ export class LivingEntity extends Entity {
   /** Returns true if damage was applied. */
   damage(amount: number, source: DamageSource, attacker?: Entity | null): boolean {
     if (this.dead || this.health <= 0) return false;
+    // mods may cancel damage (server side only: puppets never take any)
+    if (Events.entityDamage.any && live.game && this.world.role === 'server' && Events.entityDamage.fire({ game: live.game, entity: this, amount, source }) === 'fail') return false;
     if ((source === 'fire' || source === 'lava') && (this.fireImmune || this.effects.has('fire_resistance'))) return false;
     const res = this.effectAmp('resistance');
     if (res >= 0 && source !== 'void' && source !== 'kill') amount *= Math.max(0, 1 - 0.2 * (res + 1));
@@ -108,6 +112,7 @@ export class LivingEntity extends Entity {
     if (this.health <= 0) {
       this.health = 0;
       this.die(source, attacker ?? null);
+      if (Events.entityDeath.any && live.game && this.world.role === 'server') Events.entityDeath.fire({ game: live.game, entity: this, source });
     }
     return true;
   }

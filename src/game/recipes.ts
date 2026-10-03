@@ -1,6 +1,6 @@
 // Crafting & smelting recipes.
-import { B, WOOL_COLORS } from '../world/blocks';
-import { I, I2, I3, I4, I5, I6, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion } from './items';
+import { B, WOOL_COLORS, blockByName } from '../world/blocks';
+import { I, I2, I3, I4, I5, I6, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion, itemByName } from './items';
 
 interface Shaped { pattern: string[]; key: Record<string, number | number[]>; out: ItemStack }
 interface Shapeless { ingredients: (number | number[])[]; out: ItemStack }
@@ -291,3 +291,83 @@ S(['ISI', 'ITI', 'ISI'], { I: I.IRON_INGOT, S: I.STICK, T: B.REDSTONE_TORCH }, B
 S(['I I', 'III'], { I: I.IRON_INGOT }, I5.MINECART);
 S(['###', '###', '###'], { '#': I.WHEAT }, B.HAY_BLOCK);
 L([B.HAY_BLOCK], I.WHEAT, 9);
+
+// ------------------------------------------------------------------ mod recipes
+/**
+ * An ingredient as mods write it: an item or block key ('ruby:ruby', 'stick', 'minecraft:stick'), a tag ('#planks'),
+ * a registered ref, a raw id, or a list of alternatives. Keys are resolved whenever ids are bound (per world).
+ */
+export type Ingredient = string | number | { readonly id: number } | readonly Ingredient[];
+export interface ModRecipe {
+  mod: string;
+  kind: 'shaped' | 'shapeless' | 'smelting';
+  pattern?: string[];
+  key?: Record<string, Ingredient>;
+  ingredients?: Ingredient[];
+  input?: Ingredient;
+  out: Ingredient;
+  count: number;
+  xp?: number;
+}
+export const MOD_RECIPES: ModRecipe[] = [];
+/** Item tags mods can use as ingredients. */
+export const TAGS: Record<string, number[]> = {
+  planks: PLANKS, logs: LOGS, wool: [...WOOL_COLORS], coals: COAL, stone_crafting_materials: [B.COBBLESTONE],
+  saplings: [B.OAK_SAPLING, B.SPRUCE_SAPLING, B.BIRCH_SAPLING], leaves: [B.OAK_LEAVES, B.SPRUCE_LEAVES, B.BIRCH_LEAVES],
+  sand: [B.SAND], flowers: [B.DANDELION, B.POPPY, B.CORNFLOWER, B.OXEYE_DAISY, B.ALLIUM],
+};
+
+function resolveIngredient(ing: Ingredient): number[] | null {
+  if (typeof ing === 'number') return [ing];
+  if (Array.isArray(ing)) {
+    const out: number[] = [];
+    for (const i of ing) { const r = resolveIngredient(i); if (!r) return null; out.push(...r); }
+    return out;
+  }
+  if (typeof ing === 'object') { const id = (ing as { id: number }).id; return id >= 0 ? [id] : null; }
+  const s = ing as string;
+  if (s.startsWith('#')) return TAGS[s.slice(1).replace(/^minecraft:/, '')] ?? null;
+  const d = itemByName(s)?.id ?? blockItemOf(s);
+  return d !== undefined ? [d] : null;
+}
+function blockItemOf(name: string): number | undefined {
+  const b = blockByName(name);
+  return b && !b.missing ? b.id : undefined;
+}
+
+const addedShaped = new Set<Shaped>(), addedShapeless = new Set<Shapeless>(), addedSmelting = new Set<number>();
+/** Put the active mods' recipes in (with this world's ids), replacing the previous binding's. */
+export function rebuildModRecipes(isActive: (mod: string) => boolean) {
+  for (let i = shaped.length - 1; i >= 0; i--) if (addedShaped.has(shaped[i])) shaped.splice(i, 1);
+  for (let i = shapeless.length - 1; i >= 0; i--) if (addedShapeless.has(shapeless[i])) shapeless.splice(i, 1);
+  for (const id of addedSmelting) delete SMELTING[id];
+  addedShaped.clear(); addedShapeless.clear(); addedSmelting.clear();
+  for (const r of MOD_RECIPES) {
+    if (!isActive(r.mod)) continue;
+    const out = resolveIngredient(r.out)?.[0];
+    if (out === undefined) { console.warn(`[mod ${r.mod}] recipe for an unknown item`, r.out); continue; }
+    if (r.kind === 'shaped') {
+      const key: Record<string, number[]> = {};
+      let ok = true;
+      for (const [k, v] of Object.entries(r.key ?? {})) { const ids = resolveIngredient(v); if (!ids) { ok = false; break; } key[k] = ids; }
+      if (!ok) { console.warn(`[mod ${r.mod}] recipe with an unknown ingredient`, r); continue; }
+      const e: Shaped = { pattern: r.pattern ?? [], key, out: stack(out, r.count) };
+      shaped.push(e);
+      addedShaped.add(e);
+    } else if (r.kind === 'shapeless') {
+      const ings = (r.ingredients ?? []).map(resolveIngredient);
+      if (ings.some((x) => !x)) { console.warn(`[mod ${r.mod}] recipe with an unknown ingredient`, r); continue; }
+      const e: Shapeless = { ingredients: ings as number[][], out: stack(out, r.count) };
+      shapeless.push(e);
+      addedShapeless.add(e);
+    } else {
+      const ins = r.input !== undefined ? resolveIngredient(r.input) : null;
+      if (!ins) continue;
+      for (const id of ins) {
+        if (SMELTING[id] && !addedSmelting.has(id)) continue; // the game's own smelting wins
+        SMELTING[id] = { out, xp: r.xp ?? 0.1 };
+        addedSmelting.add(id);
+      }
+    }
+  }
+}

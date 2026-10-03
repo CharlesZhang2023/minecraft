@@ -1,0 +1,10 @@
+{
+  "id": "minimap",
+  "version": "1.0.0",
+  "name": "Minimap",
+  "description": "A map of the terrain around you in a corner of the screen. Client-only: works in any game, the host needn't have it.",
+  "authors": ["Minecraft Web Edition"],
+  "environment": "client",
+  "icon": "#3f7f3f",
+  "depends": { "minecraft": ">=1.0.0" }
+}

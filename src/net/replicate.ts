@@ -14,6 +14,7 @@ import { ThrownPotion } from '../entity/potion';
 import { FishingHook } from '../entity/fishing';
 import { EyeOfEnder } from '../entity/eye';
 import { FireworkRocket } from '../entity/firework';
+import { ENTITIES } from '../mod/hooks';
 
 type Make = (w: World, g: Game, me: Player) => Entity;
 
@@ -59,13 +60,23 @@ export function netType(e: Entity): string | null {
   else if (e instanceof EyeOfEnder) name = 'eye_of_ender';
   else if (e instanceof FireworkRocket) name = 'firework_rocket';
   else for (const [k, M] of Object.entries(MOB_TYPES)) if (C === M && !k.includes(' ')) { name = k; break; }
+  // mod entities: known by the class their factory made (not cached: another world may register more)
+  if (!name) {
+    for (const [k, m] of ENTITIES) if (m.ctor === C) return k;
+    return null;
+  }
   CLASS_NAMES.set(C, name ?? '');
   return name;
 }
 
 export function makePuppet(type: string, w: World, g: Game, me: Player): Entity | null {
   const make = TYPES[type];
-  return make ? make(w, g, me) : null;
+  if (make) return make(w, g, me);
+  const m = ENTITIES.get(type);
+  if (!m) return null;
+  const e = m.make(w, g);
+  m.ctor ??= e.constructor;
+  return e;
 }
 
 /** Fields the client recomputes itself (previous-tick copies made by preTick) or never needs (AI bookkeeping). */

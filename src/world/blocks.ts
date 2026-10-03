@@ -28,13 +28,21 @@ export type Sound = 'stone' | 'wood' | 'grass' | 'gravel' | 'sand' | 'glass' | '
 
 // Texture registry: stable indices so workers and the main thread agree.
 export const TEXTURES: string[] = [];
+const texIndex = new Map<string, number>();
 export function tex(name: string): number {
-  let i = TEXTURES.indexOf(name);
-  if (i < 0) {
+  let i = texIndex.get(name);
+  if (i === undefined) {
     i = TEXTURES.length;
     TEXTURES.push(name);
+    texIndex.set(name, i);
   }
   return i;
+}
+/** Workers: take the main thread's texture list (mods add textures, and every realm must number them alike). */
+export function adoptTextures(names: string[]) {
+  TEXTURES.length = 0;
+  texIndex.clear();
+  for (const n of names) tex(n);
 }
 
 // Face order: 0 = -X (west), 1 = +X (east), 2 = -Y (down), 3 = +Y (up), 4 = -Z (north), 5 = +Z (south)
@@ -73,21 +81,35 @@ export interface BlockDef {
   drop: string | null | undefined; // undefined = itself, null = nothing
   blastResistance: number;
   item: boolean; // appears in creative inventory
+  /** Mods: the namespaced key ('mod:name'; vanilla blocks have none), the owning mod and its hooks. */
+  key?: string;
+  mod?: string;
+  behavior?: import('../mod/types').BlockBehavior;
+  /** A placeholder for an id whose mod isn't loaded (its blocks survive, drawn as missing). */
+  missing?: boolean;
 }
 
 export const BLOCKS: BlockDef[] = [];
 const byName = new Map<string, BlockDef>();
 
-type Opts = Partial<Omit<BlockDef, 'id' | 'name' | 'faces'>> & {
+export type BlockOpts = Partial<Omit<BlockDef, 'id' | 'name' | 'faces'>> & {
   tex?: string; // all faces
   top?: string;
   bottom?: string;
   side?: string;
   front?: string;
 };
+type Opts = BlockOpts;
 
 function reg(name: string, display: string, o: Opts = {}): number {
-  const id = BLOCKS.length;
+  const def = makeBlockDef(BLOCKS.length, name, display, o);
+  BLOCKS.push(def);
+  byName.set(name, def);
+  return def.id;
+}
+
+/** A block definition with every property filled in (textures default to the block's name). */
+export function makeBlockDef(id: number, name: string, display: string, o: Opts = {}): BlockDef {
   const all = o.tex ?? name;
   const side = o.side ?? all;
   const faces = [side, side, o.bottom ?? o.top ?? all, o.top ?? all, side, side].map(tex);
@@ -117,15 +139,30 @@ function reg(name: string, display: string, o: Opts = {}): number {
     drop: o.drop,
     blastResistance: o.blastResistance ?? (o.hardness ?? 1) * 5,
     item: o.item ?? true,
+    key: o.key, mod: o.mod, behavior: o.behavior, missing: o.missing,
   };
   if (o.front) def.faces.push(tex(o.front)); // index 6: front face for oriented blocks
-  BLOCKS.push(def);
-  byName.set(name, def);
-  return id;
+  return def;
 }
 
+/** By name: vanilla names with or without 'minecraft:', mod blocks by their 'mod:name' key. */
 export function blockByName(name: string): BlockDef | undefined {
-  return byName.get(name);
+  return byName.get(name) ?? (name.startsWith('minecraft:') ? byName.get(name.slice(10)) : undefined);
+}
+
+/** Put a definition at its id (mod registries binding to a world's ids), keeping the lookup tables in step. */
+export function setBlockDef(id: number, def: BlockDef) {
+  const old = BLOCKS[id];
+  if (old && byName.get(old.name) === old) byName.delete(old.name);
+  while (BLOCKS.length < id) BLOCKS.push(def);
+  BLOCKS[id] = def;
+  if (!def.missing) byName.set(def.name, def);
+  OPAQUE[id] = def.opaque ? 1 : 0;
+  LIGHT_OPACITY[id] = def.lightOpacity;
+  LIGHT_EMIT[id] = def.light;
+  RENDER[id] = def.render;
+  SOLID[id] = def.solid ? 1 : 0;
+  REDSTONE[id] = def.behavior?.redstone ? 1 : 0;
 }
 
 const RAIL: Opts = { render: Render.Rail, solid: false, opaque: false, lightOpacity: 0, hardness: 0.7, sound: 'metal', needsSupport: true };
@@ -308,6 +345,8 @@ export const B = {
 } as const;
 
 export const BLOCK_COUNT = BLOCKS.length;
+/** Vanilla blocks take ids below this; mod blocks are bound to ids from here up (their items share the id). */
+export const MOD_BLOCK_BASE = 2048;
 
 // Fast lookup tables for hot loops (meshing / lighting / physics).
 export const OPAQUE = new Uint8Array(4096);
@@ -315,6 +354,8 @@ export const LIGHT_OPACITY = new Uint8Array(4096);
 export const LIGHT_EMIT = new Uint8Array(4096);
 export const RENDER = new Uint8Array(4096);
 export const SOLID = new Uint8Array(4096);
+/** Mod blocks that take part in redstone (have redstone hooks). */
+export const REDSTONE = new Uint8Array(4096);
 for (const b of BLOCKS) {
   OPAQUE[b.id] = b.opaque ? 1 : 0;
   LIGHT_OPACITY[b.id] = b.lightOpacity;
@@ -424,7 +465,7 @@ export const isPiston = (id: number) => id === B.PISTON || id === B.STICKY_PISTO
 export const isRedstoneComponent = (id: number) =>
   id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || isRedstoneTorch(id) ||
   id === B.REDSTONE_LAMP || id === B.LIT_REDSTONE_LAMP || id === B.REDSTONE_BLOCK || id === B.OAK_DOOR || id === B.TNT ||
-  isDiode(id) || isPiston(id) || id === B.OBSERVER || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER || isRail(id);
+  isDiode(id) || isPiston(id) || id === B.OBSERVER || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER || isRail(id) || REDSTONE[id] === 1;
 export const isRail = (id: number) => id === B.RAIL || id === B.POWERED_RAIL || id === B.DETECTOR_RAIL || id === B.ACTIVATOR_RAIL;
 
 /** 6-way facing (vanilla order): 0 down, 1 up, 2 north, 3 south, 4 west, 5 east. */

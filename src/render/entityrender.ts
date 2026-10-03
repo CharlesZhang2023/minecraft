@@ -1,4 +1,8 @@
 // Renders entities (mobs, dropped items, projectiles) and the first-person hand.
+import { makeRenderContext, drawModTiles, modEntityRenderer, type RenderContext } from '../mod/render';
+import { Events } from '../mod/events';
+import { modState, guard } from '../mod/state';
+import type { Client } from '../client/client';
 import type { Renderer } from './renderer';
 import type { Client as Game } from '../client/client';
 import { Mat4, mat4, identity, translate, rotateX, rotateY, rotateZ, scale, multiply } from '../math';
@@ -210,6 +214,7 @@ export class EntityRenderer {
     gl.disable(gl.BLEND);
     const dyn = this.r.dyn;
     dyn.reset();
+    let modCtx: RenderContext | null = null;
     const list: Entity[] = [...game.entities];
     if (game.thirdPerson && game.player) list.push(game.player);
     for (const e of list) {
@@ -217,6 +222,8 @@ export class EntityRenderer {
       if (x * x + y * y + z * z > 96 * 96) continue;
       if (!this.r.boxVisible(x - e.width, y - 0.5, z - e.width, x + e.width, y + e.height + 0.5, z + e.width)) continue;
       const [sky, blk] = w.getLight(Math.floor(e.x), Math.floor(e.y + e.height * 0.5), Math.floor(e.z));
+      const mr = modEntityRenderer(e);
+      if (mr) { modCtx ??= makeRenderContext(game as unknown as Client, this, dyn, t); guard(mr.mod, 'entity renderer', () => mr.draw(modCtx!, e), undefined); continue; }
       if (e instanceof FireworkRocket) {
         // one pulling a glider flies with it (and isn't drawn in our own face)
         const a = e.attached;
@@ -263,6 +270,12 @@ export class EntityRenderer {
     for (const [bv, bx, by, bz] of game.pistons.renderList(t)) {
       const [sky, blk] = w.getLight(Math.round(bx), Math.round(by), Math.round(bz));
       this.blockModel(dyn, bv, bx - cam.x, by - cam.y, bz - cam.z, sky, Math.max(blk, BLOCKS[bv & 0xfff].light));
+    }
+    // mods: tile entity renderers (animated machine parts) and anything else drawn into the world
+    if (modState.active.size) {
+      modCtx ??= makeRenderContext(game as unknown as Client, this, dyn, t);
+      drawModTiles(modCtx);
+      if (Events.worldRender.any) Events.worldRender.fire(modCtx);
     }
     // item pickup animations
     for (let i = this.pickups.length - 1; i >= 0; i--) {
@@ -1335,7 +1348,7 @@ function wrapDelta(d: number) {
   return d;
 }
 
-const FACE_CORNERS = [
+export const FACE_CORNERS = [
   [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]],
   [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]],
   [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
@@ -1344,7 +1357,7 @@ const FACE_CORNERS = [
   [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]],
 ];
 /** Default block-face uv (16ths) for a point on face f, matching the chunk mesher. */
-function faceUV16(f: number, px: number, py: number, pz: number): [number, number] {
+export function faceUV16(f: number, px: number, py: number, pz: number): [number, number] {
   switch (f) {
     case 0: return [pz, 16 - py];
     case 1: return [16 - pz, 16 - py];

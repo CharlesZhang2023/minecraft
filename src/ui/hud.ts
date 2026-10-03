@@ -1,3 +1,4 @@
+import { Events } from '../mod/events';
 import { drawEffectsHud } from './effects';
 // In-game HUD: hotbar, health/food/armor/air, XP bar, crosshair, item names, debug overlay.
 import type { UI } from './ui';
@@ -216,6 +217,12 @@ export class Hud {
     }
     if (!this.ui.screen && !g.hideHud) drawEffectsHud(ctx, this.ui);
     this.bossBar(ctx);
+    // mods' HUD (under the chat)
+    if (Events.hudRender.any) {
+      ctx.save();
+      Events.hudRender.fire({ ctx, client: g, width: W, height: H, partial: g.partial });
+      ctx.restore();
+    }
     this.renderChatAndText(ctx);
   }
 

@@ -1,4 +1,5 @@
 // Menu screens: title, world selection/creation, loading, pause, options, death, chat, sleep.
+import { session } from '../mod/hooks';
 import { device } from '../game/device';
 import { Screen, Button, Slider, TextField } from './screen';
 import type { UI } from './ui';
@@ -114,7 +115,8 @@ export class TitleScreen extends Screen {
     this.widgets = [
       new Button(this.ui, x, y, 200, 20, 'Singleplayer', () => this.ui.open(new SelectWorldScreen(this.ui))),
       new Button(this.ui, x, y + 24, 200, 20, 'Multiplayer', () => this.ui.open(new MultiplayerScreen(this.ui, this))),
-      new Button(this.ui, x, y + 48, 200, 20, 'Quick Play: New World', () => quickPlay(this.ui)),
+      new Button(this.ui, x, y + 48, 98, 20, 'Quick Play', () => quickPlay(this.ui)),
+      new Button(this.ui, x + 102, y + 48, 98, 20, 'Mods', () => openMods(this.ui, this)),
       new Button(this.ui, x, y + 84, 98, 20, 'Options...', () => this.ui.open(new OptionsScreen(this.ui, this))),
       new Button(this.ui, x + 102, y + 84, 98, 20, 'Controls', () => this.ui.open(new ControlsScreen(this.ui, this))),
       // the Pocket Edition's coat hanger: skins
@@ -174,7 +176,19 @@ async function quickPlay(ui: UI) {
   await playWorld(ui, meta);
 }
 
+/** The Mods screen (loaded on demand: the mod loader pulls in the whole game). */
+export function openMods(ui: UI, parent: Screen) {
+  import('./mods').then((m) => ui.open(new m.ModsScreen(ui, parent)));
+}
+
 export async function playWorld(ui: UI, meta: WorldMeta) {
+  // a world saved with mods that aren't installed / enabled now: their blocks and items would show as missing
+  const missing = session.missingFor(meta);
+  if (missing.length && !(await new Promise<boolean>((resolve) => ui.open(new ConfirmScreen(ui, 'This world was played with mods you don\'t have enabled:',
+    `${missing.join(', ')}. Their blocks and items will show as missing until you enable them again.`, 'Play Anyway', resolve))))) {
+    ui.open(new SelectWorldScreen(ui));
+    return;
+  }
   const loading = new LoadingScreen(ui, 'Loading world');
   ui.open(loading);
   meta.lastPlayed = Date.now();
@@ -392,7 +406,7 @@ export class PauseScreen extends Screen {
       // phones have no F5: the camera toggle takes the Statistics slot
       device.touch
         ? new Button(this.ui, W / 2 + 2, y + 40, 98, 20, () => ['First Person', 'Back View', 'Front View'][this.game.thirdPerson], () => { this.game.thirdPerson = (this.game.thirdPerson + 1) % 3; })
-        : Object.assign(new Button(this.ui, W / 2 + 2, y + 40, 98, 20, 'Statistics', () => {}), { enabled: false }),
+        : new Button(this.ui, W / 2 + 2, y + 40, 98, 20, 'Mods...', () => openMods(this.ui, this)),
       new Button(this.ui, W / 2 - 100, y + 64, 98, 20, 'Options...', () => this.ui.open(new OptionsScreen(this.ui, this))),
       new Button(this.ui, W / 2 + 2, y + 64, 98, 20, 'Controls', () => this.ui.open(new ControlsScreen(this.ui, this))),
       new Button(this.ui, W / 2 - 100, y + 104, 200, 20, this.game.remote ? 'Disconnect' : 'Save and Quit to Title', () => this.quit()),

@@ -29,7 +29,7 @@ import { FireworkRocket } from '../entity/firework';
 import { EntityRenderer } from '../render/entityrender';
 import { Weather, rainTexture, snowTexture } from '../game/weather';
 import { rayAABB, clamp } from '../math';
-import { getItemSprite, ITEM_SPRITE_NAMES } from '../render/itemsprites';
+import { getItemSprite, itemSpriteNames } from '../render/itemsprites';
 import { getTexture } from '../render/textures';
 import { Random } from '../noise';
 import { BIOMES } from '../world/biomes';
@@ -46,6 +46,12 @@ import { makePuppet, applyState, decodeValue, syncInventory, State } from '../ne
 import { RoomHost } from '../net/signal';
 import { fingerprint, cleanName, MAX_PLAYERS } from '../net/protocol';
 import type { ServerPlayer } from '../server/splayer';
+import { Events } from '../mod/events';
+import { session, live, CHANNELS, KEYBINDS, type HostModInfo } from '../mod/hooks';
+import { bind } from '../mod/registry';
+import { modState, guard } from '../mod/state';
+import { CONFIGS } from '../mod/config';
+import { ConfirmScreen } from '../ui/menus';
 
 export const TICK_MS = 50;
 
@@ -164,20 +170,15 @@ export class Client {
   /** The room's connection to the signaling service dropped (players already in keep playing). */
   roomLost = false;
   /** Connections that haven't introduced themselves yet. */
-  private pendingGuests: { conn: Conn; since: number }[] = [];
+  private pendingGuests: { conn: Conn; since: number; name?: string; sent: Set<string> }[] = [];
 
   constructor(glCanvas: HTMLCanvasElement, uiCanvas: HTMLCanvasElement) {
     this.options = loadOptions();
     this.renderer = new Renderer(glCanvas);
     this.uiCanvas = uiCanvas;
     this.ctx = uiCanvas.getContext('2d')!;
-    // register item sprite textures so they can be used as particles / dropped items
-    const extra = ITEM_SPRITE_NAMES.map((n) => ({ name: 'item/' + n, img: getItemSprite(n)! }));
-    extra.push({ name: 'weather_rain', img: rainTexture() }, { name: 'weather_snow', img: snowTexture() });
-    extra.push({ name: 'grass_side_item', img: tintMasked(getTexture('grass_side'), 0x7cbd6b) });
-    extra.push({ name: 'entity_shadow', img: shadowTexture() });
-    extra.push({ name: 'end_beam', img: getTexture('end_beam') });
-    this.renderer.initAtlas(extra);
+    live.client = this;
+    this.rebuildAtlas();
     this.gui = new Gui();
     this.input = new Input(uiCanvas);
     this.entityRenderer = new EntityRenderer(this.renderer);
@@ -193,6 +194,20 @@ export class Client {
     device.onChange(() => this.resize());
     this.audio.volume = this.options.volume;
     this.audio.musicVolume = this.options.music;
+  }
+
+  /** Build the block atlas: every block texture plus item sprites (particles, dropped items) and a few extras. Mods
+   * that add textures after start-up call it again. */
+  rebuildAtlas() {
+    const old = this.renderer.atlas;
+    const extra = itemSpriteNames().map((n) => ({ name: 'item/' + n, img: getItemSprite(n)! }));
+    extra.push({ name: 'weather_rain', img: rainTexture() }, { name: 'weather_snow', img: snowTexture() });
+    extra.push({ name: 'grass_side_item', img: tintMasked(getTexture('grass_side'), 0x7cbd6b) });
+    extra.push({ name: 'entity_shadow', img: shadowTexture() });
+    extra.push({ name: 'end_beam', img: getTexture('end_beam') });
+    this.renderer.initAtlas(extra);
+    if (old) this.renderer.gl.deleteTexture(old.texture);
+    this.icons.clear();
   }
 
   private lastSize = '';
@@ -272,31 +287,59 @@ export class Client {
 
   /** A connection from someone who wants to join (through the room or offline pairing). */
   acceptGuest(conn: Conn) {
-    this.pendingGuests.push({ conn, since: performance.now() });
+    this.pendingGuests.push({ conn, since: performance.now(), sent: new Set() });
   }
 
-  /** Let guests in once they've said who they are (and they're running the same game). */
+  /**
+   * Let guests in once they've said who they are, they run the same game, and they've switched to our mods (we send
+   * the list, they fetch what they lack: from the mod repository, or from us with `modget`, then say `modsok`).
+   */
   private checkGuests() {
     const server = this.server;
     for (const g of [...this.pendingGuests]) {
       const drop = (why: string) => { g.conn.close(why); this.pendingGuests.splice(this.pendingGuests.indexOf(g), 1); };
       if (g.conn.closed || !server || server.closed) { drop('The host closed the game'); continue; }
       const msgs = g.conn.poll();
-      const hello = msgs.find((m) => m.t === 'hello');
-      if (!hello) {
-        if (msgs.length) g.conn.close('Bad handshake');
-        else if (performance.now() - g.since > 15000) drop('Timed out');
+      const now = performance.now();
+      if (!g.name) {
+        const hello = msgs.find((m) => m.t === 'hello');
+        if (!hello) {
+          if (msgs.length) g.conn.close('Bad handshake');
+          else if (now - g.since > 15000) drop('Timed out');
+          continue;
+        }
+        const name = cleanName(hello.name);
+        if (hello.v !== fingerprint()) { drop('The host is running a different version of the game: reload the page'); continue; }
+        if (!name) { drop('Pick a name first (Multiplayer screen)'); continue; }
+        g.name = name;
+        g.since = now;
+        // every game starts with the host's mods (none is a list too): the guest switches to exactly those
+        g.conn.send({ t: 'mods', mods: session.hostMods() });
         continue;
       }
-      const name = cleanName(hello.name);
-      if (hello.v !== fingerprint()) { drop('The host is running a different version of the game: reload the page'); continue; }
-      if (!name) { drop('Pick a name first (Multiplayer screen)'); continue; }
-      if (server.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) { drop(`Someone called ${name} is already playing`); continue; }
-      if (server.players.length >= MAX_PLAYERS) { drop('The game is full'); continue; }
-      this.pendingGuests.splice(this.pendingGuests.indexOf(g), 1);
-      server.addPlayer(g.conn, name, false, msgs.filter((m) => m !== hello)).then(() => {
-        if (this.room) this.room.players = server.players.length;
-      }).catch(() => g.conn.close('Could not join'));
+      for (const m of msgs) {
+        if (m.t === 'modget') {
+          const id = String(m.id ?? '');
+          if (g.sent.has(id) || g.sent.size >= 64) { drop('Bad handshake'); break; }
+          g.sent.add(id);
+          g.since = now;
+          session.packageFor(id).then((pkg) => { if (!g.conn.closed) g.conn.send({ t: 'modfile', id, pkg }); });
+        } else if (m.t === 'modsfail') {
+          drop(String(m.why ?? 'Could not get the mods'));
+          break;
+        } else if (m.t === 'modsok') {
+          const name = g.name;
+          if (server.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) { drop(`Someone called ${name} is already playing`); break; }
+          if (server.players.length >= MAX_PLAYERS) { drop('The game is full'); break; }
+          this.pendingGuests.splice(this.pendingGuests.indexOf(g), 1);
+          server.addPlayer(g.conn, name, false, msgs.slice(msgs.indexOf(m) + 1)).then(() => {
+            if (this.room) this.room.players = server.players.length;
+          }).catch(() => g.conn.close('Could not join'));
+          break;
+        }
+      }
+      // a guest may be reading the "install mods?" question for a while
+      if (this.pendingGuests.includes(g) && now - g.since > 120000) drop('Timed out');
     }
   }
 
@@ -313,7 +356,7 @@ export class Client {
   /** Play in someone else's world over an open connection. */
   async joinRemote(conn: Conn) {
     await this.closeWorld(false);
-    conn.send({ t: 'hello', name: this.options.playerName, v: fingerprint() });
+    conn.send({ t: 'hello', name: this.options.playerName, v: fingerprint(), mods: session.offered() });
     this.connect(conn, true);
     const loading = new LoadingScreen(this.ui, 'Joining world');
     this.ui.open(loading);
@@ -385,6 +428,7 @@ export class Client {
     this.target = null;
     this.panorama = false;
     this.remote = false;
+    session.restore();
   }
 
   /** Save without leaving (tab hidden / closing). */
@@ -484,6 +528,7 @@ export class Client {
     this.torchFlicker += this.torchFlickerDX - this.torchFlicker;
     this.torchFlicker *= 0.9;
     if (this.panorama) { this.panoramaTick(); return; }
+    if (Events.clientTick.any) Events.clientTick.fire(this);
     if (this.doDaylightCycle) this.time++;
     if (this.dimension === 'overworld') this.weather!.clientTick();
 
@@ -620,6 +665,12 @@ export class Client {
       }
       if (code === 'KeyQ') this.keyPress(this.input.isDown('ControlLeft') || this.input.isDown('MetaLeft') ? 'KeyQ!' : 'KeyQ');
       if (code === 'KeyF') this.keyPress('KeyF');
+      // mods' key bindings (a mod's config can rebind one: a 'key' setting named after the binding)
+      for (const kb of KEYBINDS) {
+        if (!modState.active.has(kb.mod)) continue;
+        const key = (CONFIGS.get(kb.mod)?.values[kb.name] as string | undefined) ?? kb.key;
+        if (key === code) guard(kb.mod, `key ${kb.name}`, () => kb.onPress(this), undefined);
+      }
     }
     const wheel = this.input.takeWheel();
     if (wheel && !this.ui.screen) p.inventory.selected = (((p.inventory.selected + wheel) % 9) + 9) % 9;
@@ -667,6 +718,13 @@ export class Client {
     switch (m.t) {
       case 'tick': this.bundles.push(m as Bundle); break;
       case 'join': this.joined(m); break;
+      case 'mods': this.syncMods(m); break;
+      case 'modfile': { const w = this.modWaits.get(String(m.id)); if (w) { this.modWaits.delete(String(m.id)); w(m.pkg as never); } break; }
+      case 'mod': {
+        const c = String(m.c ?? ''), h = CHANNELS.get(c);
+        if (h?.client && modState.active.has(h.mod)) guard(h.mod, `channel ${c}`, () => h.client!(m.d, this), undefined);
+        break;
+      }
       case 'dim': this.changedDim(m.dim as Dimension, String(m.title ?? 'Loading')); break;
       case 'chunk': {
         if (!this.world) break;
@@ -700,7 +758,7 @@ export class Client {
       case 'credits': this.ui.open(new CreditsScreen(this.ui, () => this.ui.close())); break;
       case 'open': this.serverOpen(m); break;
       case 'close':
-        if (this.ui.screen instanceof ContainerScreen) { this.serverOpening = true; this.ui.open(null); this.serverOpening = false; }
+        if (this.ui.screen instanceof ContainerScreen || this.ui.screen?.twin || this.ui.screen?.fromServer) { this.serverOpening = true; this.ui.open(null); this.serverOpening = false; }
         break;
       case 'wake':
         if (this.player) this.player.sleeping = false;
@@ -710,7 +768,37 @@ export class Client {
     }
   }
 
+  /** Mod files we asked the host for, by mod id. */
+  private modWaits = new Map<string, (pkg: { manifest: unknown; code: string } | null) => void>();
+
+  /** The host told us its mods: get them (with our say-so for any that only the host has), switch to them, say ok. */
+  private async syncMods(m: Msg) {
+    const conn = this.conn;
+    if (!conn || !this.remote) return;
+    const loading = this.ui.screen instanceof LoadingScreen ? this.ui.screen : null;
+    if (loading) loading.title = 'Getting mods';
+    const request = (id: string) => new Promise<{ manifest: unknown; code: string } | null>((resolve) => {
+      this.modWaits.set(id, resolve);
+      conn.send({ t: 'modget', id });
+      setTimeout(() => { if (this.modWaits.get(id) === resolve) { this.modWaits.delete(id); resolve(null); } }, 60000);
+    });
+    const confirm = (names: string[]) => new Promise<boolean>((resolve) => {
+      this.ui.open(new ConfirmScreen(this.ui, 'The host plays with mods that aren\'t in the mod repository:', names.join(', ') + ' (they run code in this page)', 'Install and join', (ok) => {
+        if (ok) this.ui.open(new LoadingScreen(this.ui, 'Getting mods'));
+        resolve(ok);
+      }));
+    });
+    const err = await session.syncWithHost((m.mods as HostModInfo[]) ?? [], request, confirm);
+    if (this.conn !== conn || conn.closed) return;
+    if (err) { conn.send({ t: 'modsfail', why: err }); conn.close(err); return; }
+    if (this.ui.screen instanceof LoadingScreen) this.ui.screen.title = 'Joining world';
+    conn.send({ t: 'modsok' });
+  }
+
   private joined(m: Msg) {
+    // a remote host's numbering for mod blocks and items (our own server shares this page's already)
+    if (!this.server && m.registry) bind(m.registry as never);
+    if (Events.clientJoin.any) Events.clientJoin.fire(this);
     this.meta = { name: String(m.worldName ?? ''), seed: m.seed as number, hardcore: !!m.hardcore };
     this.myId = m.id as number;
     this.syncTime(m.time as Bundle['time']);
@@ -926,6 +1014,7 @@ export class Client {
   private disconnected(reason: string) {
     const r = reason;
     this.conn = null;
+    session.restore();
     this.dropWorld();
     this.player = null;
     this.entities = [];

@@ -1,0 +1,10 @@
+{
+  "id": "computer",
+  "version": "1.0.0",
+  "name": "Computers",
+  "description": "Programmable computers with a terminal, files, an editor and redstone sides. Script them with repeat / while / if.",
+  "authors": ["Minecraft Web Edition"],
+  "environment": "*",
+  "icon": "item:computer:computer",
+  "depends": { "minecraft": ">=1.0.0" }
+}

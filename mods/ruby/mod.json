@@ -1,0 +1,10 @@
+{
+  "id": "ruby",
+  "version": "1.0.0",
+  "name": "Rubies",
+  "description": "Ruby ore deep underground, ruby tools and blocks. The example content mod.",
+  "authors": ["Minecraft Web Edition"],
+  "environment": "*",
+  "icon": "item:ruby:ruby",
+  "depends": { "minecraft": ">=1.0.0" }
+}

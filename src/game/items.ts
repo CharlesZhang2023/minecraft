@@ -22,6 +22,14 @@ export interface ItemDef {
   splash?: boolean;
   egg?: string; // spawn egg mob type
   drink?: boolean; // consumed by drinking (potions, milk)
+  /** Mods: the namespaced key ('mod:name'), the owning mod, its hooks and creative tab. */
+  key?: string;
+  mod?: string;
+  behavior?: import('../mod/types').ItemBehavior;
+  /** Creative tab: a vanilla tab's name ('Building Blocks', 'Tools'...) or a mod tab's id; default: the mod's own tab. */
+  tab?: string;
+  /** A placeholder for an id whose mod isn't loaded. */
+  missing?: boolean;
 }
 
 export const ITEMS = new Map<number, ItemDef>();
@@ -294,8 +302,26 @@ export function dyeColor(id: number): number | undefined {
   return FIREWORK_DYES.find((d) => d.id() === id)?.col;
 }
 
+/** How many items the game itself has (before any mod's). */
+export const VANILLA_ITEM_COUNT = ITEMS.size;
+
 export function itemByName(name: string): ItemDef | undefined {
-  return byName.get(name);
+  return byName.get(name) ?? (name.startsWith('minecraft:') ? byName.get(name.slice(10)) : undefined);
+}
+/** Vanilla items take ids below this (block items share their block's id); pure mod items are bound from 4096 up. */
+export const MOD_ITEM_BASE = 4096;
+/** Put a definition at its id (mod registries binding to a world's ids). */
+export function setItemDef(def: ItemDef) {
+  const old = ITEMS.get(def.id);
+  if (old && byName.get(old.name) === old) byName.delete(old.name);
+  ITEMS.set(def.id, def);
+  if (!def.missing) byName.set(def.name, def);
+}
+export function deleteItemDef(id: number) {
+  const old = ITEMS.get(id);
+  if (!old) return;
+  if (byName.get(old.name) === old) byName.delete(old.name);
+  ITEMS.delete(id);
 }
 export function itemId(name: string): number {
   const d = byName.get(name);
@@ -332,10 +358,12 @@ import { isLeaves } from '../world/blocks';
 
 export function blockDrops(blockId: number, meta: number, tool: ItemDef | undefined, rng: Random, silk = false): ItemStack[] {
   const def = BLOCKS[blockId];
+  if (def.missing) return [];
   // must use the right tool for blocks that require one
   if (def.harvestLevel >= 0) {
     if (!tool?.tool || tool.tool.type !== def.tool || tool.tool.level < def.harvestLevel) return [];
   }
+  if (def.behavior?.drops) return def.behavior.drops({ id: blockId, meta, tool, rng, silk });
   if (silk && def.item && blockId !== B.SPAWNER && !def.needsSupport) return [stack(blockId)];
   const shears = tool?.tool?.type === 'shears';
   switch (blockId) {

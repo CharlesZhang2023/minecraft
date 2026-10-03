@@ -15,6 +15,8 @@ import { ContainerScreen } from '../ui/containers';
 import { ServerUI, VirtualInput } from './sui';
 import { captureState, encodeValue, sig, netType, State } from '../net/replicate';
 import { validLook } from '../render/skins';
+import { CHANNELS, MAX_PAYLOAD } from '../mod/hooks';
+import { modState, guard } from '../mod/state';
 
 /** What a client sends every tick. */
 export interface InputPacket {
@@ -222,6 +224,14 @@ export class ServerPlayer {
       case 'dismount': if (this.entity.riding) g.asActor(this, () => this.entity.riding?.dismount()); break;
       case 'use': g.asActor(this, () => this.useEntity(Number(m.id))); break;
       case 'skin': if (validLook(m.look)) { this.entity.look = m.look; this.entity.slim = !!m.slim; } break;
+      case 'mod': {
+        // a mod's own message (Channel.toServer): only to channels of mods in play, size-capped
+        const c = String(m.c ?? ''), h = CHANNELS.get(c);
+        if (!h?.server || !modState.active.has(h.mod)) break;
+        if (!this.owner && JSON.stringify(m.d ?? null).length > MAX_PAYLOAD) throw new Error('mod payload too big');
+        g.asActor(this, () => guard(h.mod, `channel ${c}`, () => h.server!(m.d, this.entity, g), undefined));
+        break;
+      }
     }
   }
 

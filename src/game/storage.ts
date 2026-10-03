@@ -1,7 +1,7 @@
 // IndexedDB persistence for worlds, chunks and player data.
 
 const DB_NAME = 'webcraft';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export interface WorldMeta {
   id: string;
@@ -38,6 +38,12 @@ export interface WorldMeta {
   cheatsForAll?: boolean;
   /** Game rule keepInventory: players keep their items and experience when they die. */
   keepInventory?: boolean;
+  /** Mods: which id each mod block / item key has in this world (see mod/registry.ts). */
+  registry?: import('../mod/registry').RegistryMap;
+  /** Mods last played with, id -> version (to warn when one is missing). */
+  mods?: Record<string, string>;
+  /** Mods' own per-world data (ModContext.worldData), by mod id. */
+  modData?: Record<string, unknown>;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -50,6 +56,8 @@ function openDB(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains('worlds')) db.createObjectStore('worlds', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('chunks')) db.createObjectStore('chunks');
+      // downloaded / imported mods, by the SHA-256 of their code
+      if (!db.objectStoreNames.contains('mods')) db.createObjectStore('mods', { keyPath: 'sha256' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -99,6 +107,22 @@ export const Storage = {
   },
   loadChunk(worldId: string, key: string): Promise<SavedChunk | undefined> {
     return tx<SavedChunk>('chunks', 'readonly', (s) => s.get(worldId + ':' + key) as IDBRequest<SavedChunk>).catch(() => undefined);
+  },
+  getMod(sha: string): Promise<import('../mod/types').ModPackage | undefined> {
+    return tx<import('../mod/types').ModPackage>('mods', 'readonly', (s) => s.get(sha) as IDBRequest<import('../mod/types').ModPackage>).catch(() => undefined);
+  },
+  putMod(pkg: import('../mod/types').ModPackage) {
+    return tx('mods', 'readwrite', (s) => s.put(pkg));
+  },
+  deleteMod(sha: string) {
+    return tx('mods', 'readwrite', (s) => s.delete(sha)).catch(() => undefined);
+  },
+  async listMods(): Promise<import('../mod/types').ModPackage[]> {
+    try {
+      return (await tx<import('../mod/types').ModPackage[]>('mods', 'readonly', (s) => s.getAll() as IDBRequest<import('../mod/types').ModPackage[]>)) ?? [];
+    } catch {
+      return [];
+    }
   },
   saveChunks(worldId: string, list: [string, SavedChunk][]) {
     if (!list.length) return Promise.resolve();

@@ -62,6 +62,12 @@ export class IconCache {
     }
   }
 
+  /** Forget every icon (mods bound new ids or added textures). */
+  clear() {
+    this.cache.clear();
+    texCanvasCache.clear();
+  }
+
   get(id: number, tint?: number): HTMLCanvasElement {
     const key = tint === undefined ? id : id + ':' + tint;
     let c = this.cache.get(key);

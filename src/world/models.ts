@@ -1,5 +1,5 @@
 // Box models for non-cube blocks. Shared by the mesher (rendering), physics (collision) and raycasting.
-import { B, BLOCKS, OPAQUE, Render, T, idOf, metaOf, isStairs, isSlab, isFence, HORIZ, FACING6, FACING6_TO_FACE } from './blocks';
+import { B, BLOCKS, OPAQUE, REDSTONE, Render, T, idOf, metaOf, isStairs, isSlab, isFence, HORIZ, FACING6, FACING6_TO_FACE } from './blocks';
 
 export interface Box {
   x0: number; y0: number; z0: number;
@@ -18,7 +18,7 @@ const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: num
 });
 
 /** rotate a box (in 16ths) around the block's vertical axis by facing (0 = north, as authored). */
-function rotY(b: Box, facing: number): Box {
+export function rotY(b: Box, facing: number): Box {
   let { x0, z0, x1, z1 } = b;
   for (let i = 0; i < facing; i++) {
     // 90° clockwise seen from above: (x, z) -> (16 - z, x)
@@ -165,7 +165,7 @@ export function facing6CubeFaces(id: number, meta: number, tex: Int32Array, rot:
 
 const wireComp = (v: number) => {
   const id = idOf(v);
-  return id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH || id === B.REDSTONE_BLOCK || id === B.DETECTOR_RAIL;
+  return id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH || id === B.REDSTONE_BLOCK || id === B.DETECTOR_RAIL || REDSTONE[id] === 1;
 };
 
 /** Which horizontal sides (N,E,S,W) a redstone wire connects to (including up/down steps). */
@@ -198,6 +198,10 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
   const id = idOf(v), meta = metaOf(v);
   const def = BLOCKS[id];
   const f = def.faces;
+  const mb = def.behavior?.model;
+  if (mb) {
+    try { return mb(meta, nb, f); } catch (e) { console.error(`[mod ${def.mod}] model of ${def.name}:`, e); return [box(0, 0, 0, 16, 16, 16, f[0])]; }
+  }
   if (isSlab(id)) {
     const top = meta === 1;
     return [box(0, top ? 8 : 0, 0, 16, top ? 16 : 8, 16, [f[0], f[1], f[2], f[3], f[4], f[5]])];
@@ -419,6 +423,7 @@ export function collisionShapes(v: number, nb?: Neighbor): Shape[] {
   const id = idOf(v);
   const def = BLOCKS[id];
   if (!def.solid) return [];
+  if (def.behavior?.collision) return def.behavior.collision(metaOf(v), nb);
   if (def.render === Render.Cube) return FULL;
   if (isFence(id)) {
     return modelBoxes(v, nb).map(toShape).map((s) => ({ ...s, y0: 0, y1: 1.5 }));
@@ -439,6 +444,7 @@ export function collisionShapes(v: number, nb?: Neighbor): Shape[] {
 export function selectionShapes(v: number, nb?: Neighbor): Shape[] {
   const id = idOf(v);
   const def = BLOCKS[id];
+  if (def.behavior?.selection) return def.behavior.selection(metaOf(v), nb);
   switch (def.render) {
     case Render.Cube: return FULL;
     case Render.Cross:

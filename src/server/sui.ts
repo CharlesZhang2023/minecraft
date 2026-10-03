@@ -30,7 +30,7 @@ let sharedGui: Gui | null = null;
 
 /** Screen openers gameplay code calls, mirrored to the client by name. */
 const OPENERS = ['openCrafting', 'openFurnace', 'openChest', 'openEnderChest', 'openHorse', 'openInventory', 'openTrade', 'openEnchant',
-  'openHopper', 'openDispenser', 'openBrewing', 'openAnvil'] as const;
+  'openHopper', 'openDispenser', 'openBrewing', 'openAnvil', 'openMod'] as const;
 
 type Openers = Pick<UI, (typeof OPENERS)[number]>;
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unsafe-declaration-merging
@@ -42,6 +42,8 @@ export interface ServerUI extends Openers {}
  */
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class ServerUI {
+  /** Screens can tell they're the server's twin (keep their constructor and init light there). */
+  readonly isServer = true;
   screen: Screen | null = null;
   gui: Gui;
   /** Set while handling the client's own open/close, so it isn't echoed back. */

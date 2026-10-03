@@ -7,6 +7,8 @@ import { Boat } from './boat';
 import { Minecart } from './minecart';
 import { Horse, Donkey, Mule } from './horse';
 import { EnderDragon, EndCrystal } from './dragon';
+import { ENTITIES } from '../mod/hooks';
+import { isActive } from '../mod/state';
 
 type Ctor = new (w: World, g: Game) => Entity;
 export const MOB_TYPES: Record<string, Ctor> = {
@@ -20,5 +22,11 @@ export function createEntity(type: string, world: World, game: Game): Entity | n
   if (type === 'boat') return new Boat(world, game);
   if (type === 'minecart') return new Minecart(world, game);
   const C = MOB_TYPES[type];
-  return C ? new C(world, game) : null;
+  if (C) return new C(world, game);
+  // mod entities ('mod:name')
+  const m = ENTITIES.get(type);
+  if (!m || !isActive(m.mod)) return null;
+  const e = m.make(world, game);
+  m.ctor ??= e.constructor;
+  return e;
 }

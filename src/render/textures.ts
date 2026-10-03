@@ -7,6 +7,12 @@ type Gen = (r: Random) => Img;
 const gens: Record<string, Gen> = {};
 const cache: Record<string, Img> = {};
 
+/** Mods: add (or replace) a texture by name; it's generated when the atlas is built. */
+export function registerTexture(name: string, gen: (r: Random) => Img) {
+  gens[name] = gen;
+  delete cache[name];
+}
+
 export function getTexture(name: string): Img {
   if (cache[name]) return cache[name];
   const g = gens[name];

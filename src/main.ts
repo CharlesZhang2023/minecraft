@@ -8,6 +8,7 @@ import { BIOMES } from './world/biomes';
 import { regionVillage } from './world/village';
 import { regionFortress } from './world/fortress';
 import { strongholdSites, layoutStronghold, nearestSite } from './world/stronghold';
+import { mods } from './mod/loader';
 
 const gl = document.getElementById('gl') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLCanvasElement;
@@ -16,7 +17,14 @@ function fail(msg: string) {
   document.body.innerHTML = `<div style="color:#fff;font:16px monospace;padding:40px;background:#300">${msg}</div>`;
 }
 
-try {
+async function start() {
+  // mods first: their blocks, items and textures must exist before the client builds its atlas
+  try {
+    await mods.boot();
+  } catch (e) {
+    console.error('mod loader', e);
+  }
+  (window as unknown as { mods: unknown }).mods = mods;
   const game = new Client(gl, ui);
   // tests and the console: `game` is what you see; `game.server` is the simulation (single-player / hosting)
   (window as unknown as { game: Client }).game = game;
@@ -69,7 +77,9 @@ try {
       if (navigator.onLine) (reg.active ?? reg.waiting ?? reg.installing)?.postMessage('precache');
     }).catch(() => {});
   }
-} catch (e) {
+}
+
+start().catch((e) => {
   console.error(e);
   fail('Failed to start: ' + (e as Error).message);
-}
+});

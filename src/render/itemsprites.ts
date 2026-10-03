@@ -1152,9 +1152,26 @@ sprite('firework_star', [
   '......kkkk......',
 ], { k: hex('#3a3a3a'), G: hex('#5e5e5e'), o: [200, 200, 200, 254], O: [255, 255, 255, 254] }, '#161616');
 
+// an item whose mod isn't loaded: the missing-texture checker
+sprites.missing = () => {
+  const img = newImg();
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) set(img, x, y, ((x >> 3) ^ (y >> 3)) & 1 ? hex('#f800f8') : hex('#000000'));
+  return img;
+};
+
 export function getItemSprite(name: string): Img | null {
   const f = sprites[name];
   return f ? f() : null;
 }
 export const ITEM_SPRITE_NAMES = Object.keys(sprites);
+/** Mods: add an item sprite (16x16) by name. */
+export function registerItemSprite(name: string, make: () => Img, outlineCol?: string) {
+  sprites[name] = () => {
+    const img = make();
+    if (outlineCol) outline(img, hex(outlineCol));
+    return img;
+  };
+}
+/** Every sprite name, including those mods added since start-up. */
+export const itemSpriteNames = () => Object.keys(sprites);
 void get; void shade;

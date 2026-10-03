@@ -15,8 +15,13 @@ import { HopperScreen, DispenserScreen, BrewingScreen, AnvilScreen } from './dev
 import type { Villager } from '../entity/mobs';
 import { TouchControls } from './touch';
 import { device } from '../game/device';
+import { SCREENS } from '../mod/hooks';
+import { isActive, guard } from '../mod/state';
+import { Events } from '../mod/events';
 
 export class UI {
+  /** The client's own UI (the server keeps twins of container screens: ServerUI). */
+  readonly isServer: boolean = false;
   gui: Gui;
   screen: Screen | null = null;
   hud: Hud;
@@ -92,19 +97,22 @@ export class UI {
    */
   private forward(e: string, extra: Record<string, unknown>) {
     const s = this.screen, conn = this.game.conn;
-    if (!(s instanceof Containers.ContainerScreen) || !conn) return;
+    if (!(s instanceof Containers.ContainerScreen || s?.twin) || !conn) return;
     const inp = this.game.input;
     const kd = ['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft'].filter((k) => inp.isDown(k));
-    conn.send({ t: 'ui', e, x: this.mx - s.left, y: this.my - s.top, kd, ms: Math.round(performance.now()), ...extra });
+    const box = s as unknown as { left?: number; top?: number };
+    conn.send({ t: 'ui', e, x: this.mx - (box.left ?? 0), y: this.my - (box.top ?? 0), kd, ms: Math.round(performance.now()), ...extra });
   }
 
   open(s: Screen | null) {
     const prev = this.screen;
     // our window closed (or another replaced it): the server's copy closes too
-    if (prev instanceof Containers.ContainerScreen && prev !== s && !this.game.serverOpening) this.game.conn?.send({ t: 'close' });
+    if ((prev instanceof Containers.ContainerScreen || prev?.twin || prev?.fromServer) && prev !== s && !this.game.serverOpening) this.game.conn?.send({ t: 'close' });
+    if (s && this.game.serverOpening) s.fromServer = true;
     this.screen = s;
     if (prev) prev.onClose();
     this.previewBox = null;
+    if (Events.screenOpen.any) Events.screenOpen.fire({ screen: s });
     if (s) {
       s.init();
       this.game.input.unlock();
@@ -138,6 +146,13 @@ export class UI {
   openChest(x: number, y: number, z: number) { this.open(new Containers.ChestScreen(this, x, y, z)); }
   openEnderChest(x: number, y: number, z: number) { this.open(new Containers.EnderChestScreen(this, x, y, z)); }
   openHorse(h: Horse) { this.open(new Containers.HorseScreen(this, h)); }
+  /** A mod's screen by id (the server opens it for a player with PlayerBlockCtx.openScreen). */
+  openMod(id: string, ...args: unknown[]) {
+    const s = SCREENS.get(String(id));
+    if (!s || !isActive(s.mod)) return;
+    const screen = guard(s.mod, `screen ${id}`, () => s.make(this, ...args), null);
+    if (screen) this.open(screen);
+  }
   openInventory() {
     const p = this.game.player!;
     // on a tame horse, E opens the horse's inventory

@@ -65,6 +65,13 @@ function grains(n: number, r: Random, count: number, lo: number, hi: number, gra
 }
 
 type Gen = (r: Random) => Buf;
+/** Mods: add a synthesised sound (mono samples at 22050 Hz) by name. */
+export function registerSound(name: string, gen: (r: Random) => Float32Array) {
+  GENS[name] = gen;
+}
+export const SAMPLE_RATE = SR;
+export const synth = { noise, lowpass, highpass, bandpass, env, normalize, tone, mixInto } as const;
+
 const GENS: Record<string, Gen> = {
   'dig.stone': (r) => normalize(env(bandpass(noise(SR * 0.25, r), 800, 3500), 0.002, 0.2, 3)),
   'dig.wood': (r) => {

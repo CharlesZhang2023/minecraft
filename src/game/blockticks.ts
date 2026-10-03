@@ -11,6 +11,7 @@ import { portalCanStay } from './portal';
 import { inStronghold } from '../world/stronghold';
 import { railCanStay } from './tracks';
 import { isRail } from '../world/rails';
+import { blockCtx, callBlock } from '../mod/blockctx';
 
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
 const DIRS6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] as const;
@@ -83,6 +84,8 @@ export class BlockTicker {
       this.game.interact!.breakBlockNaturally(x, y, z, true);
       return;
     }
+    const nc = def.behavior?.neighborChanged;
+    if (nc) callBlock(id, 'neighborChanged', () => nc(blockCtx(this.game, x, y, z, v)), undefined);
     if (id === B.FARMLAND && OPAQUE[w.getId(x, y + 1, z)]) w.set(x, y, z, B.DIRT);
   }
 
@@ -92,6 +95,8 @@ export class BlockTicker {
     const id = idOf(v), meta = metaOf(v);
     const below = w.getId(x, y - 1, z);
     const def = BLOCKS[id];
+    const cs = def.behavior?.canStay;
+    if (cs) return callBlock(id, 'canStay', () => cs(blockCtx(this.game, x, y, z, v)), true);
     if (id === B.REDSTONE_WIRE || id === B.STONE_PRESSURE_PLATE) return OPAQUE[below] === 1;
     if (isRail(id)) return railCanStay(w, x, y, z, v);
     if (id === B.LEVER || id === B.STONE_BUTTON) {
@@ -151,6 +156,8 @@ export class BlockTicker {
     if (this.game.redstone.scheduled(x, y, z)) return;
     const v = w.get(x, y, z);
     const id = idOf(v);
+    const st = BLOCKS[id].behavior?.scheduledTick;
+    if (st) { callBlock(id, 'scheduledTick', () => st(blockCtx(this.game, x, y, z, v)), undefined); return; }
     if (id === B.WATER || id === B.LAVA) this.fluidTick(x, y, z, v);
     else if (BLOCKS[id].gravity) {
       const below = w.getId(x, y - 1, z);
@@ -400,6 +407,8 @@ export class BlockTicker {
   private randomTick(x: number, y: number, z: number, v: number, _c: Chunk) {
     const w = this.world;
     const id = idOf(v);
+    const rt = BLOCKS[id].behavior?.randomTick;
+    if (rt) { callBlock(id, 'randomTick', () => rt(blockCtx(this.game, x, y, z, v)), undefined); return; }
     const [skyA, blkA] = w.getLight(x, y + 1, z);
     const dark = this.game.isDaytime() ? 0 : 11;
     const lightAbove = Math.max(skyA - dark, blkA);

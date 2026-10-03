@@ -115,6 +115,16 @@ Click the game to capture the mouse. Worlds save automatically to IndexedDB.
 - Synthesized sound effects: per-material digging and footsteps, mob voices, explosions, fizzes and portals.
   Generative ambient piano music.
 
+**Mods**
+- A Fabric-style mod system: mods add blocks, items, mobs, commands, screens, settings, renderers and world
+  generation through a per-mod context, events and mixins. Ids are namespaced and bound per world, and the
+  terrain and mesher workers run mods too.
+- The **Mods** screen installs mods from the site's mod repository (static files, hash-checked, kept in the
+  browser) or from a file, and turns them on or off. Each mod gets a generated settings page.
+- Multiplayer: guests are switched to the host's mods automatically. Client-only mods stay with each player.
+- Example mods: Rubies (ore, tools, a mob), Computers (a scriptable terminal with redstone), Kinetics
+  (rotational power with animated machines), Minimap. See [mods/README.md](mods/README.md) to write your own.
+
 ## Controls
 
 | Action | Key |
@@ -139,6 +149,8 @@ src/render   WebGL2 renderer, shaders, texture array, procedural textures & spri
 src/game     game loop (20 TPS), player, interaction, block ticks, items, recipes, audio synth, storage, portals
 src/entity   entity physics (vanilla collision), living entities, mobs & AI, pathfinding, spawning, boats
 src/ui       bitmap font, GUI primitives, isometric item icons, HUD, menus, containers, trading
+src/mod      mod loader, registries and per-world id binding, events, mixins, mod API, repository client
+mods/        the mod repository (example mods + SDK types), built by tools/vite-mods.ts
 tools/       headless Playwright scenario runner used for visual regression screenshots
 ```
 

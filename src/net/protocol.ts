@@ -1,13 +1,13 @@
 // What both ends must agree on to play together.
-import { BLOCKS } from '../world/blocks';
-import { ITEMS } from '../game/items';
+import { BLOCK_COUNT } from '../world/blocks';
+import { VANILLA_ITEM_COUNT } from '../game/items';
 
-/** Bump when messages change shape. */
-export const PROTOCOL = 1;
+/** Bump when messages change shape. 2: mods (the host's mod list, registry numbering in 'join', mod channels). */
+export const PROTOCOL = 2;
 
-/** The protocol plus the block and item lists' sizes: a different build of the game can't share a world. */
+/** The protocol plus the game's own block and item counts: a different build can't share a world (mods are agreed separately). */
 export function fingerprint() {
-  return `${PROTOCOL}.${BLOCKS.length}.${ITEMS.size}`;
+  return `${PROTOCOL}.${BLOCK_COUNT}.${VANILLA_ITEM_COUNT}`;
 }
 
 /** Player names: letters, digits, spaces and underscores, 1-16 characters. */

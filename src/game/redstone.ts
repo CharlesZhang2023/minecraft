@@ -7,8 +7,9 @@
 import type { Game } from './game';
 import type { World } from '../world/world';
 import {
-  B, OPAQUE, idOf, metaOf, pack, HORIZ, FACING6, isRedstoneTorch, isRedstoneComponent, isRepeater, isDiode,
+  B, BLOCKS, OPAQUE, REDSTONE, idOf, metaOf, pack, HORIZ, FACING6, isRedstoneTorch, isRedstoneComponent, isRepeater, isDiode,
 } from '../world/blocks';
+import { blockCtx, callBlock } from '../mod/blockctx';
 import { repeaterLocked } from '../world/models';
 import { containerLevel } from './devices';
 import { railPowered, switchRail } from './tracks';
@@ -21,10 +22,12 @@ const UP = 2, DOWN = 3;
 const H_D6 = [5, 0, 4, 1];
 /** FACING6 index -> D6 index */
 export const F6_D6 = [3, 2, 5, 4, 1, 0];
+const D6_F6 = [5, 4, 1, 0, 3, 2];
 const key = (x: number, y: number, z: number) => x + ',' + y + ',' + z;
 
 /** Conductors: opaque full blocks, except power sources that are opaque themselves. */
-export const isConductor = (id: number) => OPAQUE[id] === 1 && id !== B.REDSTONE_BLOCK && id !== B.OBSERVER && id !== B.GLOWSTONE;
+/** A solid block that passes power on (mod blocks that make power themselves don't, like the redstone block). */
+export const isConductor = (id: number) => OPAQUE[id] === 1 && id !== B.REDSTONE_BLOCK && id !== B.OBSERVER && id !== B.GLOWSTONE && !BLOCKS[id].behavior?.redstone?.power;
 
 export class Redstone {
   private busy = false;
@@ -68,6 +71,9 @@ export class Redstone {
       case B.COMPARATOR: return d === H_D6[m & 3] ? this.comparatorOut(x, y, z) : 0;
       case B.OBSERVER: return m & 8 && d === OPP[F6_D6[m & 7]] ? 15 : 0;
     }
+    // mod blocks see directions in the vanilla 6-way order (0 down, 1 up, 2 north, 3 south, 4 west, 5 east)
+    const rs = BLOCKS[id].behavior?.redstone?.power;
+    if (rs) return callBlock(id, 'redstone power', () => Math.max(0, Math.min(15, rs(blockCtx(this.game, x, y, z, v), D6_F6[d], strong) | 0)), 0);
     return 0;
   }
 
@@ -105,7 +111,7 @@ export class Redstone {
   private connectsToWire(x: number, y: number, z: number, h: number): boolean {
     const v = this.w.get(x, y, z);
     const id = idOf(v), m = metaOf(v);
-    if (id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || isRedstoneTorch(id) || id === B.REDSTONE_BLOCK || id === B.COMPARATOR || id === B.DETECTOR_RAIL) return true;
+    if (id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || isRedstoneTorch(id) || id === B.REDSTONE_BLOCK || id === B.COMPARATOR || id === B.DETECTOR_RAIL || REDSTONE[id] === 1) return true;
     if (isRepeater(id)) return ((m & 3) & 1) === (h & 1);
     if (id === B.OBSERVER) { const [dx, dz] = HORIZ[h]; const [fx, fy, fz] = FACING6[m & 7]; return fy === 0 && fx === dx && fz === dz; }
     return false;
@@ -347,6 +353,8 @@ export class Redstone {
         switchRail(w, x, y, z, this.isPowered(x, y, z));
         return;
     }
+    const up = BLOCKS[id].behavior?.redstone?.update;
+    if (up) { callBlock(id, 'redstone update', () => up(blockCtx(g, x, y, z, v)), undefined); return; }
     if (isRedstoneTorch(id)) {
       const a = this.attachD6(v);
       const should = this.powerFrom(x + D6[a][0], y + D6[a][1], z + D6[a][2], OPP[a]) === 0;

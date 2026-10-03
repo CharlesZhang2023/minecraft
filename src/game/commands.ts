@@ -8,6 +8,8 @@ import { ENCH_BY_ID } from './enchant';
 import { MOB_TYPES } from '../entity/registry';
 import { blockByName, pack } from '../world/blocks';
 import { LivingEntity } from '../entity/living';
+import { COMMANDS, ENTITIES } from '../mod/hooks';
+import { modState } from '../mod/state';
 
 export class Commands {
   history: string[] = [];
@@ -20,9 +22,20 @@ export class Commands {
     const cmd = args.shift()?.toLowerCase() ?? '';
     const coord = (s: string, base: number) => (s.startsWith('~') ? base + (parseFloat(s.slice(1)) || 0) : parseFloat(s));
     try {
+      // mod commands (a mod may also take over a vanilla one)
+      const mc = COMMANDS.get(cmd);
+      if (mc && modState.active.has(mc.mod)) {
+        const rest = line.trim().replace(/^\/?\S+\s*/, '');
+        const r = mc.def.run({ game: g, player: p, args: args.filter(Boolean), rest, reply: (m) => out.push(m), coord: (s, axis) => coord(s ?? '~', [p.x, p.y, p.z][axis]) });
+        if (typeof r === 'string') out.push(r);
+        else if (Array.isArray(r)) out.push(...r);
+        return out;
+      }
       switch (cmd) {
         case 'help':
           out.push('§eAvailable commands:', '/gamemode <survival|creative|adventure|spectator>', '/time <set|add> <day|night|noon|midnight|value>', '/weather <clear|rain|thunder>', '/tp <x> <y> <z>', '/give <item> [count]', '/summon <mob> [x y z]', '/kill', '/difficulty <peaceful|easy|normal|hard>', '/seed', '/spawnpoint', '/setblock <x> <y> <z> <block>', '/clear', '/xp <amount>', '/gamerule <doDaylightCycle|keepInventory> [true|false]', '/effect <effect|clear> [seconds] [amplifier]', '/locate stronghold', '/dimension <overworld|nether|end>', '/enchant <enchantment> [level]', '/heal');
+          // mods' commands, once each
+          for (const [name, { mod, def }] of COMMANDS) if (modState.active.has(mod) && name === def.name.toLowerCase()) out.push(`${def.usage ?? '/' + def.name}${def.description ? ' §7- ' + def.description : ''}`);
           break;
         case 'gamemode':
         case 'gm': {
@@ -79,7 +92,8 @@ export class Commands {
         }
         case 'summon': {
           const type = (args[0] ?? '').replace('minecraft:', '').toLowerCase();
-          if (!MOB_TYPES[type]) throw new Error(`Unknown entity '${type}'. Try: ${Object.keys(MOB_TYPES).join(', ')}`);
+          const modType = ENTITIES.get(type);
+          if (!MOB_TYPES[type] && !(modType && modState.active.has(modType.mod))) throw new Error(`Unknown entity '${type}'. Try: ${Object.keys(MOB_TYPES).join(', ')}`);
           const d = g.lookVec(p.yaw, 0);
           const x = args[1] ? coord(args[1], p.x) : p.x + d.x * 2, y = args[2] ? coord(args[2], p.y) : p.y, z = args[3] ? coord(args[3], p.z) : p.z + d.z * 2;
           g.interact!.spawnMob(type, x, y, z);

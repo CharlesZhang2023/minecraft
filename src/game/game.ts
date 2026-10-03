@@ -40,8 +40,13 @@ import { SOUND_FOR } from './audio';
 import type { Conn, Msg } from '../net/conn';
 import { ServerPlayer, NetPlayer } from '../server/splayer';
 import { ServerAudio, BroadcastUI, fxSink, VirtualInput } from '../server/sui';
+import { blockCtx } from '../mod/blockctx';
 import { captureState, sig, encodeValue, State } from '../net/replicate';
 import type { Particles } from './particles';
+import { Events } from '../mod/events';
+import { session, live, COMMANDS } from '../mod/hooks';
+import { currentMap } from '../mod/registry';
+import { modState, guard } from '../mod/state';
 
 export const TICK_MS = 50;
 
@@ -203,12 +208,16 @@ export class Game {
   // ------------------------------------------------------------------ world lifecycle
   async openWorld(meta: WorldMeta) {
     this.meta = meta;
+    // mods: which are in play here, and the ids their blocks and items have in this world
+    session.beginWorld(meta);
+    live.game = this;
     meta.generatorVersion ??= GENERATOR_VERSION;
     this.time = meta.time ?? 0;
     this.ticks = 0;
     this.options.difficulty = meta.difficulty ?? 2;
     this.lastSave = performance.now();
     await this.loadDim('overworld');
+    if (Events.worldLoad.any) Events.worldLoad.fire(this);
   }
 
   /** Load a dimension (once, even if several players arrive together). */
@@ -285,6 +294,7 @@ export class Game {
     meta.time = this.time;
     meta.lastPlayed = Date.now();
     meta.difficulty = this.options.difficulty;
+    if (Events.worldSave.any) Events.worldSave.fire(this);
     const players = (meta.players ??= {});
     for (const sp of this.players) {
       if (sp.owner) {
@@ -307,7 +317,9 @@ export class Game {
     if (this.closed) return;
     this.closed = true;
     for (const sp of [...this.players]) sp.conn.close('The host closed the game');
+    if (Events.worldClose.any) Events.worldClose.fire(this);
     await this.saveWorld();
+    if (live.game === this) live.game = null;
     for (const d of [...this.dims.keys()]) await this.unloadDim(d);
   }
 
@@ -344,10 +356,12 @@ export class Game {
     this.hookPlayer(sp);
     dim.entities.push(p);
     this.players.push(sp);
-    sp.send({ t: 'join', id: p.id, name, dim: dimName, seed: meta.seed, worldName: meta.name, hardcore: meta.hardcore, time: this.timeState(), owner });
+    // the registry numbering goes first: the guest binds its ids before any chunk or item arrives
+    sp.send({ t: 'join', id: p.id, name, dim: dimName, seed: meta.seed, worldName: meta.name, hardcore: meta.hardcore, time: this.timeState(), owner, registry: currentMap() });
     sp.teleported();
     for (const m of early) sp.receive(m);
     if (!owner) this.say(`§e${name} joined the game`);
+    if (Events.playerJoin.any) this.asActor(sp, () => Events.playerJoin.fire(this, p));
     this.onPlayersChanged();
     return sp;
   }
@@ -379,6 +393,7 @@ export class Game {
       if (sp.ui.screen) { sp.ui.fromClient = true; sp.ui.open(null); sp.ui.fromClient = false; }
       sp.entity.riding?.dismount();
     });
+    if (Events.playerLeave.any) this.asActor(sp, () => Events.playerLeave.fire(this, sp.entity));
     if (!sp.owner && this.meta) (this.meta.players ??= {})[sp.name] = sp.save();
     else if (sp.owner && this.meta) { this.meta.player = sp.entity.toJSON(); this.meta.dimension = sp.dim; this.meta.achievements = sp.achievements.toJSON(); }
     this.players.splice(i, 1);
@@ -394,10 +409,14 @@ export class Game {
     msg = msg.trim();
     if (!msg) return;
     if (msg.startsWith('/')) {
-      if (!sp.owner && !this.meta?.cheatsForAll) { sp.send({ t: 'chat', msg: '§cOnly the host can use commands' }); return; }
+      // mod commands can be open to everyone
+      const mc = COMMANDS.get(msg.slice(1).split(/\s+/)[0].toLowerCase());
+      const open = mc && modState.active.has(mc.mod) && mc.def.permission === 'all';
+      if (!sp.owner && !this.meta?.cheatsForAll && !open) { sp.send({ t: 'chat', msg: '§cOnly the host can use commands' }); return; }
       for (const line of this.asActor(sp, () => this.commands.run(msg))) sp.send({ t: 'chat', msg: line });
       return;
     }
+    if (Events.chat.any && this.asActor(sp, () => Events.chat.fire({ game: this, player: sp.entity, message: msg })) === 'fail') return;
     this.say(`<${sp.name}> ${msg}`);
   }
 
@@ -427,6 +446,7 @@ export class Game {
     p.respawn(this.keepInventory);
     if (sp.dim !== 'overworld') this.travel(sp, 'overworld', true);
     else sp.pendingArrival = { x: p.x, y: p.y, z: p.z, toSpawn: true };
+    if (Events.playerRespawn.any) this.asActor(sp, () => Events.playerRespawn.fire(this, p));
   }
 
   // ------------------------------------------------------------------ dimensions
@@ -605,11 +625,13 @@ export class Game {
       return;
     }
     this.ticks++;
+    if (Events.serverTickStart.any) Events.serverTickStart.fire(this);
     if (this.doDaylightCycle) this.time++;
     const over = this.dims.get('overworld');
     if (over) this.inDim(over, () => this.weather.tick());
     for (const dim of this.dims.values()) this.inDim(dim, () => this.tickDim(dim));
     this.sleepCheck();
+    if (Events.serverTick.any) Events.serverTick.fire(this);
     for (const dim of this.dims.values()) this.replicate(dim);
     for (const sp of this.players) sp.flush();
     for (const dim of this.dims.values()) dim.deltas.clear();
@@ -656,6 +678,21 @@ export class Game {
     dim.brewing.tick();
     tickFurnaces(this);
     dim.spawner.tick();
+    if (modState.active.size) this.tickModTiles(w);
+  }
+
+  /** Mod tile entities that tick (machines), in every loaded chunk of this dimension. */
+  private tickModTiles(w: World) {
+    for (const c of w.chunks.values()) {
+      if (!c.ready || !c.tiles.size) continue;
+      for (const [i, t] of c.tiles) {
+        const v = c.blocks[i], def = BLOCKS[v & 0xfff];
+        const tick = def.behavior?.tile?.tick;
+        if (!tick || t.type !== def.name) continue;
+        const x = c.cx * 16 + (i & 15), z = c.cz * 16 + ((i >> 4) & 15), y = i >> 8;
+        guard(def.mod, 'tile tick', () => tick(blockCtx(this, x, y, z, v), t), undefined);
+      }
+    }
   }
 
   /** Night passes once everybody in the overworld has been in bed for a few seconds. */

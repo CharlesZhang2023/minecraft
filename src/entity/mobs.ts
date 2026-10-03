@@ -276,7 +276,7 @@ function wrap(d: number) {
 }
 
 // ------------------------------------------------------------------ hostile
-abstract class Monster extends Mob {
+export abstract class Monster extends Mob {
   override hostile = true;
   attackDamage = 3;
   followRange = 35;

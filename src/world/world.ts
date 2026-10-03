@@ -4,6 +4,7 @@ import type { MeshResult } from './mesher';
 import { Storage, SavedChunk, SavedBase, rleEncode, rleDecode } from '../game/storage';
 import WorkerCtor from './worker.ts?worker&inline';
 import { chunkHash } from '../net/protocol';
+import { session } from '../mod/hooks';
 
 export const chunkKey = (cx: number, cz: number) => (cx + 0x8000) * 0x10000 + (cz + 0x8000);
 export const keyStr = (cx: number, cz: number) => cx + ',' + cz;
@@ -87,8 +88,11 @@ export class World {
 
   constructor(public seed: number, public worldId: string, public dimension: Dimension = 'overworld', public role: WorldRole = 'server') {
     const n = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
+    // mods: workers learn this page's numbering and run the active mods first (jobs queue behind that)
+    const mods = session.workerInit();
     for (let i = 0; i < n; i++) {
       const w = new WorkerCtor();
+      if (mods) w.postMessage(mods);
       const slot = { w, busy: false, job: null as Job | null };
       w.onmessage = (e) => this.onWorkerMessage(slot, e.data);
       w.onerror = (e) => console.error('worker error', e);

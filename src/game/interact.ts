@@ -23,6 +23,9 @@ import { GameMode, Player } from './player';
 import { findFrameAt, frameBlocks } from './portal';
 import { level } from './enchant';
 import { eyeOnFrame, throwEye, teleportEgg, placeCrystal } from './endstuff';
+import { Events } from '../mod/events';
+import { blockCtx, playerBlockCtx, itemCtx, callBlock } from '../mod/blockctx';
+import { guard } from '../mod/state';
 
 export interface Breaking { x: number; y: number; z: number; progress: number; face: number; sound: number }
 
@@ -160,6 +163,9 @@ export class Interaction {
     const v = w.get(x, y, z);
     const id = idOf(v);
     if (id === 0) return;
+    // mods may keep the block
+    if (Events.breakBlock.any && Events.breakBlock.fire({ game: g, player: p, x, y, z, v }) === 'fail') return;
+    const tile = w.getTile(x, y, z);
     const held = p.inventory.held();
     const tool = held ? getItem(held.id) : undefined;
     g.particles!.blockBreak(x, y, z, id, this.tintAt(x, y, z, id));
@@ -172,7 +178,8 @@ export class Interaction {
       if (fortune && [B.COAL_ORE, B.DIAMOND_ORE, B.EMERALD_ORE, B.LAPIS_ORE, B.REDSTONE_ORE, B.NETHER_QUARTZ_ORE].includes(id))
         for (const d of drops) d.count *= Math.max(0, this.rng.int(fortune + 2) - 1) + 1;
       for (const d of drops) g.dropItem(x + 0.5, y + 0.5, z + 0.5, d);
-      this.dropTileContents(x, y, z, v);
+      // the block (and with it its tile entity) is already gone: drop what the tile held
+      this.dropTileContents(x, y, z, v, tile);
       // xp from ores
       const xp = id === B.COAL_ORE ? this.rng.int(3) : id === B.DIAMOND_ORE || id === B.EMERALD_ORE ? 3 + this.rng.int(5) : id === B.LAPIS_ORE ? 2 + this.rng.int(4) : id === B.REDSTONE_ORE ? 1 + this.rng.int(5) : 0;
       if (xp && drops.length && !silk) this.spawnXp(x + 0.5, y + 0.5, z + 0.5, xp);
@@ -183,6 +190,14 @@ export class Interaction {
     } else {
       w.setTile(x, y, z, undefined);
     }
+    this.broken(x, y, z, v, p);
+  }
+
+  /** Mods: a block is gone (broken by a player, or the world when `by` is null). */
+  private broken(x: number, y: number, z: number, v: number, by: Player | null) {
+    const g = this.game, id = idOf(v), beh = BLOCKS[id].behavior;
+    if (beh?.onBreak) callBlock(id, 'onBreak', () => beh.onBreak!({ ...blockCtx(g, x, y, z, v), player: by }), undefined);
+    if (by && Events.blockBroken.any) Events.blockBroken.fire({ game: g, player: by, x, y, z, v });
   }
 
   /** Set several blocks atomically: support checks run only after all are in place. */
@@ -226,10 +241,10 @@ export class Interaction {
     else this.setAll(changes);
   }
 
-  dropTileContents(x: number, y: number, z: number, v: number) {
-    const t = this.world.getTile(x, y, z);
+  dropTileContents(x: number, y: number, z: number, v: number, t = this.world.getTile(x, y, z)) {
     if (!t) return;
-    const items = (t.items ?? t.slots) as (ItemStack | null)[] | undefined;
+    const spec = BLOCKS[idOf(v)].behavior?.tile;
+    const items = (spec?.contents ? callBlock(idOf(v), 'tile contents', () => spec.contents!(t), []) : (t.items ?? t.slots)) as (ItemStack | null)[] | undefined;
     if (items) for (const s of items) if (s) this.game.dropItem(x + 0.5, y + 0.5, z + 0.5, s, true);
     this.world.setTile(x, y, z, undefined);
     void v;
@@ -241,8 +256,10 @@ export class Interaction {
     const v = w.get(x, y, z);
     const id = idOf(v);
     if (id === 0) return;
+    const tile = w.getTile(x, y, z);
     this.removeBlockAndPartner(x, y, z, v);
-    if (drops) this.dropBlockItems(x, y, z, v);
+    if (drops) { this.dropBlockItems(x, y, z, v); this.dropTileContents(x, y, z, v, tile); }
+    this.broken(x, y, z, v, null);
     if (isLeaves(id) || BLOCKS[id].render === Render.Cross) this.game.particles!.blockBreak(x, y, z, id, this.tintAt(x, y, z, id));
   }
 
@@ -334,6 +351,14 @@ export class Interaction {
     if (t) {
       const v = w.get(t.x, t.y, t.z);
       const id = idOf(v);
+      // mods: listeners first, then the held item's own use on blocks
+      if (Events.useBlock.any) {
+        const r = Events.useBlock.fire({ game: g, player: p, x: t.x, y: t.y, z: t.z, v, face: t.face, held });
+        if (r === 'success') { p.swing(); return; }
+        if (r === 'fail') return;
+      }
+      const ib = item?.behavior;
+      if (held && ib?.useOnBlock && guard(item!.mod, 'useOnBlock', () => ib.useOnBlock!({ ...this.itemCtx(held), x: t.x, y: t.y, z: t.z, face: t.face, v }), false)) { p.swing(); return; }
       if (!p.sneaking || !held) {
         if (this.activateBlock(t, id, v)) { p.swing(); this.useDelay = 4; return; }
       }
@@ -342,13 +367,29 @@ export class Interaction {
         if (item.block !== undefined && this.placeBlock(t, held, item)) { p.swing(); return; }
       }
     }
-    if (held && item && fresh) this.useItemInAir(held, item);
+    if (held && item && fresh) {
+      if (Events.useItem.any) {
+        const r = Events.useItem.fire({ game: g, player: p, stack: held });
+        if (r === 'success') { p.swing(); return; }
+        if (r === 'fail') return;
+      }
+      const ib = item.behavior;
+      if (ib?.use) { if (guard(item.mod, 'use', () => ib.use!(this.itemCtx(held)), false)) p.swing(); return; }
+      this.useItemInAir(held, item);
+    }
     else if (held && item && (item.food || item.name === 'bow')) this.useItemInAir(held, item);
+  }
+
+  /** Context for a mod item's hooks (the held stack). */
+  private itemCtx(held: ItemStack) {
+    return itemCtx(this.game, this.player, held, (n) => this.consume(n), (n) => this.damageHeld(n));
   }
 
   private activateBlock(t: BlockHit, id: number, v: number): boolean {
     const g = this.game, w = this.world;
     const meta = metaOf(v);
+    const beh = BLOCKS[id].behavior;
+    if (beh?.onUse) return callBlock(id, 'onUse', () => beh.onUse!(playerBlockCtx(g, this.player, t.x, t.y, t.z, t.face, this.player.inventory.held())), false);
     switch (id) {
       case B.CRAFTING_TABLE: g.ui.openCrafting(); return true;
       case B.ENCHANTING_TABLE: g.ui.openEnchant(t.x, t.y, t.z); return true;
@@ -804,7 +845,15 @@ export class Interaction {
     if (cur === blockId && blockId !== B.SNOW) return false;
     let meta = 0;
     const facing = this.playerFacing();
-    if (isLog(blockId)) meta = face === 0 || face === 1 ? 1 : face === 4 || face === 5 ? 2 : 0;
+    const pdef = BLOCKS[blockId];
+    if (pdef.behavior?.placementMeta) {
+      const m = callBlock(blockId, 'placementMeta', () => pdef.behavior!.placementMeta!({ game: g, world: w, player: p, x, y, z, face, facing, facing6: this.facingFromEntity(x, y, z), hitY: fracY, held }), null);
+      if (m === null) return false;
+      meta = m & 15;
+    } else if (pdef.mod) {
+      // a mod cube with a front face turns it toward the player
+      if (pdef.faces.length > 6) meta = (facing + 2) & 3;
+    } else if (isLog(blockId)) meta = face === 0 || face === 1 ? 1 : face === 4 || face === 5 ? 2 : 0;
     else if (isOriented(blockId)) meta = (facing + 2) & 3;
     else if (isStairs(blockId)) meta = facing | (face === 2 || (face !== 3 && fracY > 0.5) ? 4 : 0);
     else if (isSlab(blockId)) meta = face === 2 || (face !== 3 && fracY > 0.5) ? 1 : 0;
@@ -842,7 +891,7 @@ export class Interaction {
       this.consume(1);
       return true;
     }
-    if (BLOCKS[blockId].needsSupport || blockId === B.WHEAT || blockId === B.SUGAR_CANE || blockId === B.CACTUS) {
+    if (BLOCKS[blockId].needsSupport || BLOCKS[blockId].behavior?.canStay || blockId === B.WHEAT || blockId === B.SUGAR_CANE || blockId === B.CACTUS) {
       if (!g.ticker!.canStay(x, y, z, v)) return false;
     }
     if (!this.noEntities(x, y, z, v)) return false;
@@ -869,6 +918,14 @@ export class Interaction {
     if (isPiston(id) || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER) g.redstone.update(x, y, z);
     if (isRail(id)) { layRail(w, x, y, z, g.redstone.isPowered(x, y, z)); g.redstone.update(x, y, z); }
     if (id === B.SAND || id === B.GRAVEL) g.ticker!.schedule(x, y, z, 2);
+    const def = BLOCKS[id];
+    if (def.mod) {
+      const beh = def.behavior;
+      if (beh?.tile) w.setTile(x, y, z, { ...callBlock(id, 'tile create', () => beh.tile!.create(blockCtx(g, x, y, z, v)), {}), type: def.name } as never);
+      if (beh?.redstone) g.redstone.update(x, y, z);
+      if (beh?.onPlaced) callBlock(id, 'onPlaced', () => beh.onPlaced!({ ...blockCtx(g, x, y, z, v), player: this.player }), undefined);
+    }
+    if (Events.blockPlaced.any) Events.blockPlaced.fire({ game: g, player: this.player, x, y, z, v });
     g.playBlockSound(soundBlock, x, y, z, 'place');
     this.consume(1);
     return true;
@@ -891,6 +948,9 @@ export class Interaction {
   attack(e: Entity) {
     const g = this.game, p = this.player;
     p.swing();
+    if (Events.attackEntity.any && Events.attackEntity.fire({ game: g, player: p, target: e }) !== undefined) return;
+    const inHand = p.inventory.held(), hd = inHand ? getItem(inHand.id) : undefined;
+    if (inHand && hd?.behavior?.hitEntity) guard(hd.mod, 'hitEntity', () => hd.behavior!.hitEntity!({ ...this.itemCtx(inHand), target: e }), undefined);
     if (e instanceof Fireball) {
       const d = g.lookVec(p.yaw, p.pitch);
       e.deflect(d.x, d.y, d.z);

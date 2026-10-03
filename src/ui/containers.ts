@@ -11,6 +11,9 @@ import { enchName, ENCHANTS } from '../game/enchant';
 import { drawEffectList } from './effects';
 import { POTION_BY_KEY, effectLine } from '../game/potiondata';
 import type { Horse } from '../entity/horse';
+import { CREATIVE_TABS, MOD_NAMES } from '../mod/hooks';
+import { isActive, guard } from '../mod/state';
+import { Events } from '../mod/events';
 
 export interface Slot {
   x: number; y: number;
@@ -408,6 +411,10 @@ export function tooltipLines(s: ItemStack): string[] {
   if (d.armor?.points) lines.push('', `§9+${d.armor.points} Armor`);
   if (d.durability && s.damage) lines.push(`Durability: ${d.durability - s.damage} / ${d.durability}`);
   if (d.food) lines.push(`§7Restores ${d.food.hunger / 2} hunger`);
+  // mods: the item's own lines, listeners, and whose it is (like Mod Menu)
+  if (d.behavior?.tooltip) guard(d.mod, 'tooltip', () => d.behavior!.tooltip!(s, lines), undefined);
+  if (Events.tooltip.any) Events.tooltip.fire({ stack: s, lines });
+  if (d.mod) lines.push(`§9§o${MOD_NAMES.get(d.mod) ?? d.mod}`);
   return lines;
 }
 
@@ -692,7 +699,9 @@ export class HorseScreen extends ContainerScreen {
 // ------------------------------------------------------------------ creative
 type Tab = { name: string; icon: number; items: () => ItemStack[] };
 const one = (id: number): ItemStack => ({ id, count: 1 });
-const defs = () => [...ITEMS.values()].filter((d) => d.id !== 0);
+const defs = () => [...ITEMS.values()].filter((d) => d.id !== 0 && !d.mod && !d.missing);
+/** Mod items (bound in this world). */
+const modDefs = () => [...ITEMS.values()].filter((d) => d.mod && !d.missing);
 const REDSTONE_IDS = [I.REDSTONE, B.REDSTONE_TORCH, I3.REPEATER, I3.COMPARATOR, B.REDSTONE_BLOCK, B.LEVER, B.STONE_BUTTON, B.STONE_PRESSURE_PLATE,
   B.PISTON, B.STICKY_PISTON, B.SLIME_BLOCK, B.OBSERVER, B.DISPENSER, B.DROPPER, B.HOPPER, B.REDSTONE_LAMP, B.TNT, I.OAK_DOOR, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL];
 const TRANSPORT_IDS = [B.RAIL, B.POWERED_RAIL, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL, I5.MINECART, I2.BOAT, I5.SADDLE, I5.IRON_HORSE_ARMOR, I5.GOLDEN_HORSE_ARMOR, I5.DIAMOND_HORSE_ARMOR, I6.ELYTRA];
@@ -741,7 +750,7 @@ const TABS: Tab[] = [
   { name: 'Redstone', icon: I.REDSTONE, items: () => REDSTONE_IDS.map(one) },
   { name: 'Transportation', icon: B.POWERED_RAIL, items: () => TRANSPORT_IDS.map(one) },
   { name: 'Miscellaneous', icon: I.LAVA_BUCKET, items: () => [...MISC_IDS.map(one), ...fireworks(), ...defs().filter((d) => d.egg).map((d) => one(d.id))] },
-  { name: 'Search Items', icon: I.COMPASS, items: () => [...defs().filter((d) => d.id !== I3.ENCHANTED_BOOK && !FIREWORK_IDS.includes(d.id)).map((d) => one(d.id)), ...fireworks(), ...books(() => true, true)] },
+  { name: 'Search Items', icon: I.COMPASS, items: () => [...defs().filter((d) => d.id !== I3.ENCHANTED_BOOK && !FIREWORK_IDS.includes(d.id)).map((d) => one(d.id)), ...fireworks(), ...books(() => true, true), ...modDefs().map((d) => one(d.id))] },
   { name: 'Foodstuffs', icon: I.APPLE, items: general(isFood) },
   { name: 'Tools', icon: 0, items: () => [...general(isTool)(), ...books((e) => TOOL_ENCH.includes(e), false)] },
   { name: 'Combat', icon: 0, items: () => [...general(isCombat)(), ...books((e) => !TOOL_ENCH.includes(e), false)] },
@@ -750,10 +759,39 @@ const TABS: Tab[] = [
   { name: 'Survival Inventory', icon: B.CHEST, items: () => [] },
 ];
 const SEARCH = 5, SURVIVAL = 11;
+/** Mod items can ask for a vanilla tab by its name ({ tab: 'Tools' }). */
+const withModItems = (t: Tab): Tab => ({ ...t, items: () => [...t.items(), ...modDefs().filter((d) => d.tab === t.name).map((d) => one(d.id))] });
+/** The mods' tabs: their own lists, or by default the mod's items that didn't pick another tab. */
+function modTabs(): Tab[] {
+  const tabs = CREATIVE_TABS.filter((t) => isActive(t.mod));
+  return tabs.map((t) => {
+    const first = tabs.find((o) => o.mod === t.mod) === t;
+    const items = () => {
+      const own = t.items();
+      if (own.length) return own;
+      return modDefs().filter((d) => d.mod === t.mod && (d.tab ? d.tab === t.id || d.tab === t.name : first)).map((d) => one(d.id));
+    };
+    return { name: t.name, icon: t.icon() || I.STICK, items };
+  }).filter((t) => t.items().length > 0);
+}
+/** Tabs on a page: the game's own on the first; mods' on the next ones, around Search and the inventory (like Forge). */
+function tabsOf(page: number): (Tab | null)[] {
+  if (page === 0) return TABS.map(withModItems);
+  const list = modTabs().slice((page - 1) * 10, page * 10);
+  const out: (Tab | null)[] = new Array(12).fill(null);
+  out[SEARCH] = TABS[SEARCH];
+  out[SURVIVAL] = TABS[SURVIVAL];
+  list.forEach((t, i) => (out[i < 5 ? i : i + 1] = t));
+  return out;
+}
+const pageCount = () => 1 + Math.ceil(modTabs().length / 10);
 
 export class CreativeScreen extends ContainerScreen {
   title = 'Creative';
   tab = 0;
+  page = 0;
+  private pageTabs: (Tab | null)[] = TABS;
+  tabs() { return this.pageTabs; }
   scroll = 0;
   items: ItemStack[] = [];
   search!: TextField;
@@ -764,6 +802,9 @@ export class CreativeScreen extends ContainerScreen {
     TABS[7].icon = itemByName('iron_axe')?.id ?? I.STICK;
     TABS[8].icon = itemByName('golden_sword')?.id ?? I.BOW;
     TABS[9].icon = POTION_ITEMS.strength;
+    this.page = Math.min(this.page, pageCount() - 1);
+    this.pageTabs = tabsOf(this.page);
+    if (!this.pageTabs[this.tab]) this.tab = SEARCH;
     this.search = new TextField(this.ui, 0, 0, 89, 11, this.search?.value ?? '', 30);
     super.init();
     this.search.x = this.left + 82;
@@ -796,7 +837,7 @@ export class CreativeScreen extends ContainerScreen {
   }
   refreshItems() {
     const q = this.search?.value.toLowerCase() ?? '';
-    const tab = TABS[this.tab];
+    const tab = this.pageTabs[this.tab] ?? TABS[SEARCH];
     this.items = tab.items().filter((st) => this.tab !== SEARCH || !q || tooltipLines(st).join(' ').replace(/§./g, '').toLowerCase().includes(q));
     this.scroll = Math.min(this.scroll, this.maxScroll());
   }
@@ -819,8 +860,8 @@ export class CreativeScreen extends ContainerScreen {
   override drawPanelBase(ctx: Ctx) {
     const L = this.left, T = this.top;
     // tabs (behind)
-    TABS.forEach((t, i) => {
-      if (i === this.tab) return;
+    this.pageTabs.forEach((t, i) => {
+      if (i === this.tab || !t) return;
       const [tx, ty] = this.tabPos(i);
       this.gui.panel(ctx, tx, ty, 28, 30);
       if (t.icon) ctx.drawImage(this.game.icons.get(t.icon), tx + 6, ty + (ty < T ? 8 : 6), 16, 16);
@@ -830,7 +871,16 @@ export class CreativeScreen extends ContainerScreen {
     this.gui.panel(ctx, tx, ty, 28, 32);
     ctx.fillStyle = '#C6C6C6';
     ctx.fillRect(tx + 2, ty < T ? T : ty - 3, 24, 5);
-    if (TABS[this.tab].icon) ctx.drawImage(this.game.icons.get(TABS[this.tab].icon), tx + 6, ty + (ty < T ? 8 : 8), 16, 16);
+    const cur = this.pageTabs[this.tab];
+    if (cur?.icon) ctx.drawImage(this.game.icons.get(cur.icon), tx + 6, ty + (ty < T ? 8 : 8), 16, 16);
+    // more tabs from mods: pages
+    const n = pageCount();
+    if (n > 1) {
+      const [px, py] = [L, T - 50];
+      this.gui.button(ctx, px, py, 20, 20, '<', false, this.page > 0);
+      this.gui.button(ctx, L + this.pw - 20, py, 20, 20, '>', false, this.page < n - 1);
+      this.gui.textCenter(ctx, `${this.page + 1} / ${n}`, L + this.pw / 2, py + 6, '#FFFFFF');
+    }
   }
   tabPos(i: number): [number, number] {
     const L = this.left, T = this.top;
@@ -849,7 +899,7 @@ export class CreativeScreen extends ContainerScreen {
       const ky = T + 18 + (ms ? (this.scroll / ms) * (90 - 15) : 0);
       this.gui.button(ctx, L + 175, ky, 12, 15, '', false, ms > 0);
     }
-    this.label(ctx, TABS[this.tab].name, 8, 6);
+    this.label(ctx, this.pageTabs[this.tab]?.name ?? '', 8, 6);
     if (this.tab === SURVIVAL) {
       this.label(ctx, '', 0, 0);
       ctx.fillStyle = '#000000';
@@ -864,13 +914,29 @@ export class CreativeScreen extends ContainerScreen {
   }
   override drawForeground(ctx: Ctx, mx: number, my: number) {
     // tab tooltips
-    TABS.forEach((t, i) => {
+    this.pageTabs.forEach((t, i) => {
+      if (!t) return;
       const [tx, ty] = this.tabPos(i);
       if (mx >= tx && mx < tx + 28 && my >= ty && my < ty + 30 && !this.slotAt(mx, my)) this.gui.tooltip(ctx, [t.name], mx, my);
     });
   }
   override mouseDown(mx: number, my: number, button: number): boolean {
-    for (let i = 0; i < TABS.length; i++) {
+    // page arrows (clicks reach the server's twin too, so both sides turn the page)
+    const n = pageCount();
+    if (n > 1 && my >= this.top - 50 && my < this.top - 30) {
+      const left = mx >= this.left && mx < this.left + 20, right = mx >= this.left + this.pw - 20 && mx < this.left + this.pw;
+      if ((left && this.page > 0) || (right && this.page < n - 1)) {
+        this.page += left ? -1 : 1;
+        this.tab = this.page === 0 ? 0 : SEARCH;
+        this.scroll = 0;
+        this.game.audio.play('click', null, 0.5, 1);
+        this.init();
+        if (this.page > 0) { const first = this.pageTabs.findIndex((t, i) => t && i !== SEARCH && i !== SURVIVAL); if (first >= 0) { this.tab = first; this.init(); } }
+        return true;
+      }
+    }
+    for (let i = 0; i < 12; i++) {
+      if (!this.pageTabs[i]) continue;
       const [tx, ty] = this.tabPos(i);
       if (mx >= tx && mx < tx + 28 && my >= ty && my < ty + 30 && !(my >= this.top && my < this.top + this.ph && mx >= this.left && mx < this.left + this.pw && i < 6 && false)) {
         if (my < this.top || my >= this.top + this.ph - 4) {

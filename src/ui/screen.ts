@@ -89,9 +89,15 @@ export abstract class Screen {
   showsChat = false; // the screen draws the chat itself
   touchTools = false; // touch: show the Split / Shift / close helper buttons (container screens)
   touchScrolls = false; // touch: vertical drags scroll the screen (via wheel) instead of clicking
+  /** The server keeps a twin of this screen (opened by the server): clicks and keys are replayed there too. */
+  twin = false;
+  /** Opened by the server (it keeps its own copy open until we say we closed it). */
+  fromServer = false;
   widgets: Widget[] = [];
   constructor(public ui: UI) {}
   get game() { return this.ui.game; }
+  /** This is the server's twin of a screen (see ServerUI), not the one the player sees. */
+  get onServer() { return !!(this.ui as unknown as { isServer?: boolean }).isServer; }
   get gui() { return this.ui.gui; }
   init() {}
   tick() {}
