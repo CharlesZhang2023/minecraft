@@ -14,6 +14,7 @@ import { rleEncode, rleDecode, Storage } from '../game/storage';
 import { ContainerScreen } from '../ui/containers';
 import { ServerUI, VirtualInput } from './sui';
 import { captureState, encodeValue, sig, netType, State } from '../net/replicate';
+import { validLook } from '../render/skins';
 
 /** What a client sends every tick. */
 export interface InputPacket {
@@ -163,10 +164,11 @@ export class ServerPlayer {
   private budget = new Map<string, { n: number; at: number }>();
   allow(t: string) {
     if (this.owner) return true;
-    const per = t === 'in' ? 40 : t === 'ui' ? 60 : t === 'chat' ? 4 : 20;
+    // imported skins (up to 40 KB each, passed on to everyone): a couple, then one every 5 seconds
+    const [per, cap] = t === 'in' ? [40, 80] : t === 'ui' ? [60, 120] : t === 'chat' ? [4, 8] : t === 'skin' ? [0.2, 2] : [20, 40];
     const now = performance.now();
-    const b = this.budget.get(t) ?? { n: per, at: now };
-    b.n = Math.min(per * 2, b.n + ((now - b.at) / 1000) * per);
+    const b = this.budget.get(t) ?? { n: t === 'skin' ? cap : per, at: now };
+    b.n = Math.min(cap, b.n + ((now - b.at) / 1000) * per);
     b.at = now;
     this.budget.set(t, b);
     if (b.n < 1) return false;
@@ -202,7 +204,24 @@ export class ServerPlayer {
         break;
       }
       case 'dismount': if (this.entity.riding) g.asActor(this, () => this.entity.riding?.dismount()); break;
+      case 'use': g.asActor(this, () => this.useEntity(Number(m.id))); break;
+      case 'skin': if (validLook(m.look)) { this.entity.look = m.look; this.entity.slim = !!m.slim; } break;
     }
+  }
+
+  /** A phone's action button: right-click that mob or vehicle (if it's really there and in reach). */
+  private useEntity(id: number) {
+    const p = this.entity, g = this.game;
+    if (p.dead || this.ui.screen || this.pendingArrival) return;
+    const e = g.entities.find((q) => q.id === id && !q.removed);
+    if (!e || e === p) return;
+    const eye = g.eyePos(), b = e.box;
+    const cx = Math.max(b.x0, Math.min(eye.x, b.x1)), cy = Math.max(b.y0, Math.min(eye.y, b.y1)), cz = Math.max(b.z0, Math.min(eye.z, b.z1));
+    if (Math.hypot(cx - eye.x, cy - eye.y, cz - eye.z) > 5) return;
+    this.target = null;
+    this.targetEntity = e;
+    this.targetPart = null;
+    this.interact.interactEntity();
   }
 
   /** A click / key in the client's container screen, replayed on our twin of it. */
@@ -293,8 +312,8 @@ export class ServerPlayer {
     if (this.pendingArrival) { g.resolveArrival(this); return; }
     const sel = p.inventory.selected;
     g.updateTarget(this);
-    // a phone tap on a mob: use the held item on it if it has a use for it, otherwise hit it
-    if (fresh && inp.act && inp.mp.includes(3) && this.targetEntity && !this.interact.interactEntity()) this.interact.attack(this.targetEntity);
+    // a phone tap on a mob hits it (its uses have their own button)
+    if (fresh && inp.act && inp.mp.includes(3) && this.targetEntity) this.interact.attack(this.targetEntity);
     this.interact.tick();
     if (p.inventory.selected !== sel) { this.forcedSel = p.inventory.selected; this.send({ t: 'sel', n: p.inventory.selected }); }
   }

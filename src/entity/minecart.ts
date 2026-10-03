@@ -207,6 +207,7 @@ export class Minecart extends Entity implements Mount {
     }
   }
 
+  useLabel(p: Player) { return this.rider || p.sneaking || p.riding ? null : 'Ride'; }
   interact(game: Game): boolean {
     const p = game.player!;
     if (this.rider || p.sneaking || p.riding) return false;

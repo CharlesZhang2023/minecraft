@@ -69,7 +69,7 @@ export function makePuppet(type: string, w: World, g: Game, me: Player): Entity 
 const SKIP = new Set([
   'world', 'game', 'px', 'py', 'pz', 'pyaw', 'ppitch', 'pHeadYaw', 'pBodyYaw', 'pLimbSwingAmount', 'pSwingProgress',
   'path', 'pathTimer', 'wanderTimer', 'sayTimer', 'despawnTimer', 'attackCooldown', 'lookTimer', 'breedCooldown', 'growTimer',
-  'jumpTicks', 'invulnerable', 'lastDamage', 'lookTarget', 'onDamaged', 'onDeath', 'netV', 'conn',
+  'jumpTicks', 'invulnerable', 'lastDamage', 'lookTarget', 'onDamaged', 'onDeath', 'netV', 'conn', 'stuckTicks',
 ]);
 
 /** JSON-safe form of a field value, or undefined to leave it out. */

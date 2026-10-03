@@ -7,7 +7,7 @@ import { Player } from '../game/player';
 import { Input } from '../game/input';
 import { device } from '../game/device';
 import { Audio, SOUND_FOR } from '../game/audio';
-import { Options, loadOptions, saveOptions } from '../game/options';
+import { Options, loadOptions, saveOptions, myLook } from '../game/options';
 import { Particles } from '../game/particles';
 import { computeEnv, netherEnv, endEnv } from '../game/env';
 import { raycastBlocks, BlockHit } from '../game/raycast';
@@ -333,6 +333,8 @@ export class Client {
     this.arrived = false;
     this.bundles = [];
     this.puppets.clear();
+    this.skinSent = false;
+    this.bigSkins = 0;
     conn.send({ t: 'vd', r: this.options.renderDistance });
   }
 
@@ -709,6 +711,7 @@ export class Client {
     }
     p.world = world;
     p.riding = null;
+    this.wearSkin();
     this.arrived = false;
     const loading = new LoadingScreen(this.ui, title);
     loading.ready = true;
@@ -913,6 +916,38 @@ export class Client {
   }
   reach() {
     return this.player!.creative ? 5 : 4.5;
+  }
+
+  /**
+   * Put on the skin from the options, and show it to everyone else. A server takes an imported skin only every
+   * few seconds, so a quick run of changes sends just the last one, once it may.
+   */
+  wearSkin() {
+    const p = this.player;
+    if (!p || this.panorama) return;
+    const { look, slim } = myLook(this.options);
+    if (p.look === look && p.slim === slim && this.skinSent) return;
+    p.look = look;
+    p.slim = slim;
+    this.skinSent = true;
+    clearTimeout(this.skinTimer);
+    const send = () => {
+      if (p !== this.player || !this.conn) return;
+      if (look.length > 64) this.lastBigSkin = performance.now();
+      this.conn.send({ t: 'skin', look, slim });
+    };
+    const wait = look.length > 64 && this.bigSkins++ >= 2 ? this.lastBigSkin + 5500 - performance.now() : 0;
+    if (wait > 0) this.skinTimer = setTimeout(send, wait);
+    else send();
+  }
+  private skinSent = false;
+  private skinTimer: ReturnType<typeof setTimeout> | undefined;
+  private bigSkins = 0;
+  private lastBigSkin = -1e9;
+
+  /** Phones: the action button (ride, trade, feed...) on a mob or vehicle; the server checks it's in reach. */
+  useEntity(e: Entity) {
+    this.conn?.send({ t: 'use', id: e.id });
   }
 
   /** Phones aiming by touch: the block or mob under the finger is the target, and there's no crosshair. */

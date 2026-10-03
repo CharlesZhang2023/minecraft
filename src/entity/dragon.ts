@@ -1,8 +1,10 @@
 // The Ender Dragon and its end crystals.
 //
-// The dragon flies through blocks (except obsidian, bedrock and end stone), swoops at the player, shoves things
-// with its wings and bites with its head. Its body is made of several hit boxes; only the head takes full
-// damage. End crystals on the pillars heal it until they are destroyed.
+// The dragon flies through blocks (except obsidian, bedrock and end stone), swoops at players on the main
+// island, shoves things with its wings and bites with its head. Like the real one it keeps to the island:
+// players out on the arrival platform (or further) are left alone, and it never wrecks the exit fountain. Its
+// body is made of several hit boxes; only the head takes full damage. End crystals on the pillars heal it
+// until they are destroyed.
 import { openGateway } from '../game/gateways';
 import { LivingEntity, DamageSource } from './living';
 import { Entity } from './entity';
@@ -13,6 +15,9 @@ import { B, BLOCKS } from '../world/blocks';
 import { XpOrb } from './item';
 import { Random } from '../noise';
 import { END_CENTER_Y } from '../world/endgen';
+
+/** How far from the middle of the island (horizontally) the dragon will go after someone. */
+const HUNT_R = 72;
 
 const rng = new Random((Date.now() & 0xffff) + 99);
 /** Blocks per 16 model pixels (the renderer scales the dragon model by this). */
@@ -225,7 +230,8 @@ export class EnderDragon extends LivingEntity {
     const p = this.prey;
     let dx = this.tx - this.x, dy = this.ty - this.y, dz = this.tz - this.z;
     let d3 = dx * dx + dy * dy + dz * dz;
-    if (this.chasing && p && !p.dead) {
+    if (this.chasing && p && (p.dead || Math.hypot(p.x, p.z) > HUNT_R)) this.forceNew = true;
+    else if (this.chasing && p) {
       this.tx = p.x; this.tz = p.z;
       dx = this.tx - this.x; dz = this.tz - this.z;
       let d5 = 0.4 + Math.hypot(dx, dz) / 80 - 1;
@@ -272,8 +278,8 @@ export class EnderDragon extends LivingEntity {
 
   private newTarget() {
     this.forceNew = false;
-    // half the time, go after one of the players in the End
-    const ps = this.game.playerEntities().filter((q) => !q.dead && !q.spectator);
+    // half the time, go after one of the players on the island
+    const ps = this.game.playerEntities().filter((q) => !q.dead && !q.spectator && Math.hypot(q.x, q.z) <= HUNT_R);
     const p = ps.length ? ps[rng.int(ps.length)] : null;
     this.prey = p;
     if (rng.int(2) === 0 && p) {
@@ -347,15 +353,16 @@ export class EnderDragon extends LivingEntity {
     }
   }
 
-  /** Smashes through most blocks; obsidian, bedrock and end stone survive. */
+  /** Smashes through most blocks; obsidian, bedrock and end stone survive, and so does the exit fountain. */
   private destroyBlocks() {
-    const w = this.world;
+    const w = this.world, F = END_CENTER_Y;
     for (const pb of this.hitBoxes()) {
       if (pb.part !== 'head' && pb.part !== 'neck' && pb.part !== 'body') continue;
       const x0 = Math.floor(pb.x0), x1 = Math.floor(pb.x1), y0 = Math.floor(pb.y0), y1 = Math.floor(pb.y1), z0 = Math.floor(pb.z0), z1 = Math.floor(pb.z1);
       for (let x = x0; x <= x1; x++)
         for (let y = y0; y <= y1; y++)
           for (let z = z0; z <= z1; z++) {
+            if (x * x + z * z <= 25 && y >= F && y <= F + 4) continue;
             const id = w.getId(x, y, z);
             if (id === 0 || id === B.OBSIDIAN || id === B.BEDROCK || id === B.END_STONE || id === B.END_PORTAL) continue;
             if (BLOCKS[id].hardness < 0) continue;

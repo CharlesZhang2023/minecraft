@@ -4,7 +4,9 @@
 // forward; double-tap forward to sprint), a jump button bottom right (double-tap to fly in creative, and
 // the pad's middle descends while flying), chat and pause buttons top centre, and a hotbar that shrinks to
 // fit, ending in a "..." cell for the inventory; hold a slot to drop its stack. Drag anywhere else to look,
-// tap to place / use (or hit a mob), and press and hold to mine (or eat, drink, draw a bow).
+// tap to place / use (or hit a mob), and press and hold to mine (or eat, drink, draw a bow). Facing a mob or
+// vehicle that has a use (ride, trade, feed, shear...) brings up a button for it above the hotbar, so tapping
+// a mob always means hitting it.
 // Options > Controls swaps the D-pad for a floating joystick, and touch aiming (act on what's under the
 // finger, no crosshair, the default) for crosshair aiming (act on whatever the crosshair is on).
 // In menus and containers: taps are clicks, vertical drags scroll lists, and "Split" / "Shift" toggles stand
@@ -19,6 +21,10 @@ import { device } from '../game/device';
 import * as Menus from './menus';
 import { PAD_B, PAD_S, padOrigin, touchHotbar } from './touchlayout';
 import { getItem, I } from '../game/items';
+import { Entity } from '../entity/entity';
+import { LivingEntity } from '../entity/living';
+import type { ItemStack } from '../game/items';
+import type { Player } from '../game/player';
 
 const LOOK_SENS = 2.2; // mouse-equivalent pixels per CSS pixel of finger travel
 const HOLD_MS = 380; // long press on the look area starts mining
@@ -28,6 +34,8 @@ const DEAD = 0.14;
 const TAP_MS = 300;
 const MOVE_PX = 9; // CSS px of travel before a touch stops counting as a tap
 const SENT = '​​'; // sentinel text so Backspace always produces an input event
+const USE_RANGE = 3.5; // how close a mob must be for its action button
+const USE_CONE = Math.cos((40 * Math.PI) / 180); // and how near the middle of the view
 
 const buzz = (ms: number) => { if (navigator.userActivation?.hasBeenActive) navigator.vibrate?.(ms); };
 
@@ -132,6 +140,8 @@ export class TouchControls {
   private aimUntil = 0; // touch aiming: keep pointing where the finger lifted until its tap has been acted on
   private canvas: HTMLCanvasElement;
   private pressed = new Set<string>();
+  /** The mob or vehicle the action button would use, and what the button says. */
+  private useTarget: { e: Entity; label: string } | null = null;
 
   constructor(private game: Game, private ui: UI, canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -183,6 +193,11 @@ export class TouchControls {
     out.push(jump);
     const mid = Math.floor(W / 2);
     out.push({ id: 'chat', x: mid - 8, y: 1, w: 16, h: 16 }, { id: 'pause', x: mid + 10, y: 1, w: 16, h: 16 });
+    const u = this.useTarget;
+    if (u) {
+      const w = this.ui.gui.font.width(u.label) + 16;
+      out.push({ id: 'use', x: mid - Math.ceil(w / 2), y: H - 58, w, h: 18 });
+    }
     return out;
   }
   private tools(): Tool[] {
@@ -262,10 +277,10 @@ export class TouchControls {
       this.pressed.add(b.id);
       if (b.id === 'jump') { inp.virtual.add('Space'); inp.pressedQ.push('Space'); }
       else if (b.id === 'sneak' && !this.flying) {
-        // riding: the middle button gets off instead of latching a sneak
-        if (p.riding) p.riding.dismount();
+        // riding: the middle button gets off (the server decides) instead of latching a sneak
+        if (p.riding) this.game.conn?.send({ t: 'dismount' });
         else this.sneak = !this.sneak;
-      }
+      } else if (b.id === 'use' && this.useTarget) this.game.useEntity(this.useTarget.e);
       return;
     }
     const cell = this.hotbarCell(gx, gy);
@@ -438,12 +453,42 @@ export class TouchControls {
     this.keyboard.sync();
   }
 
-  /** Tap on the world: hit a mob unless it has a use for the held item; anywhere else, use / place. */
+  /** Tap on the world: hit a mob (its uses have their own button); anywhere else, use / place. */
   private tap() {
-    const g = this.game;
-    // a mob: the server decides (use the held item on it, or else hit it) — button 3 asks it to
-    if (g.targetEntity) this.pulse(3);
+    // button 3 asks the server to hit whatever mob it finds there, and never to mine or place
+    if (this.game.targetEntity) this.pulse(3);
     else this.pulse(2);
+  }
+
+  /** The nearest mob or vehicle in front of us that the held item (or an empty hand) can do something with. */
+  private findUseTarget(): { e: Entity; label: string } | null {
+    const g = this.game, p = g.player!;
+    if (p.dead || p.spectator || p.sleeping) return null;
+    const held = p.inventory.held();
+    const eye = g.eyePos(1), look = g.lookVec(p.yaw, p.pitch);
+    // in crosshair mode, whatever is under it comes first
+    const label = (e: Entity) => (e as unknown as { useLabel?: (p: Player, held: ItemStack | null) => string | null }).useLabel?.(p, held) ?? null;
+    if (!g.touchAim() && g.targetEntity) {
+      const l = label(g.targetEntity);
+      if (l) return { e: g.targetEntity, label: l };
+    }
+    let best: { e: Entity; label: string } | null = null, bestDot = USE_CONE;
+    for (const e of g.entities) {
+      if (e === p || e.removed || e === (p.riding as unknown as Entity) || (e instanceof LivingEntity && e.dead)) continue;
+      const b = e.box;
+      const cx = Math.max(b.x0, Math.min(eye.x, b.x1)), cy = Math.max(b.y0, Math.min(eye.y, b.y1)), cz = Math.max(b.z0, Math.min(eye.z, b.z1));
+      if (Math.hypot(cx - eye.x, cy - eye.y, cz - eye.z) > USE_RANGE) continue;
+      const mx = (b.x0 + b.x1) / 2 - eye.x, my = (b.y0 + b.y1) / 2 - eye.y, mz = (b.z0 + b.z1) / 2 - eye.z;
+      const l = Math.hypot(mx, my, mz) || 1;
+      // close up, the middle of a big mob can be well off-centre while we're looking right at it
+      const dot = Math.max((mx * look.x + my * look.y + mz * look.z) / l, l < 1.5 ? 1 : -1);
+      if (dot <= bestDot) continue;
+      const lbl = label(e);
+      if (!lbl) continue;
+      best = { e, label: lbl };
+      bestDot = dot;
+    }
+    return best;
   }
 
   /** A short synthetic click that survives until the next game tick. */
@@ -484,8 +529,9 @@ export class TouchControls {
     const shift = playing ? this.sneak || (flying && this.pressed.has('sneak')) : this.shiftTool;
     if (shift) inp.virtual.add('ShiftLeft');
     else inp.virtual.delete('ShiftLeft');
-    if (!playing) return;
+    if (!playing) { this.useTarget = null; return; }
     const p = this.game.player!;
+    this.useTarget = this.game.hideHud ? null : this.findUseTarget();
     const hb = touchHotbar(this.ui.gui.w, this.ui.gui.h);
     if (p.inventory.selected >= hb.n) p.inventory.selected = hb.n - 1;
     const now = performance.now();
@@ -560,10 +606,12 @@ export class TouchControls {
     for (const t of this.touches.values()) if (t.role === 'pad' && t.id2) dirs.add(t.id2);
     const flying = this.flying;
     if (this.joystick) this.drawStick(ctx);
+    const riding = !!g.player?.riding;
     for (const b of this.buttons()) {
       const on = this.pressed.has(b.id) || dirs.has(b.id) || (b.id === 'sneak' && this.sneak);
       drawPadButton(ctx, b, on);
-      const glyph = b.id === 'sneak' ? (flying ? 'down' : 'sneak') : b.id === 'jump' ? (flying ? 'up' : 'jump') : b.id;
+      if (b.id === 'use') { this.ui.gui.textCenter(ctx, this.useTarget!.label, b.x + b.w / 2, b.y + 5, '#FFFFFF'); continue; }
+      const glyph = b.id === 'sneak' ? (flying ? 'down' : riding ? 'dismount' : 'sneak') : b.id === 'jump' ? (flying ? 'up' : 'jump') : b.id;
       drawGlyph(ctx, glyph, b.x + b.w / 2, b.y + b.h / 2);
     }
     // a hotbar slot being held fills up until its stack drops
@@ -667,6 +715,13 @@ function drawGlyph(ctx: CanvasRenderingContext2D, id: string, cx: number, cy: nu
       pixels(ctx, cx, cy, arrow(id));
       break;
     case 'sneak': pixels(ctx, cx, cy, diamond(5, -1)); break;
+    case 'dismount': {
+      // an arrow stepping down off the seat and out to the side
+      const rows: [number, number, number][] = [[-5, -5, 2], [-5, -4, 2], [-5, -3, 2], [-5, -2, 2], [-5, -1, 2], [-5, 0, 7], [-5, 1, 7]];
+      for (const [y, w] of [[-3, 1], [-2, 2], [-1, 3], [0, 4], [1, 4], [2, 3], [3, 2], [4, 1]]) rows.push([2, y, w]);
+      pixels(ctx, cx, cy, rows);
+      break;
+    }
     case 'jump': pixels(ctx, cx, cy, diamond(5, 2)); break;
     case 'chat': {
       // speech bubble with two lines of text

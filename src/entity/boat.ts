@@ -149,6 +149,7 @@ export class Boat extends Entity implements Mount {
     this.game.dropItem(this.x, this.y + 0.5, this.z, { id: I.STICK, count: 2 } as ItemStack);
   }
 
+  useLabel(p: Player) { return this.rider || p.sneaking || p.riding ? null : 'Board'; }
   interact(game: Game): boolean {
     const p = game.player!;
     if (this.rider || p.sneaking || p.riding) return false;

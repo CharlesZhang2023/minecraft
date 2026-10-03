@@ -140,9 +140,15 @@ export abstract class Mob extends LivingEntity {
     const yaw = (Math.atan2(dz, dx) * 180) / Math.PI - 90;
     this.yaw += Math.max(-30, Math.min(30, wrap(yaw - this.yaw)));
     this.forward = 1;
-    if ((n.y > Math.floor(this.y + 0.01) || this.collidedH) && (this.onGround || this.inWater)) this.jumping = true;
+    // like vanilla: jump only when the next step is a climb (wide mobs brushing a corner just slide along it)
+    if (n.y - this.y > this.stepHeight && dist < 1.5 && (this.onGround || this.inWater)) this.jumping = true;
     if (this.inWater && this.y < n.y + 0.2) this.jumping = true;
+    // pressed against something and going nowhere: give up on this path
+    const moved = Math.hypot(this.x - this.px, this.z - this.pz);
+    this.stuckTicks = this.collidedH && moved < 0.02 ? this.stuckTicks + 1 : 0;
+    if (this.stuckTicks > 30) { this.path = null; this.stuckTicks = 0; }
   }
+  private stuckTicks = 0;
 
   moveToward(x: number, z: number, speed: number) {
     const dx = x - this.x, dz = z - this.z;
@@ -150,7 +156,8 @@ export abstract class Mob extends LivingEntity {
     this.yaw += Math.max(-30, Math.min(30, wrap(yaw - this.yaw)));
     this.forward = 1;
     this.aiSpeed = speed;
-    if (this.collidedH && this.onGround) this.jumping = true;
+    // a mob that steps up whole blocks (horses) can't get any higher by jumping
+    if (this.collidedH && this.onGround && this.stepHeight < 1) this.jumping = true;
   }
 
   wander(speed: number, chance = 120) {
@@ -548,6 +555,10 @@ export abstract class Animal extends Mob {
   /** A baby was just born to this animal and its mate. */
   bred(_baby: Mob, _mate: Animal) {}
 
+  /** What a phone's action button would say for this mob (null: nothing to do); mirrors interact(). */
+  useLabel(_p: Player, held: ItemStack | null): string | null {
+    return held && this.temptItems.includes(held.id) && !this.baby && this.breedCooldown === 0 && this.loveTicks === 0 ? 'Feed' : null;
+  }
   interact(game: Game, held: ItemStack | null): boolean {
     if (held && this.temptItems.includes(held.id) && !this.baby && this.breedCooldown === 0 && this.loveTicks === 0) {
       this.loveTicks = 600;
@@ -592,6 +603,9 @@ export class Cow extends Animal {
   override eyeHeight() { return 1.3; }
   override drops(burning: boolean): ItemStack[] {
     return [stack(I.LEATHER, rng.int(3)), stack(burning ? I.COOKED_BEEF : I.BEEF, 1 + rng.int(3))].filter((s) => s.count > 0);
+  }
+  override useLabel(p: Player, held: ItemStack | null) {
+    return held && held.id === I.BUCKET && !this.baby ? 'Milk' : super.useLabel(p, held);
   }
   override interact(game: Game, held: ItemStack | null): boolean {
     if (held && held.id === I.BUCKET && !this.baby) {
@@ -652,6 +666,9 @@ export class Sheep extends Animal {
     const out = [stack(burning ? I.COOKED_MUTTON : I.MUTTON, 1 + rng.int(2))];
     if (!this.sheared) out.push(stack(WOOL_COLORS[this.color]));
     return out;
+  }
+  override useLabel(p: Player, held: ItemStack | null) {
+    return held && getItem(held.id).tool?.type === 'shears' && !this.sheared && !this.baby ? 'Shear' : super.useLabel(p, held);
   }
   override interact(game: Game, held: ItemStack | null): boolean {
     if (held && getItem(held.id).tool?.type === 'shears' && !this.sheared && !this.baby) {
@@ -895,6 +912,8 @@ export class Slime extends Mob {
 }
 
 // ------------------------------------------------------------------ wolves
+const WOLF_FOODS = [I.BEEF, I.COOKED_BEEF, I.PORKCHOP, I.COOKED_PORKCHOP, I.CHICKEN, I.COOKED_CHICKEN, I.ROTTEN_FLESH, I.MUTTON, I.COOKED_MUTTON];
+
 export class Wolf extends Animal {
   typeName = 'Wolf';
   override model = 'wolf';
@@ -965,10 +984,14 @@ export class Wolf extends Animal {
       if (!this.owner) for (const e of this.game.entities) if (e instanceof Wolf && !e.owner && e !== this && e.distanceTo(this) < 16) { e.target = who; e.angry = true; }
     }
   }
+  override useLabel(_p: Player, held: ItemStack | null) {
+    if (this.owner) return held && getItem(held.id).food && WOLF_FOODS.includes(held.id) && this.health < this.maxHealth ? 'Feed' : this.sitting ? 'Stand' : 'Sit';
+    return held && held.id === I.BONE && !this.angry ? 'Tame' : null;
+  }
   override interact(game: Game, held: ItemStack | null): boolean {
     if (this.owner) {
       const food = held ? getItem(held.id).food : undefined;
-      if (held && food && [I.BEEF, I.COOKED_BEEF, I.PORKCHOP, I.COOKED_PORKCHOP, I.CHICKEN, I.COOKED_CHICKEN, I.ROTTEN_FLESH, I.MUTTON, I.COOKED_MUTTON].includes(held.id) && this.health < this.maxHealth) {
+      if (held && food && WOLF_FOODS.includes(held.id) && this.health < this.maxHealth) {
         this.heal(food.hunger);
         game.interact!.consume(1);
         return true;
@@ -1154,6 +1177,7 @@ export class Villager extends Mob {
     this.trades = T[this.profession] ?? T.farmer;
     return this.trades;
   }
+  useLabel() { return this.baby || this.dead ? null : 'Trade'; }
   interact(game: Game, held: ItemStack | null): boolean {
     void held;
     if (this.baby || this.dead) return false;

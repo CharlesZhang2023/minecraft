@@ -21,11 +21,20 @@ import { FishingHook } from '../entity/fishing';
 import { EnderDragon, EndCrystal, dragonPose, DRAGON_SCALE } from '../entity/dragon';
 import { EyeOfEnder } from '../entity/eye';
 import { dragonModel, dragonSkin } from './dragonmodel';
+import { decodeSkin, isCustom, isPreset, lookSlim, presetSkin } from './skins';
 
 interface PartGPU { vao: WebGLVertexArrayObject; count: number; def: M.ModelPart }
 interface ModelGPU { parts: Map<string, PartGPU> }
 
 const DEG = Math.PI / 180;
+/** First person: everything but the right arm (and its sleeve). */
+const HAND_SKIP = new Set(['head', 'hat', 'body', 'jacket', 'leftArm', 'leftSleeve', 'rightLeg', 'rightPants', 'leftLeg', 'leftPants']);
+
+/** The player model's outer layer moves with the part underneath it. */
+function withOverlays<T>(pose: Record<string, T>) {
+  for (const [o, p] of M.PLAYER_OVERLAYS) if (pose[p] !== undefined) pose[o] = pose[p];
+  return pose;
+}
 
 export class EntityRenderer {
   private models = new Map<string, ModelGPU>();
@@ -44,6 +53,7 @@ export class EntityRenderer {
       armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(), enderman: M.endermanModel(), slimeInner: M.slimeInnerModel(), slimeOuter: M.slimeOuterModel(), squid: M.squidModel(), bat: M.batModel(), wolf: M.wolfModel(),
       silverfish: M.silverfishModel(), crystal: M.crystalModel(), dragon: dragonModel(),
       horse: M.horseModel(false), donkey: M.horseModel(true), horseArmor: M.horseModel(false, 0.35),
+      player: M.playerModel(false), playerSlim: M.playerModel(true),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
@@ -60,6 +70,35 @@ export class EntityRenderer {
     gl.bindVertexArray(this.handMesh.vao);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.indexBuffer);
     gl.bindVertexArray(null);
+  }
+
+  // ------------------------------------------------------------------ player skins
+  private decoding = new Set<string>();
+  /** Model and texture for a player's look. Imported skins decode in the background (Steve stands in meanwhile). */
+  playerLook(look: string, slim: boolean): { model: string; skin: string } {
+    if (isCustom(look)) {
+      const key = 'look:' + look;
+      if (this.skins.has(key)) return { model: slim ? 'playerSlim' : 'player', skin: key };
+      if (!this.decoding.has(look)) {
+        this.decoding.add(look);
+        decodeSkin(look)
+          .then(({ data }) => this.skins.set(key, this.r.makeTexture(data, 64)))
+          .catch(() => this.skins.set(key, this.presetTexture('steve')));
+      }
+      look = 'steve';
+    }
+    const id = isPreset(look) ? look : 'steve';
+    this.presetTexture(id);
+    return { model: lookSlim(id, slim) ? 'playerSlim' : 'player', skin: 'look:' + id };
+  }
+  private presetTexture(id: string) {
+    const key = 'look:' + id;
+    let t = this.skins.get(key);
+    if (!t) {
+      t = this.r.makeTexture(presetSkin(id).data, 64);
+      this.skins.set(key, t);
+    }
+    return t;
   }
 
   // ------------------------------------------------------------------ model building
@@ -476,8 +515,13 @@ export class EntityRenderer {
           pose.leftLeg = [-Math.PI * 2 / 5, -Math.PI / 10, 0];
         }
         const offs: Record<string, [number, number, number]> | undefined = sneak ? { rightLeg: [0, -3, 4], leftLeg: [0, -3, 4], head: [0, 1, 0], hat: [0, 1, 0] } : undefined;
-        const skipHat = new Set(['hat']);
-        this.drawModel(model, skin, base, pose, light, overlay, skipHat, 1, offs);
+        if (e instanceof Player) {
+          // players wear their own skin, outer layer and all
+          const pl = this.playerLook(e.look, e.slim);
+          withOverlays(pose);
+          if (offs) withOverlays(offs);
+          this.drawModel(pl.model, pl.skin, base, pose, light, overlay, undefined, 1, offs);
+        } else this.drawModel(model, skin, base, pose, light, overlay, new Set(['hat']), 1, offs);
         // held item
         const held = anyE.heldItem as number | undefined;
         if (held) this.drawHeldThirdPerson(held, base, pose.rightArm, light, offs?.rightArm);
@@ -1066,7 +1110,7 @@ export class EntityRenderer {
   }
 
   /** Player model in the inventory screen, drawn into a GUI rectangle. */
-  renderPreview(game: Game, box: { x: number; y: number; w: number; h: number; yaw: number; pitch: number; entity?: Entity }, guiScale: number) {
+  renderPreview(game: Game, box: { x: number; y: number; w: number; h: number; yaw: number; pitch: number; entity?: Entity; look?: string; slim?: boolean }, guiScale: number) {
     const gl = this.r.gl, p = game.player!;
     const sx = Math.round(box.x * guiScale), sw = Math.round(box.w * guiScale), sh = Math.round(box.h * guiScale);
     const sy = this.r.height - Math.round((box.y + box.h) * guiScale);
@@ -1090,7 +1134,7 @@ export class EntityRenderer {
     scale(base, base, -1, -1, 1);
     translate(base, base, 0, -1.501, 0);
     const pose: Record<string, [number, number, number]> = {
-      head: [-box.pitch * 0.6, -box.yaw * 0.6, 0],
+      head: box.look ? [-box.pitch * 0.3, 0, 0] : [-box.pitch * 0.6, -box.yaw * 0.6, 0],
       rightArm: [0, 0, 0.1], leftArm: [0, 0, -0.1], rightLeg: [0, 0, 0], leftLeg: [0, 0, 0],
     };
     const saved = this.r.env;
@@ -1111,10 +1155,13 @@ export class EntityRenderer {
       this.currentVP = this.r.viewProj;
       return;
     }
-    this.drawModel('biped', 'steve', base, pose, [15, 15], [0, 0, 0, 0], new Set(['hat']));
-    this.drawArmor(p.inventory.armor, base, pose, [15, 15], [0, 0, 0, 0]);
-    const it = p.inventory.held();
-    if (it) this.drawHeldThirdPerson(it.id, base, pose.rightArm, [15, 15]);
+    const pl = this.playerLook(box.look ?? p.look, box.look ? !!box.slim : p.slim);
+    this.drawModel(pl.model, pl.skin, base, withOverlays(pose), [15, 15], [0, 0, 0, 0]);
+    if (!box.look) {
+      this.drawArmor(p.inventory.armor, base, pose, [15, 15], [0, 0, 0, 0]);
+      const it = p.inventory.held();
+      if (it) this.drawHeldThirdPerson(it.id, base, pose.rightArm, [15, 15]);
+    }
     this.r.env = saved;
     gl.disable(gl.SCISSOR_TEST);
     gl.viewport(0, 0, this.r.width, this.r.height);
@@ -1165,9 +1212,9 @@ export class EntityRenderer {
       rotateX(m, m, 200 * DEG);
       rotateY(m, m, -135 * DEG);
       translate(m, m, 5.6, 0, 0);
-      const pose = { rightArm: [0, 0, 0] as [number, number, number] };
-      const skipAll = new Set(['head', 'hat', 'body', 'leftArm', 'rightLeg', 'leftLeg']);
-      this.drawModel('biped', 'steve', m, pose, [sky, blk], [0, 0, 0, 0], skipAll);
+      const pose = { rightArm: [0, 0, 0] as [number, number, number], rightSleeve: [0, 0, 0] as [number, number, number] };
+      const pl = this.playerLook(p.look, p.slim);
+      this.drawModel(pl.model, pl.skin, m, pose, [sky, blk], [0, 0, 0, 0], HAND_SKIP);
       return;
     }
     const it = getItem(held.id);

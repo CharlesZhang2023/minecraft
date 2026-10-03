@@ -215,8 +215,8 @@ export class Horse extends Animal implements Mount {
       this.forward = fwd;
       this.strafe = strafe;
       this.aiSpeed = this.speedStat;
-      // keep its head above water
-      if (this.inWater) this.jumping = true;
+      // keep its head above water (and nothing else: the wander AI may have left its jump flag set)
+      this.jumping = this.inWater;
       return;
     }
     this.jumpPower = 0;
@@ -293,6 +293,21 @@ export class Horse extends Animal implements Mount {
   }
 
   // ---------------------------------------------------------------- interaction
+  /** What a phone's action button would say (mirrors interact and useItem). */
+  override useLabel(p: Player, held: ItemStack | null): string | null {
+    const food = held ? FOODS[held.id] : undefined;
+    if (food && ((this.health < this.maxHealth && food.heal) || (this.baby && food.grow) || (!this.tame && food.temper && this.temper < 100) ||
+      (food.love && this.tame && this.adult && this.breedCooldown === 0 && this.loveTicks === 0 && this.kind !== 'mule'))) return 'Feed';
+    if (held && this.tame && !this.baby) {
+      if (held.id === I5.SADDLE && !this.saddle) return 'Saddle';
+      if (HORSE_ARMOR[held.id] && this.canWearArmor && !this.armorItem) return 'Equip';
+      if (held.id === B.CHEST && this.canCarryChest && !this.chest) return 'Attach Chest';
+    }
+    if (this.tame && p.sneaking && this.adult) return 'Open';
+    if (this.baby || p.sneaking || this.rider || p.riding) return null;
+    if (held && !this.tame && (held.id === I5.SADDLE || HORSE_ARMOR[held.id])) return null;
+    return 'Mount';
+  }
   override interact(game: Game, held: ItemStack | null): boolean {
     const p = game.player!;
     if (held?.id === I5.SADDLE || held?.id === B.CHEST || (held && HORSE_ARMOR[held.id]) || (held && FOODS[held.id])) {

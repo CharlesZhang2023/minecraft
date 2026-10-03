@@ -21,6 +21,9 @@ export interface Options {
   touchSensY: number; // phones: look speed up and down, a little slower by default
   touchSwipeDown: boolean; // phones: swiping up drags the view down instead of looking up (like a mouse)
   playerName: string; // shown to other players in multiplayer, and the key their saved progress is kept under
+  skin: string; // a built-in skin's id, or 'custom' for the imported one below
+  customSkin: string; // an imported skin as a 64x64 PNG data URL ('' = none)
+  customSlim: boolean; // the imported skin has slim (3-pixel) arms
 }
 
 export const DEFAULT_OPTIONS: Options = {
@@ -44,11 +47,25 @@ export const DEFAULT_OPTIONS: Options = {
   touchSensY: 0.55,
   touchSwipeDown: false,
   playerName: '',
+  skin: 'steve',
+  customSkin: '',
+  customSlim: false,
 };
 
 /** A name for players who haven't picked one: Steve or Alex with a number. */
 export function defaultName() {
   return (Math.random() < 0.5 ? 'Steve' : 'Alex') + (100 + Math.floor(Math.random() * 900));
+}
+
+/** Alexes start out looking like Alex, everyone else like Steve. */
+function defaultSkin(name: string) {
+  return /^alex/i.test(name) ? 'alex' : 'steve';
+}
+
+/** The skin we wear: a built-in id or the imported PNG, and whether its arms are slim. */
+export function myLook(o: Options): { look: string; slim: boolean } {
+  if (o.skin === 'custom' && o.customSkin) return { look: o.customSkin, slim: o.customSlim };
+  return { look: o.skin === 'custom' ? 'steve' : o.skin, slim: false };
 }
 
 /** Phones get lighter defaults: a shorter view distance, plain leaves, and a bit more look sensitivity. */
@@ -60,12 +77,14 @@ export function loadOptions(): Options {
     if (s) {
       const o = { ...DEFAULT_OPTIONS, ...JSON.parse(s) } as Options;
       if (!o.playerName) { o.playerName = defaultName(); saveOptions(o); }
+      if (!JSON.parse(s).skin) { o.skin = defaultSkin(o.playerName); saveOptions(o); }
       return o;
     }
   } catch {
     /* storage unavailable */
   }
-  const o = { ...DEFAULT_OPTIONS, ...(device.touch ? TOUCH_DEFAULTS : {}), playerName: defaultName() };
+  const name = defaultName();
+  const o = { ...DEFAULT_OPTIONS, ...(device.touch ? TOUCH_DEFAULTS : {}), playerName: name, skin: defaultSkin(name) };
   saveOptions(o);
   return o;
 }

@@ -8,6 +8,7 @@ import { hashString } from '../noise';
 import { getTexture } from '../render/textures';
 import { MultiplayerScreen, HostScreen } from './multiplayer';
 import { GENERATOR_VERSION } from '../world/worldgen';
+import { SkinScreen } from './skinscreen';
 
 const SPLASHES = [
   'Now in JavaScript!', 'Also try Terraria!', '100% procedural!', 'Punching trees!', 'Blocky!', 'Made with WebGL 2!', 'Now with caves!',
@@ -79,6 +80,30 @@ function makeLogo(): HTMLCanvasElement {
 }
 
 // ------------------------------------------------------------------ title
+const HANGER = [
+  '.....##.....',
+  '....#..#....',
+  '.......#....',
+  '......#.....',
+  '.....##.....',
+  '...##..##...',
+  '.##......##.',
+  '############',
+];
+
+/** A square button with a little picture instead of words. */
+class IconButton extends Button {
+  constructor(ui: UI, x: number, y: number, w: number, h: number, private icon: string[], onClick: () => void) { super(ui, x, y, w, h, '', onClick); }
+  override render(ctx: Ctx, mx: number, my: number) {
+    super.render(ctx, mx, my);
+    const ox = Math.round(this.x + this.w / 2 - this.icon[0].length / 2), oy = Math.round(this.y + this.h / 2 - this.icon.length / 2);
+    for (const [color, d] of [['#3f3f3f', 1], ['#FFFFFF', 0]] as const) {
+      ctx.fillStyle = color;
+      this.icon.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] === '#') ctx.fillRect(ox + x + d, oy + y + d, 1, 1); });
+    }
+  }
+}
+
 export class TitleScreen extends Screen {
   splash = SPLASHES[Math.floor(Math.random() * SPLASHES.length)];
   override darkens = false;
@@ -92,6 +117,8 @@ export class TitleScreen extends Screen {
       new Button(this.ui, x, y + 48, 200, 20, 'Quick Play: New World', () => quickPlay(this.ui)),
       new Button(this.ui, x, y + 84, 98, 20, 'Options...', () => this.ui.open(new OptionsScreen(this.ui, this))),
       new Button(this.ui, x + 102, y + 84, 98, 20, 'Controls', () => this.ui.open(new ControlsScreen(this.ui, this))),
+      // the Pocket Edition's coat hanger: skins
+      new IconButton(this.ui, x - 24, y + 84, 20, 20, HANGER, () => this.ui.open(new SkinScreen(this.ui, this))),
     ];
     if (!this.game.world) startPanorama(this.ui);
   }
@@ -408,7 +435,8 @@ export class OptionsScreen extends Screen {
       new Button(this.ui, x1, r6, 150, 20, () => `Invert Mouse: ${onoff(o.invertY)}`, () => { o.invertY = !o.invertY; save(); }),
       new Button(this.ui, x0, r7, 150, 20, () => `Show FPS: ${onoff(o.showFps)}`, () => { o.showFps = !o.showFps; save(); }),
       new Button(this.ui, x1, r7, 150, 20, 'Play Music Now', () => { this.game.audio.init(); this.game.audio.playPiece(); }),
-      new Button(this.ui, W / 2 - 100, H - 28, 200, 20, 'Done', () => this.ui.open(this.parent)),
+      new Button(this.ui, x0, H - 28, 150, 20, 'Skin...', () => this.ui.open(new SkinScreen(this.ui, this))),
+      new Button(this.ui, x1, H - 28, 150, 20, 'Done', () => this.ui.open(this.parent)),
     ];
   }
   override render(ctx: Ctx, mx: number, my: number) {
@@ -470,7 +498,8 @@ export class ControlsScreen extends Screen {
       ['Fly (creative)', 'Double-tap jump'], ['Look around', 'Drag on the screen'],
       ['Place / Use', aim ? 'Tap the block' : 'Tap anywhere (crosshair)'],
       ['Break', aim ? 'Hold on the block' : 'Hold anywhere (crosshair)'],
-      ['Attack / Feed', aim ? 'Tap the mob' : 'Tap with a mob in the crosshair'],
+      ['Attack', aim ? 'Tap the mob' : 'Tap with a mob in the crosshair'],
+      ['Ride / Trade / Feed', 'The button above the hotbar'], ['Get off', 'Middle of the D-pad / sneak'],
       ['Eat / Draw bow', 'Hold'], ['Drop Item', 'Hold a hotbar slot'], ['Inventory', '... on the hotbar'],
     ];
     const top = 104, step = Math.min(11, (this.gui.h - 34 - top) / rows.length);

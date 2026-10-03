@@ -40,6 +40,35 @@ export function bipedModel(thinLimbs = false, inflate = 0): ModelDef {
   };
 }
 
+/**
+ * The player in the modern 64x64 skin layout: separate left limbs, and an outer layer (hat, jacket, sleeves,
+ * trousers) drawn slightly larger than the body. Slim skins have 3-pixel arms.
+ */
+export function playerModel(slim: boolean): ModelDef {
+  const aw = slim ? 3 : 4, ay = slim ? 2.5 : 2;
+  const limb = (name: string, px: number, py: number, x: number, y: number, w: number, u: number, v: number, inflate = 0) => part(name, px, py, 0, [box(x, y, -2, w, 12, 4, u, v, { inflate })]);
+  return {
+    texW: 64, texH: 64,
+    parts: [
+      part('head', 0, 0, 0, [box(-4, -8, -4, 8, 8, 8, 0, 0)]),
+      part('hat', 0, 0, 0, [box(-4, -8, -4, 8, 8, 8, 32, 0, { inflate: 0.5 })]),
+      part('body', 0, 0, 0, [box(-4, 0, -2, 8, 12, 4, 16, 16)]),
+      part('jacket', 0, 0, 0, [box(-4, 0, -2, 8, 12, 4, 16, 32, { inflate: 0.25 })]),
+      limb('rightArm', -5, ay, slim ? -2 : -3, -2, aw, 40, 16),
+      limb('rightSleeve', -5, ay, slim ? -2 : -3, -2, aw, 40, 32, 0.25),
+      limb('leftArm', 5, ay, -1, -2, aw, 32, 48),
+      limb('leftSleeve', 5, ay, -1, -2, aw, 48, 48, 0.25),
+      limb('rightLeg', -1.9, 12, -2, 0, 4, 0, 16),
+      limb('rightPants', -1.9, 12, -2, 0, 4, 0, 32, 0.25),
+      limb('leftLeg', 1.9, 12, -2, 0, 4, 16, 48),
+      limb('leftPants', 1.9, 12, -2, 0, 4, 0, 48, 0.25),
+    ],
+  };
+}
+
+/** The outer-layer parts of the player model, and the part each one moves with. */
+export const PLAYER_OVERLAYS: [string, string][] = [['hat', 'head'], ['jacket', 'body'], ['rightSleeve', 'rightArm'], ['leftSleeve', 'leftArm'], ['rightPants', 'rightLeg'], ['leftPants', 'leftLeg']];
+
 export function creeperModel(): ModelDef {
   return {
     texW: 64, texH: 32,

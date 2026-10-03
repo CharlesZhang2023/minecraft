@@ -18,6 +18,9 @@ export class Player extends LivingEntity {
   inventory = new Inventory();
   /** Shown above the player's head to everyone else (multiplayer). */
   name = '';
+  /** Skin: a built-in id or an imported PNG (data URL); `slim` = 3-pixel arms for imported ones. */
+  look = 'steve';
+  slim = false;
   gameMode = GameMode.Survival;
   flying = false;
   food = 20;

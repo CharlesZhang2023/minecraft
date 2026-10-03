@@ -6,8 +6,12 @@ import { BIOME } from './biomes';
 import type { ChunkGenResult } from './worldgen';
 import type { Spawn } from './village';
 
-/** Where players arrive (the middle of a 5x5 obsidian platform) and the top of the island at its centre. */
-export const END_PLATFORM = { x: 100, y: 48, z: 0 };
+/**
+ * Where players arrive (the middle of a 5x5 obsidian platform; it's built by the game, not the generator) and the
+ * top of the island at its centre. The platform floats a few blocks off the island's edge (x = 75) and well below
+ * its rim, so it takes a short pillar and bridge to get across, like the real game.
+ */
+export const END_PLATFORM = { x: 82, y: 48, z: 0 };
 export const END_CENTER_Y = 64;
 const MAIN_R = 76;
 const idx = (x: number, y: number, z: number) => x | (z << 4) | (y << 8);

@@ -581,7 +581,8 @@ export class Game {
         // a guest's messages run here, in the host's game: a bad one costs that player their connection, never the world
         try {
           if (!m || typeof m !== 'object' || typeof m.t !== 'string') throw new Error('bad message');
-          if (!sp.allow(m.t)) continue;
+          // imported skins are big and get passed on to everyone: they have a budget of their own
+          if (!sp.allow(m.t === 'skin' && String(m.look).length > 64 ? 'skin' : m.t)) continue;
           sp.receive(m);
         } catch (e) {
           console.warn('dropping', sp.name, e);

@@ -27,7 +27,8 @@ export class UI {
   touch: TouchControls;
   private lastGuiW = 0;
   private lastGuiH = 0;
-  previewBox: { x: number; y: number; w: number; h: number; yaw: number; pitch: number; entity?: Entity } | null = null;
+  /** A hole in the GUI where a model is drawn: the player (or `look`, a skin being picked), or a horse. */
+  previewBox: { x: number; y: number; w: number; h: number; yaw: number; pitch: number; entity?: Entity; look?: string; slim?: boolean } | null = null;
 
   private buttons = 0;
 
