@@ -3,10 +3,11 @@
 import type { Game } from './game';
 import type { World } from '../world/world';
 import { B, BLOCKS, FACING6, idOf, metaOf, pack } from '../world/blocks';
-import { ItemStack, getItem, sameItem, I, I2, I3, stack } from './items';
+import { ItemStack, getItem, sameItem, I, I2, I3, I6, stack } from './items';
 import { Arrow, Snowball, PrimedTnt, ItemEntity, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
 import { ThrownPotion } from '../entity/potion';
+import { FireworkRocket } from '../entity/firework';
 import { Random } from '../noise';
 
 export type Slots = (ItemStack | null)[];
@@ -138,6 +139,12 @@ export class Devices {
       e.setPos(ox, oy, oz);
       e.vx = dx * 1.1 + (this.rng.next() - 0.5) * 0.05; e.vy = dy * 1.1 + 0.1; e.vz = dz * 1.1 + (this.rng.next() - 0.5) * 0.05;
       g.addEntity(e); take(); g.audio.play('bow', at, 0.5, 1.2); return;
+    }
+    if (s.id === I6.FIREWORK_ROCKET) {
+      // straight up from in front of it (1.12)
+      const r = new FireworkRocket(w, g, { ...s, count: 1 });
+      r.setPos(fx + 0.5, y + 0.2, fz + 0.5);
+      g.addEntity(r); take(); return;
     }
     if (s.id === I.FIRE_CHARGE) {
       const fb = new Fireball(w, g, null, dx + (this.rng.next() - 0.5) * 0.1, dy + (this.rng.next() - 0.5) * 0.1, dz + (this.rng.next() - 0.5) * 0.1);

@@ -7,7 +7,8 @@ import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball } from '../entity/item';
 import { ThrownPotion } from '../entity/potion';
-import { getItem, I } from '../game/items';
+import { getItem, I, I6 } from '../game/items';
+import { FireworkRocket } from '../entity/firework';
 import { BLOCKS, TEXTURES, Render, B, T, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE } from '../world/blocks';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
@@ -53,14 +54,14 @@ export class EntityRenderer {
       armor1: M.bipedModel(false, 1.0), armor2: M.bipedModel(false, 0.5), villager: M.villagerModel(), enderman: M.endermanModel(), slimeInner: M.slimeInnerModel(), slimeOuter: M.slimeOuterModel(), squid: M.squidModel(), bat: M.batModel(), wolf: M.wolfModel(),
       silverfish: M.silverfishModel(), crystal: M.crystalModel(), dragon: dragonModel(),
       horse: M.horseModel(false), donkey: M.horseModel(true), horseArmor: M.horseModel(false, 0.35),
-      player: M.playerModel(false), playerSlim: M.playerModel(true),
+      player: M.playerModel(false), playerSlim: M.playerModel(true), elytra: M.elytraModel(),
     };
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
       cow: M.cowSkin(), sheep: M.sheepSkin(), wool: M.woolSkin(), chicken: M.chickenSkin(), spider: M.spiderSkin(),
       ghast: M.ghastSkin(false), blaze: M.blazeSkin(), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(), wolf: M.wolfSkin('wild'), wolfTame: M.wolfSkin('tame'), wolfAngry: M.wolfSkin('angry'),
-      silverfish: M.silverfishSkin(), crystal: M.crystalSkin(), dragon: dragonSkin(),
+      silverfish: M.silverfishSkin(), crystal: M.crystalSkin(), dragon: dragonSkin(), elytra: M.elytraSkin(),
     };
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     for (const k of ['iron', 'gold', 'diamond']) { const sk = M.horseArmorSkin(k); this.skins.set('horseArmor_' + k, r.makeTexture(sk.data, sk.w)); }
@@ -185,10 +186,15 @@ export class EntityRenderer {
   private currentVP: Mat4 = mat4();
 
   /** Model matrix for an entity at camera-relative position with MC's model-space flip. */
-  private entityBase(out: Mat4, x: number, y: number, z: number, bodyYaw: number, deathRoll: number, sc = 1, extraY = 0) {
+  private entityBase(out: Mat4, x: number, y: number, z: number, bodyYaw: number, deathRoll: number, sc = 1, extraY = 0, tilt?: [number, number]) {
     identity(out);
     translate(out, out, x, y, z);
     rotateY(out, out, (180 - bodyYaw) * DEG);
+    // a glider lies along its look, banked toward where it's going
+    if (tilt) {
+      rotateX(out, out, tilt[0] * DEG);
+      rotateY(out, out, tilt[1] * DEG);
+    }
     if (deathRoll) rotateZ(out, out, deathRoll * DEG);
     if (sc !== 1) scale(out, out, sc, sc, sc);
     scale(out, out, -1, -1, 1);
@@ -211,7 +217,13 @@ export class EntityRenderer {
       if (x * x + y * y + z * z > 96 * 96) continue;
       if (!this.r.boxVisible(x - e.width, y - 0.5, z - e.width, x + e.width, y + e.height + 0.5, z + e.width)) continue;
       const [sky, blk] = w.getLight(Math.floor(e.x), Math.floor(e.y + e.height * 0.5), Math.floor(e.z));
-      if (e instanceof ItemEntity) this.drawItemEntity(dyn, e, x, y, z, t, sky, blk);
+      if (e instanceof FireworkRocket) {
+        // one pulling a glider flies with it (and isn't drawn in our own face)
+        const a = e.attached;
+        if (a === game.player && game.thirdPerson === 0) continue;
+        const rx = a ? a.lerpX(t) - cam.x : x, ry = a ? a.lerpY(t) - cam.y : y, rz = a ? a.lerpZ(t) - cam.z : z;
+        this.billboard(dyn, rx, ry + 0.125, rz, 0.25, TEXTURES.indexOf('item/firework_rocket'), 0xffffff, sky, blk);
+      } else if (e instanceof ItemEntity) this.drawItemEntity(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof FallingBlock) this.blockModel(dyn, e.block, x - 0.5, y, z - 0.5, sky, blk);
       else if (e instanceof ThrownPotion) this.billboard(dyn, x, y + 0.125, z, 0.25, TEXTURES.indexOf('item/' + (getItem(e.item.id).sprite ?? 'glass_bottle')), 0xffffff, sky, blk);
       else if (e instanceof PrimedTnt) {
@@ -463,7 +475,20 @@ export class EntityRenderer {
       sc *= (1 + f * 0.4) * wob;
       if (Math.floor(s / 30 * 10) % 2) overlay[0] = overlay[1] = overlay[2] = 1, overlay[3] = Math.max(overlay[3], s / 30 * 0.6);
     }
-    const base = this.entityBase(this.tmp2, x, y, z, bodyYaw, deathRoll, sc);
+    let tilt: [number, number] | undefined;
+    if (e instanceof Player && e.gliding) {
+      // vanilla RenderPlayer: swing level over the first second, then bank by the angle between look and motion
+      const f = e.glideTicks + t, k = Math.min(1, (f * f) / 100);
+      const yaw = (e.pyaw + wrapDelta(e.yaw - e.pyaw) * t) * DEG;
+      const lx = -Math.sin(yaw), lz = Math.cos(yaw), mv = Math.hypot(e.vx, e.vz);
+      let bank = 0;
+      if (mv > 1e-6) {
+        const cos = Math.max(-1, Math.min(1, (e.vx * lx + e.vz * lz) / mv));
+        bank = Math.sign(e.vx * lz - e.vz * lx) * Math.acos(cos) / DEG;
+      }
+      tilt = [k * (-90 - pitch), bank];
+    }
+    const base = this.entityBase(this.tmp2, x, y, z, bodyYaw, deathRoll, sc, 0, tilt);
     const light: [number, number] = [sky, blk];
     const swing = e.pSwingProgress + (e.swingProgress - e.pSwingProgress) * t;
     const pose: Record<string, [number, number, number]> = {};
@@ -483,8 +508,12 @@ export class EntityRenderer {
       case 'bipedThin': {
         const sneak = e.sneaking;
         pose.head = [hp, netHead, 0];
+        // gliding: head up to look ahead, limbs nearly still once going fast
+        const glide = e instanceof Player && e.gliding && e.glideTicks > 4;
+        const lf = glide ? Math.max(1, ((e.vx * e.vx + e.vy * e.vy + e.vz * e.vz) / 0.2) ** 3) : 1;
+        if (glide) pose.head = [-Math.PI / 4, netHead, 0];
         pose.hat = pose.head;
-        let ra = c(ls * 0.6662 + Math.PI) * 2 * lsa * 0.5, la = c(ls * 0.6662) * 2 * lsa * 0.5;
+        let ra = (c(ls * 0.6662 + Math.PI) * 2 * lsa * 0.5) / lf, la = (c(ls * 0.6662) * 2 * lsa * 0.5) / lf;
         let raY = 0, laY = 0, raZ = 0, laZ = 0;
         const arms = anyE.armsPose as string | undefined;
         if (arms === 'zombie') { ra = la = -Math.PI / 2; raY = -0.1; laY = 0.1; }
@@ -505,8 +534,8 @@ export class EntityRenderer {
         if (anyE.holding && arms !== 'bow' && arms !== 'zombie') ra = ra * 0.5 - Math.PI / 10;
         pose.rightArm = [ra + (sneak ? 0.4 : 0), raY, raZ];
         pose.leftArm = [la + (sneak ? 0.4 : 0), laY, laZ];
-        pose.rightLeg = [c(ls * 0.6662) * 1.4 * lsa, 0, 0];
-        pose.leftLeg = [c(ls * 0.6662 + Math.PI) * 1.4 * lsa, 0, 0];
+        pose.rightLeg = [(c(ls * 0.6662) * 1.4 * lsa) / lf, 0, 0];
+        pose.leftLeg = [(c(ls * 0.6662 + Math.PI) * 1.4 * lsa) / lf, 0, 0];
         pose.body = [sneak ? 0.5 : 0, 0, 0];
         if ((e as unknown as { riding?: unknown }).riding) {
           pose.rightArm[0] -= Math.PI / 5;
@@ -527,6 +556,7 @@ export class EntityRenderer {
         if (held) this.drawHeldThirdPerson(held, base, pose.rightArm, light, offs?.rightArm);
         if (e instanceof Player) {
           this.drawArmor(e.inventory.armor, base, pose, light, overlay, offs);
+          if (e.inventory.armor[1]?.id === I6.ELYTRA) this.drawElytra(e, base, light, overlay);
           const it = e.inventory.held();
           if (it) this.drawHeldThirdPerson(it.id, base, pose.rightArm, light);
         }
@@ -751,6 +781,26 @@ export class EntityRenderer {
       if (!this.skins.has(skin)) continue;
       this.drawModel(layer === 1 ? 'armor1' : 'armor2', skin, base, pose, light, overlay, new Set(all.filter((p) => !show.includes(p))), 1, offs);
     }
+  }
+
+  /** Smoothed wing angles per player (vanilla eases them a tenth of the way each frame). */
+  private wings = new WeakMap<Entity, number[]>();
+  /** Elytra on a player's back: folded, half open while sneaking, spread while gliding (less in a steep dive). */
+  private drawElytra(e: Player, base: Mat4, light: [number, number], overlay: [number, number, number, number]) {
+    let x = 15 * DEG, y = 0, z = -15 * DEG, py = 0;
+    if (e.gliding) {
+      let f = 1;
+      if (e.vy < 0) f = 1 - Math.pow(-e.vy / (Math.hypot(e.vx, e.vy, e.vz) || 1), 1.5);
+      x = f * 20 * DEG + (1 - f) * x;
+      z = f * -90 * DEG + (1 - f) * z;
+    } else if (e.sneaking) { x = 40 * DEG; z = -45 * DEG; y = 5 * DEG; py = 3; }
+    const want = [x, y, z, py];
+    let w = this.wings.get(e);
+    if (!w) this.wings.set(e, (w = want));
+    for (let i = 0; i < 4; i++) w[i] += (want[i] - w[i]) * 0.1;
+    const pose: Record<string, [number, number, number]> = { leftWing: [w[0], w[1], w[2]], rightWing: [w[0], -w[1], -w[2]] };
+    const offs: Record<string, [number, number, number]> = { leftWing: [0, w[3], 0], rightWing: [0, w[3], 0] };
+    this.drawModel('elytra', 'elytra', base, pose, light, overlay, undefined, 1, offs);
   }
 
   private drawHeldThirdPerson(id: number, base: Mat4, armRot: [number, number, number], light: [number, number], off?: [number, number, number]) {
@@ -1159,6 +1209,7 @@ export class EntityRenderer {
     this.drawModel(pl.model, pl.skin, base, withOverlays(pose), [15, 15], [0, 0, 0, 0]);
     if (!box.look) {
       this.drawArmor(p.inventory.armor, base, pose, [15, 15], [0, 0, 0, 0]);
+      if (p.inventory.armor[1]?.id === I6.ELYTRA) this.drawElytra(p, base, [15, 15], [0, 0, 0, 0]);
       const it = p.inventory.held();
       if (it) this.drawHeldThirdPerson(it.id, base, pose.rightArm, [15, 15]);
     }

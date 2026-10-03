@@ -2,7 +2,8 @@
 import type { Game } from './game';
 import { B, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail } from '../world/blocks';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, stack, ItemDef, POTION_ITEMS } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, stack, ItemDef, POTION_ITEMS } from './items';
+import { FireworkRocket } from '../entity/firework';
 import { ThrownPotion } from '../entity/potion';
 import { POTION_BY_KEY } from './potiondata';
 import { newBrewingTile } from './brewing';
@@ -454,6 +455,14 @@ export class Interaction {
       this.consume(1);
       return true;
     }
+    if (held.id === I6.FIREWORK_ROCKET) {
+      // launched from the point that was clicked
+      const r = new FireworkRocket(w, g, held);
+      r.setPos(t.hx + nx * 0.01, t.hy + ny * 0.01, t.hz + nz * 0.01);
+      g.addEntity(r);
+      this.consume(1);
+      return true;
+    }
     if (held.id === I5.MINECART) {
       const at = placeOnRail(w, t.x, t.y, t.z);
       if (!at) return false;
@@ -557,6 +566,18 @@ export class Interaction {
     }
     if (held.id === I.BOW) {
       if (p.creative || p.inventory.count(I.ARROW) > 0) { this.usingBow = true; this.bowTicks = 0; }
+      return;
+    }
+    if (held.id === I6.FIREWORK_ROCKET) {
+      // a glider's boost: the rocket rides along, and the glider's own client does the pulling for as long as it burns
+      if (!(p instanceof Player) || !p.gliding) return;
+      const r = new FireworkRocket(w, g, held);
+      r.setPos(p.x, p.y, p.z);
+      r.attached = p;
+      g.addEntity(r);
+      g.playerOf(p)?.event(['boost', r.lifetime]);
+      this.consume(1);
+      p.swing();
       return;
     }
     if (held.id === I2.ENDER_EYE) {

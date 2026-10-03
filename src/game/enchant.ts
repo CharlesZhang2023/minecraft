@@ -11,9 +11,10 @@ const tool = (s: ItemStack) => digger(s) || toolType(s) === 'shears';
 const sword = (s: ItemStack) => toolType(s) === 'sword';
 const bow = (s: ItemStack) => s.id === I.BOW;
 const rod = (s: ItemStack) => s.id === I2.FISHING_ROD;
-const armor = (s: ItemStack) => !!getItem(s.id).armor;
+// elytra sit in the chest slot but protect nothing: they only take Unbreaking
+const armor = (s: ItemStack) => !!getItem(s.id).armor?.points;
 const helmet = (s: ItemStack) => getItem(s.id).armor?.slot === 0;
-const chest = (s: ItemStack) => getItem(s.id).armor?.slot === 1;
+const chest = (s: ItemStack) => getItem(s.id).armor?.slot === 1 && armor(s);
 const boots = (s: ItemStack) => getItem(s.id).armor?.slot === 3;
 const damageable = (s: ItemStack) => !!getItem(s.id).durability;
 
@@ -106,7 +107,7 @@ export function randomBook(r: Random): ItemStack {
 // ------------------------------------------------------------------ anvil
 function repairMaterial(s: ItemStack): number | undefined {
   const mats: Record<string, number> = {
-    wooden: B.OAK_PLANKS, stone: B.COBBLESTONE, iron: I.IRON_INGOT, golden: I.GOLD_INGOT, diamond: I.DIAMOND, leather: I.LEATHER,
+    wooden: B.OAK_PLANKS, stone: B.COBBLESTONE, iron: I.IRON_INGOT, golden: I.GOLD_INGOT, diamond: I.DIAMOND, leather: I.LEATHER, elytra: I.LEATHER,
   };
   return mats[getItem(s.id).name.split('_')[0]];
 }

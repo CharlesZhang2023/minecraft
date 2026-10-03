@@ -1,6 +1,6 @@
 // Crafting & smelting recipes.
 import { B, WOOL_COLORS } from '../world/blocks';
-import { I, I2, I3, I4, I5, TOOLS, ARMOR, ItemStack, stack, getItem } from './items';
+import { I, I2, I3, I4, I5, I6, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion } from './items';
 
 interface Shaped { pattern: string[]; key: Record<string, number | number[]>; out: ItemStack }
 interface Shapeless { ingredients: (number | number[])[]; out: ItemStack }
@@ -198,6 +198,8 @@ export function craft(grid: (ItemStack | null)[], w: number): ItemStack | null {
   }
   // shapeless
   const items = grid.filter((s): s is ItemStack => !!s);
+  const fw = fireworkCraft(items);
+  if (fw) return fw;
   for (const r of shapeless) {
     if (r.ingredients.length !== items.length) continue;
     const used = new Array(items.length).fill(false);
@@ -216,6 +218,38 @@ export function craft(grid: (ItemStack | null)[], w: number): ItemStack | null {
       const left = (def.durability - (items[0].damage ?? 0)) + (def.durability - (items[1].damage ?? 0)) + Math.floor(def.durability * 0.05);
       return { id: items[0].id, count: 1, damage: Math.max(0, def.durability - left) };
     }
+  }
+  return null;
+}
+
+/**
+ * Fireworks (vanilla's special recipes): paper + 1-3 gunpowder + any stars = 3 rockets that fly that long and burst
+ * as those stars; gunpowder + dyes (+ a shape: fire charge, gold nugget or feather; + diamond for a trail, glowstone
+ * for a twinkle) = a star; a star + dyes = the same star fading to those colours.
+ */
+function fireworkCraft(items: ItemStack[]): ItemStack | null {
+  const n = (id: number) => items.filter((s) => s.id === id).length;
+  const dyes = items.map((s) => dyeColor(s.id)).filter((c): c is number => c !== undefined);
+  const paper = n(I.PAPER), powder = n(I.GUNPOWDER), stars = items.filter((s) => s.id === I6.FIREWORK_STAR);
+  if (paper === 1 && powder >= 1 && powder <= 3 && paper + powder + stars.length === items.length) {
+    const ex = stars.map((s) => s.fw?.ex?.[0]).filter((e): e is FireworkExplosion => !!e);
+    return { id: I6.FIREWORK_ROCKET, count: 3, fw: { flight: powder, ...(ex.length ? { ex } : {}) } };
+  }
+  if (powder === 1 && dyes.length) {
+    const shapes: [number, number][] = [[I.FIRE_CHARGE, 1], [I.GOLD_NUGGET, 2], [I.FEATHER, 4]];
+    const shape = shapes.filter(([id]) => n(id) > 0);
+    const trail = n(I.DIAMOND), twinkle = n(I.GLOWSTONE_DUST);
+    if (shape.length > 1 || shape.some(([id]) => n(id) > 1) || trail > 1 || twinkle > 1) return null;
+    if (1 + dyes.length + (shape.length ? 1 : 0) + trail + twinkle !== items.length) return null;
+    const e: FireworkExplosion = { shape: shape[0]?.[1] ?? 0, colors: dyes };
+    if (trail) e.trail = true;
+    if (twinkle) e.twinkle = true;
+    return { id: I6.FIREWORK_STAR, count: 1, fw: { ex: [e] } };
+  }
+  if (stars.length === 1 && dyes.length && 1 + dyes.length === items.length) {
+    const e = stars[0].fw?.ex?.[0];
+    if (!e) return null;
+    return { id: I6.FIREWORK_STAR, count: 1, fw: { ex: [{ ...e, fade: dyes }] } };
   }
   return null;
 }

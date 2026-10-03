@@ -2,7 +2,7 @@
 import { Screen, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, POTION_ITEMS, itemByName, HORSE_ARMOR } from '../game/items';
+import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, I6, POTION_ITEMS, itemByName, HORSE_ARMOR, FIREWORK_DYES, FIREWORK_SHAPES, FireworkExplosion } from '../game/items';
 import { craft, SMELTING } from '../game/recipes';
 import { addToSlots } from '../game/inventory';
 import { BLOCKS, Render, B, isLeaves, isSapling, isStairs, isSlab } from '../world/blocks';
@@ -394,8 +394,18 @@ export function tooltipLines(s: ItemStack): string[] {
     else lines.push('§7No Effects');
   }
   if (s.ench) for (const [k, v] of Object.entries(s.ench)) lines.push('§7' + enchName(k, v));
+  if (s.id === I6.FIREWORK_ROCKET) lines.push(`§7Flight Duration: ${s.fw?.flight ?? 1}`);
+  for (const e of s.fw?.ex ?? []) {
+    const pad = s.id === I6.FIREWORK_ROCKET ? '  ' : '';
+    const names = (cs: number[]) => cs.map((c) => FIREWORK_DYES.find((d) => d.col === c)?.name ?? 'Custom').join(', ');
+    lines.push(`§7${pad}${FIREWORK_SHAPES[e.shape] ?? 'Unknown Shape'}`);
+    if (e.colors.length) lines.push(`§7${pad}  ${names(e.colors)}`);
+    if (e.fade?.length) lines.push(`§7${pad}  Fade to ${names(e.fade)}`);
+    if (e.trail) lines.push(`§7${pad}  Trail`);
+    if (e.twinkle) lines.push(`§7${pad}  Twinkle`);
+  }
   if (d.tool?.type === 'sword' || d.attack) lines.push('', `§9+${d.attack ?? 1} Attack Damage`);
-  if (d.armor) lines.push('', `§9+${d.armor.points} Armor`);
+  if (d.armor?.points) lines.push('', `§9+${d.armor.points} Armor`);
   if (d.durability && s.damage) lines.push(`Durability: ${d.durability - s.damage} / ${d.durability}`);
   if (d.food) lines.push(`§7Restores ${d.food.hunger / 2} hunger`);
   return lines;
@@ -685,11 +695,27 @@ const one = (id: number): ItemStack => ({ id, count: 1 });
 const defs = () => [...ITEMS.values()].filter((d) => d.id !== 0);
 const REDSTONE_IDS = [I.REDSTONE, B.REDSTONE_TORCH, I3.REPEATER, I3.COMPARATOR, B.REDSTONE_BLOCK, B.LEVER, B.STONE_BUTTON, B.STONE_PRESSURE_PLATE,
   B.PISTON, B.STICKY_PISTON, B.SLIME_BLOCK, B.OBSERVER, B.DISPENSER, B.DROPPER, B.HOPPER, B.REDSTONE_LAMP, B.TNT, I.OAK_DOOR, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL];
-const TRANSPORT_IDS = [B.RAIL, B.POWERED_RAIL, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL, I5.MINECART, I2.BOAT, I5.SADDLE, I5.IRON_HORSE_ARMOR, I5.GOLDEN_HORSE_ARMOR, I5.DIAMOND_HORSE_ARMOR];
+const TRANSPORT_IDS = [B.RAIL, B.POWERED_RAIL, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL, I5.MINECART, I2.BOAT, I5.SADDLE, I5.IRON_HORSE_ARMOR, I5.GOLDEN_HORSE_ARMOR, I5.DIAMOND_HORSE_ARMOR, I6.ELYTRA];
+const FIREWORK_IDS = [I6.FIREWORK_ROCKET, I6.FIREWORK_STAR];
+/** Rockets of each flight duration, then a few ready-made shows (the creative menu's fireworks). */
+const fireworks = (): ItemStack[] => {
+  const star = (shape: number, colors: number[], o: Partial<FireworkExplosion> = {}): FireworkExplosion => ({ shape, colors, ...o });
+  const rocket = (flight: number, ex?: FireworkExplosion[]): ItemStack => ({ id: I6.FIREWORK_ROCKET, count: 1, fw: { flight, ...(ex ? { ex } : {}) } });
+  const [white, red, yellow, green, blue, magenta] = [0xf0f0f0, 0xb3312c, 0xdecf2a, 0x3b511a, 0x253192, 0xc354cd];
+  return [
+    rocket(1), rocket(2), rocket(3),
+    rocket(2, [star(1, [red, yellow], { fade: [white], trail: true })]),
+    rocket(2, [star(2, [yellow], { twinkle: true })]),
+    rocket(2, [star(4, [blue, magenta], { trail: true, twinkle: true })]),
+    rocket(3, [star(0, [green]), star(1, [red, white, blue], { fade: [yellow] })]),
+    rocket(2, [star(3, [green], { fade: [white] })]),
+    { id: I6.FIREWORK_STAR, count: 1, fw: { ex: [star(0, [red])] } },
+  ];
+};
 const BREWING_IDS = [I3.GLASS_BOTTLE, I.GHAST_TEAR, I3.FERMENTED_SPIDER_EYE, I2.BLAZE_POWDER, I3.MAGMA_CREAM, I3.BREWING_STAND, I3.GLISTERING_MELON, I.SPIDER_EYE];
 const MISC_IDS = [I.BUCKET, I.WATER_BUCKET, I.LAVA_BUCKET, I.MILK_BUCKET, I.FIRE_CHARGE, I2.ENDER_EYE, I4.END_CRYSTAL, I.PAPER, I.BOOK, I2.SLIME_BALL, I.BONE_MEAL, I.SNOWBALL];
 const TOOL_ENCH = ['efficiency', 'silk_touch', 'unbreaking', 'fortune', 'luck_of_the_sea', 'lure'];
-const special = new Set<number>([...REDSTONE_IDS, ...BREWING_IDS, ...MISC_IDS, ...TRANSPORT_IDS, I3.ENCHANTED_BOOK]);
+const special = new Set<number>([...REDSTONE_IDS, ...BREWING_IDS, ...MISC_IDS, ...TRANSPORT_IDS, ...FIREWORK_IDS, I3.ENCHANTED_BOOK]);
 const isFood = (d: ItemDef) => !!d.food && !d.potion;
 const isTool = (d: ItemDef) => (!!d.tool && d.tool.type !== 'sword') || [I.FLINT_AND_STEEL, I.COMPASS, I.CLOCK, I2.FISHING_ROD, I3.NAME_TAG].includes(d.id);
 const isCombat = (d: ItemDef) => d.tool?.type === 'sword' || !!d.armor || d.id === I.BOW || d.id === I.ARROW || d.id === I.EGG || d.id === I.ENDER_PEARL;
@@ -714,8 +740,8 @@ const TABS: Tab[] = [
   { name: 'Decoration Blocks', icon: B.POPPY, items: general(isDecoration) },
   { name: 'Redstone', icon: I.REDSTONE, items: () => REDSTONE_IDS.map(one) },
   { name: 'Transportation', icon: B.POWERED_RAIL, items: () => TRANSPORT_IDS.map(one) },
-  { name: 'Miscellaneous', icon: I.LAVA_BUCKET, items: () => [...MISC_IDS.map(one), ...defs().filter((d) => d.egg).map((d) => one(d.id))] },
-  { name: 'Search Items', icon: I.COMPASS, items: () => [...defs().filter((d) => d.id !== I3.ENCHANTED_BOOK).map((d) => one(d.id)), ...books(() => true, true)] },
+  { name: 'Miscellaneous', icon: I.LAVA_BUCKET, items: () => [...MISC_IDS.map(one), ...fireworks(), ...defs().filter((d) => d.egg).map((d) => one(d.id))] },
+  { name: 'Search Items', icon: I.COMPASS, items: () => [...defs().filter((d) => d.id !== I3.ENCHANTED_BOOK && !FIREWORK_IDS.includes(d.id)).map((d) => one(d.id)), ...fireworks(), ...books(() => true, true)] },
   { name: 'Foodstuffs', icon: I.APPLE, items: general(isFood) },
   { name: 'Tools', icon: 0, items: () => [...general(isTool)(), ...books((e) => TOOL_ENCH.includes(e), false)] },
   { name: 'Combat', icon: 0, items: () => [...general(isCombat)(), ...books((e) => !TOOL_ENCH.includes(e), false)] },

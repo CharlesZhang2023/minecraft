@@ -1624,6 +1624,34 @@ gens.particle_spell = () => { const img = newImg(); art(img, [
   '.......w........',
 ], { w: G('#ffffff'), W: G('#ffffff') }); return img; };
 
+// firework sparks: a glint that shrinks as it burns out (frame 7 is the biggest), and the burst's flash
+for (let i = 0; i < 8; i++) gens['particle_spark_' + i] = () => {
+  const img = newImg();
+  const R = 1.5 + i * 0.9, core = R * 0.45;
+  for (let y = 0; y < S; y++)
+    for (let x = 0; x < S; x++) {
+      const dx = Math.abs(x - 7.5), dy = Math.abs(y - 7.5), d = Math.hypot(dx, dy);
+      let a = 0;
+      if (d <= core) a = 255;
+      else if (d <= R) {
+        // four bright rays, a softer glow between them
+        const ray = Math.min(dx, dy) < 1 ? 1 - (d - core) / (R - core + 0.5) : 0;
+        const glow = (1 - (d - core) / (R - core)) * 0.45;
+        a = Math.round(255 * Math.max(ray, glow));
+      }
+      if (a > 0) set(img, x, y, [255, 255, 255], a);
+    }
+  return img;
+};
+gens.particle_flash = () => {
+  const img = newImg();
+  for (let y = 0; y < S; y++)
+    for (let x = 0; x < S; x++) {
+      const d = Math.hypot(x - 7.5, y - 7.5) / 8;
+      if (d < 1) set(img, x, y, [255, 255, 255], Math.round(255 * (1 - d) * (1 - d)));
+    }
+  return img;
+};
 
 // ---------------------------------------------------------------- the End
 gens.end_stone = (r) => {

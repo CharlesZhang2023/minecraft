@@ -5,7 +5,7 @@ import { EFFECTS, potionColor } from '../game/potiondata';
 
 export interface ActiveEffect { id: string; amp: number; dur: number }
 
-export type DamageSource = 'generic' | 'fall' | 'drown' | 'lava' | 'fire' | 'mob' | 'player' | 'explosion' | 'starve' | 'void' | 'cactus' | 'arrow' | 'suffocate' | 'kill' | 'magic' | 'thorns' | 'anvil';
+export type DamageSource = 'generic' | 'fall' | 'drown' | 'lava' | 'fire' | 'mob' | 'player' | 'explosion' | 'starve' | 'void' | 'cactus' | 'arrow' | 'suffocate' | 'kill' | 'magic' | 'thorns' | 'anvil' | 'wall' | 'firework';
 
 export class LivingEntity extends Entity {
   health = 20;
@@ -79,7 +79,7 @@ export class LivingEntity extends Entity {
     const res = this.effectAmp('resistance');
     if (res >= 0 && source !== 'void' && source !== 'kill') amount *= Math.max(0, 1 - 0.2 * (res + 1));
     // armor reduces most damage
-    if (source !== 'drown' && source !== 'starve' && source !== 'void' && source !== 'fall' && source !== 'suffocate' && source !== 'kill' && source !== 'magic') {
+    if (source !== 'drown' && source !== 'starve' && source !== 'void' && source !== 'fall' && source !== 'suffocate' && source !== 'kill' && source !== 'magic' && source !== 'wall') {
       amount = (amount * (25 - this.armor)) / 25;
     }
     let applied = amount;

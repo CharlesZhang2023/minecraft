@@ -2,6 +2,7 @@ import { LivingEntity, DamageSource } from '../entity/living';
 import type { Entity } from '../entity/entity';
 import type { World } from '../world/world';
 import { Inventory } from './inventory';
+import { I6 } from './items';
 import type { Mount } from '../entity/mount';
 
 export enum GameMode { Survival = 0, Creative = 1, Adventure = 2, Spectator = 3 }
@@ -62,6 +63,14 @@ export class Player extends LivingEntity {
   /** Jumps since the client last reported in (the server charges hunger for them). */
   jumps = 0;
   fishHook: { reel(): number; discard(): void; x: number; y: number; z: number } | null = null;
+  /** Gliding on elytra (the client decides, the server follows); ticks spent gliding, for the model's pose. */
+  gliding = false;
+  glideTicks = 0;
+  /** Ticks a firework rocket still pulls a glider along (told by the server, applied by the client). */
+  rocketBoost = 0;
+  /** Damage from flying into a wall this tick, felt by the client and reported to the server. */
+  wallHit = 0;
+  private jumpWasDown = false;
 
   constructor(world: World) {
     super(world);
@@ -74,6 +83,30 @@ export class Player extends LivingEntity {
   get canFly() { return this.gameMode === GameMode.Creative || this.gameMode === GameMode.Spectator; }
 
   override eyeHeight() { return this.eyeOffset; }
+  /** Where the eyes are heading: lower while sneaking, near the ground while gliding (or stuck 0.6 tall after it). */
+  eyeTarget() { return this.height < 1 ? 0.4 : this.sneaking ? 1.54 : 1.62; }
+  /** Wearing elytra that aren't worn out (they stop working one point short of breaking). */
+  hasElytra() {
+    const c = this.inventory.armor[1];
+    return !!c && c.id === I6.ELYTRA && (c.damage ?? 0) < 431;
+  }
+  /** Gliding stops on landing, in water or lava, when flying, riding, climbing, or without working elytra. */
+  canGlide() {
+    return !this.onGround && !this.flying && !this.inWater && !this.inLava && !this.riding && !this.dead && this.hasElytra() && !this.isOnLadder();
+  }
+  /**
+   * Gliding makes the player 0.6 blocks tall (through one-block gaps, like 1.12). Afterwards they stand up again
+   * once there's room for it, and crawl until then.
+   */
+  updatePose() {
+    let h = 1.8;
+    if (this.gliding) h = 0.6;
+    else if (this.height < 1.8) {
+      const b = this.box;
+      if (this.collisions({ ...b, y1: b.y0 + 1.8 }).length) h = 0.6;
+    }
+    this.height = h;
+  }
   override isFlying() { return this.flying; }
   override groundSpeed() { return this.moveSpeed * (this.sprinting ? 1.3 : 1); }
   override airSpeed() {
@@ -91,13 +124,16 @@ export class Player extends LivingEntity {
   applyInput(inp: MoveInput) {
     this.sneaking = inp.sneak && !this.flying;
     let fwd = inp.forward, str = inp.strafe;
-    if (this.sneaking) { fwd *= 0.3; str *= 0.3; }
+    if (this.sneaking || (this.height < 1 && !this.gliding)) { fwd *= 0.3; str *= 0.3; }
+    // pressing jump in mid-air spreads the elytra
+    if (inp.jump && !this.jumpWasDown && !this.gliding && this.canGlide()) this.gliding = true;
+    this.jumpWasDown = inp.jump;
     if (this.eatingTicks > 0) { fwd *= 0.2; str *= 0.2; }
     this.forward = fwd;
     this.strafe = str;
     this.jumping = inp.jump;
     // sprinting rules
-    const canSprint = (this.food > 6 || this.canFly) && !this.sneaking && fwd >= 0.8 && this.eatingTicks === 0;
+    const canSprint = (this.food > 6 || this.canFly) && !this.sneaking && fwd >= 0.8 && this.eatingTicks === 0 && this.height > 1;
     if (inp.sprint && canSprint && !this.collidedH) this.sprinting = true;
     if (!canSprint || this.collidedH) this.sprinting = false;
     if (this.flying) {
@@ -109,6 +145,7 @@ export class Player extends LivingEntity {
 
   override tick() {
     if (this.riding) {
+      if (this.gliding) { this.gliding = false; this.updatePose(); }
       this.bodyYaw = this.riding.bodyFollows ? this.riding.yaw : this.yaw;
       this.headYaw = this.yaw;
       this.pEyeOffset = this.eyeOffset;
@@ -125,9 +162,9 @@ export class Player extends LivingEntity {
       if (!this.canFly) this.foodTick();
       return;
     }
+    this.updateGlide();
     this.pEyeOffset = this.eyeOffset;
-    const targetEye = this.sneaking ? 1.27 + 0.27 : 1.62;
-    this.eyeOffset += (targetEye - this.eyeOffset) * 0.5;
+    this.eyeOffset += (this.eyeTarget() - this.eyeOffset) * 0.5;
     this.pDistWalked = this.distWalked;
     this.pCameraYaw = this.cameraYaw;
     this.pCameraPitch = this.cameraPitch;
@@ -161,10 +198,60 @@ export class Player extends LivingEntity {
     if (this.hurtFlash > 0) this.hurtFlash--;
   }
 
+  /** Keep gliding while it's possible; count its ticks and the rocket's pull; size the player to match. */
+  updateGlide() {
+    if (this.gliding && !this.canGlide()) this.gliding = false;
+    this.glideTicks = this.gliding ? this.glideTicks + 1 : 0;
+    if (this.rocketBoost > 0) this.rocketBoost--;
+    this.updatePose();
+  }
+
+  /** Vanilla's elytra flight (1.12 EntityLivingBase.travel): look down to dive and gain speed, up to climb it off. */
+  override travel(strafe: number, forward: number) {
+    if (!this.gliding) { super.travel(strafe, forward); return; }
+    const yaw = (this.yaw * Math.PI) / 180, pitch = (this.pitch * Math.PI) / 180;
+    const lx = -Math.sin(yaw) * Math.cos(pitch), ly = -Math.sin(pitch), lz = Math.cos(yaw) * Math.cos(pitch);
+    if (this.rocketBoost > 0) {
+      // a rocket pulls toward 1.5 blocks a tick along the look
+      this.vx += lx * 0.1 + (lx * 1.5 - this.vx) * 0.5;
+      this.vy += ly * 0.1 + (ly * 1.5 - this.vy) * 0.5;
+      this.vz += lz * 0.1 + (lz * 1.5 - this.vz) * 0.5;
+    }
+    if (this.vy > -0.5) this.fallDistance = 1;
+    const h = Math.hypot(lx, lz), speed = Math.hypot(this.vx, this.vz);
+    const lift = Math.cos(pitch) ** 2 * Math.min(1, Math.hypot(lx, ly, lz) / 0.4);
+    this.vy += -0.08 + lift * 0.06;
+    if (this.vy < 0 && h > 0) {
+      const d = this.vy * -0.1 * lift;
+      this.vy += d;
+      this.vx += (lx * d) / h;
+      this.vz += (lz * d) / h;
+    }
+    if (pitch < 0 && h > 0) {
+      const d = speed * -Math.sin(pitch) * 0.04;
+      this.vy += d * 3.2;
+      this.vx -= (lx * d) / h;
+      this.vz -= (lz * d) / h;
+    }
+    if (h > 0) {
+      this.vx += ((lx / h) * speed - this.vx) * 0.1;
+      this.vz += ((lz / h) * speed - this.vz) * 0.1;
+    }
+    this.vx *= 0.99;
+    this.vy *= 0.98;
+    this.vz *= 0.99;
+    this.move(this.vx, this.vy, this.vz);
+    if (this.collidedH) {
+      const hurt = (speed - Math.hypot(this.vx, this.vz)) * 10 - 3;
+      if (hurt > 0) this.wallHit = Math.max(this.wallHit, hurt);
+    }
+  }
+
   /** Vanilla body turning: the head looks where you look, the body eases toward the way you walk (or
    * where you look when swinging) and never lets the head twist more than 75° from it. */
   protected turnBody(dx: number, dz: number) {
     this.headYaw = this.yaw;
+    if (this.gliding) { this.bodyYaw = this.yaw; return; }
     let target = this.bodyYaw;
     if (dx * dx + dz * dz > 0.0025) {
       target = (Math.atan2(dz, dx) * 180) / Math.PI - 90;
@@ -290,6 +377,8 @@ export class Player extends LivingEntity {
       suffocate: 'Player suffocated in a wall',
       magic: attacker ? `Player was killed by ${who} using magic` : 'Player was killed by magic',
       thorns: `Player was killed while trying to hurt ${who}`,
+      wall: 'Player experienced kinetic energy',
+      firework: 'Player went off with a bang',
       anvil: 'Player was squashed by a falling anvil',
       kill: 'Player fell out of the world',
     };
@@ -328,6 +417,10 @@ export class Player extends LivingEntity {
     }
     this.clearEffects();
     this.vx = this.vy = this.vz = 0;
+    this.gliding = false;
+    this.rocketBoost = 0;
+    this.height = 1.8;
+    this.eyeOffset = this.pEyeOffset = 1.62;
     this.setPos(this.spawnX + 0.5, this.spawnY, this.spawnZ + 0.5);
   }
 

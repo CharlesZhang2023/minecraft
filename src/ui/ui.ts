@@ -6,7 +6,7 @@ import { Gui, Ctx } from './gui';
 import { Hud, drawDurability } from './hud';
 import { Chat } from './chat';
 import { Screen } from './screen';
-import { ItemStack } from '../game/items';
+import { ItemStack, starTint } from '../game/items';
 import * as Menus from './menus';
 import * as Containers from './containers';
 import { TradeScreen } from './trade';
@@ -268,7 +268,7 @@ export class UI {
   }
 
   drawItem(ctx: Ctx, s: ItemStack, x: number, y: number, pop = 0) {
-    let icon = this.game.icons.get(s.id);
+    let icon = this.game.icons.get(s.id, starTint(s));
     if (s.ench) icon = this.glinted(icon);
     if (pop > 0) {
       const f = 1 + pop / 5;

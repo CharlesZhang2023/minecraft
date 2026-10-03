@@ -254,6 +254,46 @@ export const EXTRA_EGGS2: { mob: string; display: string; c1: number; c2: number
 ];
 for (const e of EXTRA_EGGS2) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
 
+// Fireworks and elytra (appended after the horse eggs: ids must stay stable)
+export const I6 = {
+  FIREWORK_ROCKET: item('firework_rocket', 'Firework Rocket'),
+  FIREWORK_STAR: item('firework_star', 'Firework Star'),
+  // worn in the chest slot; no protection, wears down while gliding (repaired with leather, as before membranes)
+  ELYTRA: item('elytra', 'Elytra', { maxStack: 1, durability: 432, armor: { slot: 1, points: 0 }, rarity: 'uncommon' }),
+};
+/** Firework explosion shapes, in the vanilla order. */
+export const FIREWORK_SHAPES = ['Small Ball', 'Large Ball', 'Star-shaped', 'Creeper-shaped', 'Burst'];
+/**
+ * Colours a firework star can take, from the dyes this game has (the same stand-ins its wool uses), in the
+ * vanilla dye colours.
+ */
+export const FIREWORK_DYES: { id: () => number; name: string; col: number }[] = [
+  { id: () => I.BONE_MEAL, name: 'White', col: 0xf0f0f0 },
+  { id: () => B.OXEYE_DAISY, name: 'Light Gray', col: 0xababab },
+  { id: () => I2.INK_SAC, name: 'Black', col: 0x1e1b1b },
+  { id: () => I.COCOA, name: 'Brown', col: 0x51301a },
+  { id: () => B.POPPY, name: 'Red', col: 0xb3312c },
+  { id: () => I.REDSTONE, name: 'Red', col: 0xb3312c },
+  { id: () => B.DANDELION, name: 'Yellow', col: 0xdecf2a },
+  { id: () => B.CACTUS, name: 'Green', col: 0x3b511a },
+  { id: () => I.LAPIS, name: 'Blue', col: 0x253192 },
+  { id: () => B.CORNFLOWER, name: 'Blue', col: 0x253192 },
+  { id: () => B.ALLIUM, name: 'Magenta', col: 0xc354cd },
+];
+/** A firework star's icon colour: the average of its colours (grey without any); undefined for other items. */
+export function starTint(s: ItemStack): number | undefined {
+  if (s.id !== I6.FIREWORK_STAR) return undefined;
+  const cs = s.fw?.ex?.[0]?.colors ?? [];
+  if (!cs.length) return 0x8a8a8a;
+  let r = 0, g = 0, b = 0;
+  for (const c of cs) { r += (c >> 16) & 255; g += (c >> 8) & 255; b += c & 255; }
+  const n = cs.length;
+  return (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(b / n);
+}
+export function dyeColor(id: number): number | undefined {
+  return FIREWORK_DYES.find((d) => d.id() === id)?.col;
+}
+
 export function itemByName(name: string): ItemDef | undefined {
   return byName.get(name);
 }
@@ -273,10 +313,15 @@ export interface ItemStack {
   ench?: Record<string, number>;
   name?: string; // custom name from an anvil
   repair?: number; // anvil prior-work penalty
+  fw?: Firework; // firework rockets and stars
 }
+/** One burst of a firework: `shape` indexes FIREWORK_SHAPES; colours are 0xRRGGBB. */
+export interface FireworkExplosion { shape: number; colors: number[]; fade?: number[]; trail?: boolean; twinkle?: boolean }
+/** A rocket's flight duration (gunpowder used) and bursts; a star carries its one burst in `ex`. */
+export interface Firework { flight?: number; ex?: FireworkExplosion[] }
 export const stack = (id: number, count = 1, damage = 0): ItemStack => ({ id, count, damage });
 export const cloneStack = (s: ItemStack | null): ItemStack | null => (s ? { ...s, damage: s.damage ?? 0, ...(s.ench ? { ench: { ...s.ench } } : {}) } : null);
-export const sameItem = (a: ItemStack | null, b: ItemStack | null) => !!a && !!b && a.id === b.id && (a.damage ?? 0) === (b.damage ?? 0) && JSON.stringify(a.ench ?? null) === JSON.stringify(b.ench ?? null) && (a.name ?? '') === (b.name ?? '') && (a.repair ?? 0) === (b.repair ?? 0);
+export const sameItem = (a: ItemStack | null, b: ItemStack | null) => !!a && !!b && a.id === b.id && (a.damage ?? 0) === (b.damage ?? 0) && JSON.stringify(a.ench ?? null) === JSON.stringify(b.ench ?? null) && (a.name ?? '') === (b.name ?? '') && (a.repair ?? 0) === (b.repair ?? 0) && JSON.stringify(a.fw ?? null) === JSON.stringify(b.fw ?? null);
 /** Display name (custom anvil name if set). */
 export const stackName = (s: ItemStack) => s.name ?? getItem(s.id).display;
 export const maxStack = (s: ItemStack) => getItem(s.id).maxStack;

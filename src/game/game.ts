@@ -808,9 +808,11 @@ export class Game {
     const a0 = args[0] as { x?: number; y?: number; z?: number } | number;
     const x = typeof a0 === 'number' ? a0 : a0?.x, y = typeof a0 === 'number' ? (args[1] as number) : a0?.y, z = typeof a0 === 'number' ? (args[2] as number) : a0?.z;
     const enc = encodeValue(args);
+    // fireworks are meant to be seen from afar
+    const range = method === 'firework' ? 160 : 64;
     for (const p of this.playersHere()) {
       const e = p.entity;
-      if (typeof x === 'number' && typeof y === 'number' && typeof z === 'number' && Math.max(Math.abs(e.x - x), Math.abs(e.y - y), Math.abs(e.z - z)) > 64) continue;
+      if (typeof x === 'number' && typeof y === 'number' && typeof z === 'number' && Math.max(Math.abs(e.x - x), Math.abs(e.y - y), Math.abs(e.z - z)) > range) continue;
       p.event(['f', method, enc]);
     }
   }

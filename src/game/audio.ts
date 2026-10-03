@@ -380,6 +380,45 @@ const GENS: Record<string, Gen> = {
     return normalize(b, 1);
   },
   rain: (r) => normalize(highpass(lowpass(noise(SR * 2, r), 6000), 800), 0.4),
+  // fireworks: the hiss of the launch, the crack (or boom) of the burst, and the crackle of twinkling stars after it
+  fireworkLaunch: (r) => {
+    const n = SR * 1.1;
+    const b = env(bandpass(noise(n, r), 1200, 7000), 0.08, 0.95, 1.6);
+    mixInto(b, env(tone(n, 260, 900, 'saw', 0.05, 12), 0.15, 0.8, 2), 0.12);
+    return normalize(b, 0.6);
+  },
+  fireworkBlast: (r) => {
+    const n = SR * 1.4;
+    const b = env(lowpass(noise(n, r), 3500), 0.001, 0.25, 3);
+    mixInto(b, env(lowpass(noise(n, r), 300), 0.002, 1.2, 2.5), 1.2);
+    return normalize(b, 0.9);
+  },
+  fireworkLargeBlast: (r) => {
+    const n = SR * 2.4;
+    const b = env(lowpass(noise(n, r), 2500), 0.001, 0.35, 3);
+    mixInto(b, env(lowpass(noise(n, r), 160), 0.004, 2.1, 2), 1.8);
+    mixInto(b, env(tone(n, 70, 30, 'sine'), 0.002, 1.2, 2), 0.6);
+    return normalize(b, 1);
+  },
+  fireworkTwinkle: (r) => {
+    const n = SR * 2.2, b = new Float32Array(n);
+    // a scatter of tiny pops, starting once the sparks start to flicker
+    for (let k = 0; k < 90; k++) {
+      const len = Math.floor(SR * (0.004 + r.next() * 0.01));
+      const at = Math.floor(SR * (0.55 + Math.pow(r.next(), 1.6) * 1.5));
+      mixInto(b, env(highpass(noise(len, r), 2500), 0.0005, len / SR, 4), 0.4 + r.next() * 0.6, at);
+    }
+    return normalize(b, 0.7);
+  },
+  wind: (r) => {
+    // two seconds that loop: filtered noise swelling slowly, the end crossfaded into the start
+    const n = SR * 2, x = Math.floor(SR * 0.25);
+    const raw = bandpass(noise(n + x, r), 180, 1400);
+    const b = new Float32Array(n);
+    for (let i = 0; i < n; i++) b[i] = raw[i] * (0.75 + 0.25 * Math.sin((i / n) * Math.PI * 2));
+    for (let i = 0; i < x; i++) b[i] = b[i] * (i / x) + raw[n + i] * (1 - i / x) * 0.75;
+    return normalize(b, 0.7);
+  },
 };
 
 export class Audio {
@@ -497,6 +536,33 @@ export class Audio {
       p.connect(this.sfx);
     } else g.connect(this.sfx);
     src.start();
+  }
+
+  private windNode: AudioBufferSourceNode | null = null;
+  private windGain: GainNode | null = null;
+  /** The rush of air while gliding (0 stops it). */
+  setWind(volume: number, pitch: number) {
+    if (!this.ctx) return;
+    if (volume > 0 && !this.windNode) {
+      const buf = this.get('wind');
+      if (!buf) return;
+      this.windNode = this.ctx.createBufferSource();
+      this.windNode.buffer = buf;
+      this.windNode.loop = true;
+      this.windGain = this.ctx.createGain();
+      this.windNode.connect(this.windGain);
+      this.windGain.connect(this.sfx);
+      this.windNode.start();
+    }
+    if (this.windGain && this.windNode) {
+      this.windGain.gain.value = volume * 0.6;
+      this.windNode.playbackRate.value = pitch;
+    }
+    if (volume <= 0 && this.windNode) {
+      this.windNode.stop();
+      this.windNode = null;
+      this.windGain = null;
+    }
   }
 
   setRain(strength: number) {

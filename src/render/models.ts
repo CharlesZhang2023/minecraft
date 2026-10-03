@@ -672,6 +672,45 @@ export function armorSkin(mat: string, layer: 1 | 2): Skin {
 }
 export const ARMOR_MATERIALS = Object.keys(ARMOR_COLORS);
 
+// ------------------------------------------------------------------ elytra
+/** Two wings hung behind a biped's shoulders (vanilla ModelElytra, already moved 2 pixels back). */
+export function elytraModel(): ModelDef {
+  return {
+    texW: 64, texH: 32,
+    parts: [
+      part('leftWing', 5, 0, 2, [box(-10, 0, 0, 10, 20, 2, 22, 0, { inflate: 1 })]),
+      part('rightWing', -5, 0, 2, [box(0, 0, 0, 10, 20, 2, 22, 0, { inflate: 1, mirror: true })]),
+    ],
+  };
+}
+/**
+ * Grey-violet membrane on a darker frame: full width at the shoulder, the far end ragged like feathers. Column 9 of
+ * the face is the edge the wing hangs from.
+ */
+export function elytraSkin(): Skin {
+  const s = new Skin();
+  const r = new Random(4242);
+  const frame = hx('#5e5e78'), web = hx('#a0a0ba'), vein = hx('#b8b8d0'), tip = hx('#7a7a94');
+  // how far (in pixels from the hinge edge) the wing reaches on each row
+  const reach = [...Array(20).keys()].map((y) => (y < 7 ? 10 : Math.max(3, Math.round(10 - (y - 6) * 0.55 - (y % 2) * 0.8))));
+  const wing = (x: number, y: number): [number, number, number] | [number, number, number, number] => {
+    const k = 9 - x; // pixels out from the hinge
+    if (k >= reach[y]) return [0, 0, 0, 0];
+    if (k === 0 || y === 0) return vary(frame, r, 0.04);
+    if (k === reach[y] - 1 || y === 19) return vary(tip, r, 0.05);
+    if (k % 3 === 1 && y > 2) return vary(vein, r, 0.04);
+    return vary(web, r, 0.05);
+  };
+  s.paintBox(22, 0, 10, 20, 2, (f, x, y, fw) => {
+    if (f === 'front') return wing(x, y);
+    if (f === 'back') return wing(fw - 1 - x, y);
+    if (f === 'right') return y < reach.length && reach[y] >= 10 ? vary(tip, r, 0.04) : [0, 0, 0, 0];
+    if (f === 'bottom') return [0, 0, 0, 0]; // the ragged end has no flat underside
+    return vary(frame, r, 0.04);
+  });
+  return s;
+}
+
 // ------------------------------------------------------------------ The End
 export function crystalModel(): ModelDef {
   return {

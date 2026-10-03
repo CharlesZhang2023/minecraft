@@ -51,7 +51,7 @@ function tintOf(id: number): number | undefined {
 }
 
 export class IconCache {
-  private cache = new Map<number, HTMLCanvasElement>();
+  private cache = new Map<number | string, HTMLCanvasElement>();
   size = 32;
 
   setScale(guiScale: number) {
@@ -62,16 +62,18 @@ export class IconCache {
     }
   }
 
-  get(id: number): HTMLCanvasElement {
-    let c = this.cache.get(id);
+  get(id: number, tint?: number): HTMLCanvasElement {
+    const key = tint === undefined ? id : id + ':' + tint;
+    let c = this.cache.get(key);
     if (!c) {
-      c = this.render(id);
-      this.cache.set(id, c);
+      c = this.render(id, tint);
+      this.cache.set(key, c);
     }
     return c;
   }
 
-  private render(id: number): HTMLCanvasElement {
+  /** `tint` colours a sprite's tint-masked pixels (a firework star's colour). */
+  private render(id: number, tint?: number): HTMLCanvasElement {
     const S = this.size;
     const c = document.createElement('canvas');
     c.width = c.height = S;
@@ -82,7 +84,7 @@ export class IconCache {
       let src: HTMLCanvasElement | null = null;
       if (it.sprite) {
         const img = getItemSprite(it.sprite);
-        if (img) src = imgToCanvas(img);
+        if (img) src = imgToCanvas(img, tint, tint !== undefined);
       }
       if (!src && it.block) {
         const def = BLOCKS[it.block];

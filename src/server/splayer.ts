@@ -21,8 +21,10 @@ export interface InputPacket {
   t: 'in';
   /** position, motion and look (the client moves its own player) */
   x: number; y: number; z: number; vx: number; vy: number; vz: number; yaw: number; pitch: number;
-  /** onGround, sneaking, sprinting, flying, jump key held */
-  g: boolean; sn: boolean; sp: boolean; fl: boolean; jp: boolean;
+  /** onGround, sneaking, sprinting, flying, jump key held, gliding on elytra */
+  g: boolean; sn: boolean; sp: boolean; fl: boolean; jp: boolean; gl?: boolean;
+  /** damage from gliding into a wall since the last packet */
+  wh?: number;
   /** movement keys (steering mounts) */
   fw: number; st: number;
   /** jumps since the last packet (hunger) */
@@ -69,6 +71,15 @@ export class NetPlayer extends Player {
     this.swings++;
   }
 
+  /** One point of wear on the worn elytra (Unbreaking spares it 1 - 1/(level+1) of the time). */
+  private wearElytra() {
+    const c = this.inventory.armor[1];
+    if (!c) return;
+    const u = c.ench?.unbreaking ?? 0;
+    if (u > 0 && Math.random() >= 1 / (u + 1)) return;
+    this.inventory.armor[1] = { ...c, damage: Math.min(431, (c.damage ?? 0) + 1) };
+  }
+
   /** Our own walking comes from the client; anything calling move() is the world pushing us. */
   override move(dx: number, dy: number, dz: number) {
     this.nudge[0] += dx; this.nudge[1] += dy; this.nudge[2] += dz;
@@ -78,8 +89,13 @@ export class NetPlayer extends Player {
   override tick() {
     this.sp?.tickInput();
     if (this.riding) { super.tick(); return; }
+    // gliding comes with the client's moves; here it wears the elytra down, a point a second
+    if (this.gliding) {
+      if (++this.glideTicks % 20 === 0 && !this.creative) this.wearElytra();
+    } else this.glideTicks = 0;
+    this.updatePose();
     this.pEyeOffset = this.eyeOffset;
-    this.eyeOffset += ((this.sneaking ? 1.54 : 1.62) - this.eyeOffset) * 0.5;
+    this.eyeOffset += (this.eyeTarget() - this.eyeOffset) * 0.5;
     this.pDistWalked = this.distWalked;
     this.prevHealth = this.health;
     if (this.dead) { this.deathTime++; this.updateSwing(); return; }
@@ -335,24 +351,33 @@ export class ServerPlayer {
     // sanity: a client can't walk faster than an ender pearl flies; anything wilder is snapped back
     const d = Math.hypot(inp.x - p.x, inp.y - p.y, inp.z - p.z);
     if (d > (p.canFly ? 40 : 12)) { p.setPos(p.x, p.y, p.z); return; }
-    const oy = p.y;
+    const oy = p.y, vy0 = p.vy;
     p.x = inp.x; p.y = inp.y; p.z = inp.z;
     p.vx = inp.vx; p.vy = inp.vy; p.vz = inp.vz;
     p.netV = [p.vx, p.vy, p.vz];
     p.sneaking = inp.sn;
     p.sprinting = inp.sp && p.food > 6;
     p.flying = inp.fl && p.canFly;
+    p.gliding = !!inp.gl && p.hasElytra() && !p.riding;
     // falling is tracked here, so fall damage stays the server's call
     const wasOnGround = p.onGround;
     p.onGround = inp.g;
     const dy = p.y - oy;
     const below = this.game.world!.getId(Math.floor(p.x), Math.floor(p.y - 0.2), Math.floor(p.z));
     if (p.flying || p.inWater || p.isOnLadder() || below === B.SLIME_BLOCK && p.onGround && !p.sneaking) p.fallDistance = 0;
-    else if (!p.onGround && dy < 0) p.fallDistance -= dy;
+    else {
+      // a glider counts as falling only while it drops fast (vanilla's elytra rule). Judged by the speed going into
+      // this move: the client reports the speed after it, which the ground has already stopped when a dive lands
+      if (p.gliding && vy0 > -0.5) p.fallDistance = 1;
+      if (!p.onGround && dy < 0) p.fallDistance -= dy;
+    }
     if (p.onGround && p.fallDistance > 0) {
       p.onLand(p.fallDistance);
       p.fallDistance = 0;
     }
+    // flying into a wall: the client felt the stop
+    const wh = Number(inp.wh ?? 0);
+    if (wh > 0 && Number.isFinite(wh)) p.damage(Math.min(wh, 100), 'wall');
     void wasOnGround;
   }
 

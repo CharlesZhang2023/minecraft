@@ -25,6 +25,7 @@ import { LivingEntity } from '../entity/living';
 import { ItemEntity, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
 import { Minecart } from '../entity/minecart';
+import { FireworkRocket } from '../entity/firework';
 import { EntityRenderer } from '../render/entityrender';
 import { Weather, rainTexture, snowTexture } from '../game/weather';
 import { rayAABB, clamp } from '../math';
@@ -360,6 +361,7 @@ export class Client {
   }
 
   private dropWorld() {
+    this.audio.setWind(0, 1);
     if (!this.world) return;
     for (const c of this.world.chunks.values()) this.renderer.freeChunk(c);
     this.world.destroy();
@@ -527,6 +529,12 @@ export class Client {
       if (this.rng.next() > (own ? 0.12 : e.effects.has('invisibility') ? 0.15 : 0.6)) continue;
       this.particles!.swirl(e.x + (this.rng.next() - 0.5) * e.width, e.y + this.rng.next() * e.height, e.z + (this.rng.next() - 0.5) * e.width, 0, 0.02, 0, e.effectColor);
     }
+    // rockets leave a trail of sparks (one pulling a glider trails from the glider)
+    for (const e of this.entities) {
+      if (!(e instanceof FireworkRocket)) continue;
+      const a = e.attached ?? e;
+      this.particles!.rocketTrail(a.x, a.y, a.z, a.vy);
+    }
     this.entityRenderer.tick();
     this.particles!.tick();
     this.ambientParticles();
@@ -544,6 +552,10 @@ export class Client {
       if (sl === 0 && bl < 8 && p.y < 60) this.audio.play('cave', null, 0.7, 0.8 + this.rng.next() * 0.3);
     }
     this.audio.setRain(this.dimension === 'overworld' && this.weather!.rainAt(p.x, p.y, p.z) && !p.isInsideOpaque() ? this.weather!.rain : 0);
+    // wind while gliding: louder with speed, faded in over the first two seconds (vanilla's ElytraSound)
+    let wind = 0;
+    if (p.gliding && p.glideTicks > 20) wind = Math.min(1, (p.vx * p.vx + p.vy * p.vy + p.vz * p.vz) / 4) * Math.min(1, (p.glideTicks - 20) / 20);
+    this.audio.setWind(wind, wind > 0.8 ? 1 + (wind - 0.8) : 1);
   }
 
   private panoramaTick() {
@@ -624,11 +636,12 @@ export class Client {
     const held = ['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft'].filter((k) => i.isDown(k));
     conn.send({
       t: 'in', x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, yaw: p.yaw, pitch: p.pitch,
-      g: p.onGround, sn: p.sneaking, sp: p.sprinting, fl: p.flying, jp: inp.jump, fw: inp.forward, st: inp.strafe,
+      g: p.onGround, sn: p.sneaking, sp: p.sprinting, fl: p.flying, jp: inp.jump, gl: p.gliding, wh: p.wallHit, fw: inp.forward, st: inp.strafe,
       j: p.jumps, sel: p.inventory.selected, act, md: act ? [...i.mouseDown] : [], mp: act ? pressed : [],
       dir: aim ? [aim.x, aim.y, aim.z] : null, kd: held, kp: this.keyQueue, tp: this.tpId,
     });
     p.jumps = 0;
+    p.wallHit = 0;
     this.keyQueue = [];
   }
 
@@ -821,7 +834,14 @@ export class Client {
         default: o[k] = v;
       }
     }
-    if (s.dead === false && this.ui.screen instanceof DeathScreen) this.ui.close();
+    if (s.dead === false) {
+      // back to life: the death animation's clock (only our own copy keeps one) and any flight end here
+      p.deathTime = 0;
+      p.hurtTime = 0;
+      p.gliding = false;
+      p.rocketBoost = 0;
+      if (this.ui.screen instanceof DeathScreen) this.ui.close();
+    }
   }
 
   private applyWindow(w: NonNullable<Bundle['win']>) {
@@ -896,6 +916,7 @@ export class Client {
         if (by === p) this.ui.hud.pickupAnim(e[3] as number);
         break;
       }
+      case 'boost': p.rocketBoost = Math.max(p.rocketBoost, e[1] as number); break;
       case 'beam': this.gatewayBeam = { x: e[1] as number, y: e[2] as number, z: e[3] as number, until: this.ticks + (e[4] as number) }; break;
       case 'thunder': this.weather?.strike(e[1] as number); break;
     }
@@ -1153,6 +1174,14 @@ export class Client {
     if (!nether && !end) {
       r.drawClouds(192.33);
       this.weather!.render(t);
+    }
+    // firework sparks and flashes: soft-edged and fading, so blended, after everything solid
+    pm.reset();
+    this.particles!.build(pm, cam.x, cam.y, cam.z, t, yaw, pitch, true);
+    if (pm.count) {
+      r.gl.depthMask(false);
+      r.drawDyn(pm, { blend: true, cull: false, fullbright: true, alphaCut: 0.004 });
+      r.gl.depthMask(true);
     }
     // first-person hand
     if (this.thirdPerson === 0 && !this.hideHud && !p.spectator && !this.panorama) this.entityRenderer.renderHand(this, t);

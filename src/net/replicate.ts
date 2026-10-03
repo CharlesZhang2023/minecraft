@@ -13,6 +13,7 @@ import { Minecart } from '../entity/minecart';
 import { ThrownPotion } from '../entity/potion';
 import { FishingHook } from '../entity/fishing';
 import { EyeOfEnder } from '../entity/eye';
+import { FireworkRocket } from '../entity/firework';
 
 type Make = (w: World, g: Game, me: Player) => Entity;
 
@@ -31,6 +32,7 @@ const TYPES: Record<string, Make> = {
   potion: (w, g) => new ThrownPotion(w, g, null, { id: 1, count: 1 }),
   fishing_hook: (w, g, me) => new FishingHook(w, g, me),
   eye_of_ender: (w, g) => new EyeOfEnder(w, g, 0),
+  firework_rocket: (w, g) => new FireworkRocket(w, g, null),
 };
 for (const [k, C] of Object.entries(MOB_TYPES)) if (!k.includes(' ')) TYPES[k] = (w, g) => new C(w, g);
 
@@ -55,6 +57,7 @@ export function netType(e: Entity): string | null {
   else if (e instanceof ThrownPotion) name = 'potion';
   else if (e instanceof FishingHook) name = 'fishing_hook';
   else if (e instanceof EyeOfEnder) name = 'eye_of_ender';
+  else if (e instanceof FireworkRocket) name = 'firework_rocket';
   else for (const [k, M] of Object.entries(MOB_TYPES)) if (C === M && !k.includes(' ')) { name = k; break; }
   CLASS_NAMES.set(C, name ?? '');
   return name;
@@ -70,6 +73,7 @@ const SKIP = new Set([
   'world', 'game', 'px', 'py', 'pz', 'pyaw', 'ppitch', 'pHeadYaw', 'pBodyYaw', 'pLimbSwingAmount', 'pSwingProgress',
   'path', 'pathTimer', 'wanderTimer', 'sayTimer', 'despawnTimer', 'attackCooldown', 'lookTimer', 'breedCooldown', 'growTimer',
   'jumpTicks', 'invulnerable', 'lastDamage', 'lookTarget', 'onDamaged', 'onDeath', 'netV', 'conn', 'stuckTicks',
+  'rocketBoost', 'wallHit', 'jumpWasDown',
 ]);
 
 /** JSON-safe form of a field value, or undefined to leave it out. */

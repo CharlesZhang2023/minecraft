@@ -1102,6 +1102,56 @@ sprite('nether_wart', [
   '......d..d......',
 ], { r: hex('#6a1014'), R: hex('#b0202a'), W: hex('#e05050'), d: hex('#5a0a0e') }, '#2a0406');
 
+// ------------------------------------------------------------------ fireworks and elytra
+sprite('elytra', [
+  '', '',
+  '....dddddddd....',
+  '...dHHHddHHHd...',
+  '..dHhhHddHhhHd..',
+  '..dHhHHddHHhHd..',
+  '.dHhHHd..dHHhHd.',
+  '.dHhHHd..dHHhHd.',
+  '.dHhHd....dHhHd.',
+  '.dHHHd....dHHHd.',
+  '.dHhd......dhHd.',
+  '.dHHd......dHHd.',
+  '..dHd......dHd..',
+  '..d.d......d.d..',
+], { H: hex('#8e8ea6'), h: hex('#bdbdd0'), d: hex('#55556a') }, '#24242e');
+sprite('firework_rocket', [
+  '',
+  '.............g..',
+  '............gG..',
+  '...........wWg..',
+  '..........rRw...',
+  '.........rRRr...',
+  '........wWRr....',
+  '.......rwWr.....',
+  '......rRRw......',
+  '.....rRRr.......',
+  '....wWRr........',
+  '...rwWr.........',
+  '..rRRr..........',
+  '..sr............',
+  '.s..............',
+], { r: hex('#a8221d'), R: hex('#d83a2c'), w: hex('#d8d0c0'), W: hex('#ffffff'), g: hex('#7a7a7a'), G: hex('#b4b4b4'), s: hex('#6b5130') }, '#2a0a08');
+// the middle (alpha 254) takes the star's colour in the inventory
+sprite('firework_star', [
+  '', '',
+  '......kkkk......',
+  '....kkGGGGkk....',
+  '...kGGooooGGk...',
+  '...kGooOOooGk...',
+  '..kGooOOOOooGk..',
+  '..kGoOOOOOOoGk..',
+  '..kGoOOOOOOoGk..',
+  '..kGooOOOOooGk..',
+  '...kGooOOooGk...',
+  '...kGGooooGGk...',
+  '....kkGGGGkk....',
+  '......kkkk......',
+], { k: hex('#3a3a3a'), G: hex('#5e5e5e'), o: [200, 200, 200, 254], O: [255, 255, 255, 254] }, '#161616');
+
 export function getItemSprite(name: string): Img | null {
   const f = sprites[name];
   return f ? f() : null;
