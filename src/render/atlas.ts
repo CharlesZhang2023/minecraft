@@ -8,6 +8,8 @@ export class BlockAtlas {
   texture: WebGLTexture;
   layers: number;
   private anim: { layer: number; frames: Img[]; speed: number }[] = [];
+  /** Each layer's average colour (its 1x1 mip level), r g b a in 0..255. */
+  private averages: [number, number, number, number][] = [];
 
   constructor(private gl: GL, extra: { name: string; img: Img }[] = []) {
     // extra textures (item sprites used as particles, etc.)
@@ -69,6 +71,13 @@ export class BlockAtlas {
       cur = next;
       size = ns;
     }
+    this.averages[layer] = [cur[0], cur[1], cur[2], cur[3]];
+  }
+
+  /** The average colour of a texture, by name. */
+  average(name: string): [number, number, number, number] | undefined {
+    const i = TEXTURES.indexOf(name);
+    return i < 0 ? undefined : this.averages[i];
   }
 
   tick(ticks: number) {

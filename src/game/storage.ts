@@ -36,6 +36,8 @@ export interface WorldMeta {
   generatorVersion?: number;
   /** Let players other than the host use commands. */
   cheatsForAll?: boolean;
+  /** Game rule keepInventory: players keep their items and experience when they die. */
+  keepInventory?: boolean;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;

@@ -24,6 +24,9 @@ export interface Options {
   skin: string; // a built-in skin's id, or 'custom' for the imported one below
   customSkin: string; // an imported skin as a 64x64 PNG data URL ('' = none)
   customSlim: boolean; // the imported skin has slim (3-pixel) arms
+  lod: boolean; // distant terrain: low-detail land out past the render distance
+  lodDistance: number; // how far it reaches, in chunks
+  lodQuality: number; // 0 low, 1 medium, 2 high: how soon detail falls off with distance
 }
 
 export const DEFAULT_OPTIONS: Options = {
@@ -50,6 +53,9 @@ export const DEFAULT_OPTIONS: Options = {
   skin: 'steve',
   customSkin: '',
   customSlim: false,
+  lod: !device.touch,
+  lodDistance: 64,
+  lodQuality: 1,
 };
 
 /** A name for players who haven't picked one: Steve or Alex with a number. */
@@ -69,7 +75,7 @@ export function myLook(o: Options): { look: string; slim: boolean } {
 }
 
 /** Phones get lighter defaults: a shorter view distance, plain leaves, and a bit more look sensitivity. */
-const TOUCH_DEFAULTS: Partial<Options> = { renderDistance: 5, fancyLeaves: false, particles: 1, sensitivity: 0.6 };
+const TOUCH_DEFAULTS: Partial<Options> = { renderDistance: 5, fancyLeaves: false, particles: 1, sensitivity: 0.6, lodDistance: 32 };
 
 export function loadOptions(): Options {
   try {

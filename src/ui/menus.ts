@@ -300,6 +300,7 @@ export class CreateWorldScreen extends Screen {
   name!: TextField;
   seed!: TextField;
   mode = 0; // 0 survival, 1 hardcore, 2 creative
+  keepInventory = false;
   constructor(ui: UI, public parent: Screen) { super(ui); }
   override init() {
     const W = this.gui.w, H = this.gui.h;
@@ -308,8 +309,9 @@ export class CreateWorldScreen extends Screen {
     this.seed = new TextField(this.ui, W / 2 - 100, 110, 200, 20, this.seed?.value ?? '', 32, 'Leave blank for a random seed');
     const modes = ['Survival', 'Hardcore', 'Creative'];
     const modeBtn = new Button(this.ui, W / 2 - 75, 145, 150, 20, () => `Game Mode: ${modes[this.mode]}`, () => (this.mode = (this.mode + 1) % 3));
+    const keepBtn = new Button(this.ui, W / 2 - 75, 182, 150, 20, () => `Keep Inventory: ${this.keepInventory ? 'ON' : 'OFF'}`, () => (this.keepInventory = !this.keepInventory));
     this.widgets = [
-      this.name, this.seed, modeBtn,
+      this.name, this.seed, modeBtn, keepBtn,
       new Button(this.ui, W / 2 - 155, H - 28, 150, 20, 'Create New World', () => this.create()),
       new Button(this.ui, W / 2 + 5, H - 28, 150, 20, 'Cancel', () => this.ui.open(this.parent)),
     ];
@@ -321,6 +323,7 @@ export class CreateWorldScreen extends Screen {
     const meta: WorldMeta = {
       id: 'w' + now.toString(36), name: this.name.value.trim() || 'New World', seed, seedText: text || String(seed),
       gameMode: this.mode === 2 ? 1 : 0, hardcore: this.mode === 1, created: now, lastPlayed: now, time: 0, generatorVersion: GENERATOR_VERSION,
+      keepInventory: this.keepInventory,
     };
     await Storage.saveWorld(meta);
     await playWorld(this.ui, meta);
@@ -420,6 +423,7 @@ export class OptionsScreen extends Screen {
     const row = () => { const r = y; y += 24; return r; };
     const onoff = (b: boolean) => (b ? 'ON' : 'OFF');
     const r1 = row(), r2 = row(), r3 = row(), r4 = row(), r5 = row(), r6 = row(), r7 = row();
+    const host = this.game.world && !this.game.panorama && !this.game.remote ? this.game.server : null;
     this.widgets = [
       new Slider(this.ui, x0, r1, 150, 20, (o.fov - 30) / 80, (v) => `FOV: ${Math.round(30 + v * 80) === 70 ? 'Normal' : Math.round(30 + v * 80) === 110 ? 'Quake Pro' : Math.round(30 + v * 80)}`, (v) => { o.fov = Math.round(30 + v * 80); save(); }),
       new Button(this.ui, x1, r1, 150, 20, () => `Difficulty: ${['Peaceful', 'Easy', 'Normal', 'Hard'][o.difficulty]}`, () => { if (this.game.meta?.hardcore) return; o.difficulty = (o.difficulty + 1) % 4; save(); }),
@@ -434,15 +438,55 @@ export class OptionsScreen extends Screen {
       new Button(this.ui, x0, r6, 150, 20, () => `Particles: ${['All', 'Decreased', 'Minimal'][o.particles]}`, () => { o.particles = (o.particles + 1) % 3; save(); }),
       new Button(this.ui, x1, r6, 150, 20, () => `Invert Mouse: ${onoff(o.invertY)}`, () => { o.invertY = !o.invertY; save(); }),
       new Button(this.ui, x0, r7, 150, 20, () => `Show FPS: ${onoff(o.showFps)}`, () => { o.showFps = !o.showFps; save(); }),
-      new Button(this.ui, x1, r7, 150, 20, 'Play Music Now', () => { this.game.audio.init(); this.game.audio.playPiece(); }),
-      new Button(this.ui, x0, H - 28, 150, 20, 'Skin...', () => this.ui.open(new SkinScreen(this.ui, this))),
-      new Button(this.ui, x1, H - 28, 150, 20, 'Done', () => this.ui.open(this.parent)),
+      // in your own world the last slot is the keepInventory rule (items stay with you when you die)
+      host
+        ? new Button(this.ui, x1, r7, 150, 20, () => `Keep Inventory: ${onoff(host.keepInventory)}`, () => { host.keepInventory = !host.keepInventory; })
+        : new Button(this.ui, x1, r7, 150, 20, 'Play Music Now', () => { this.game.audio.init(); this.game.audio.playPiece(); }),
+      new Button(this.ui, x0, H - 28, 98, 20, 'Skin...', () => this.ui.open(new SkinScreen(this.ui, this))),
+      new Button(this.ui, W / 2 - 51, H - 28, 102, 20, 'Distant Terrain...', () => this.ui.open(new DistantTerrainScreen(this.ui, this))),
+      new Button(this.ui, W / 2 + 57, H - 28, 98, 20, 'Done', () => this.ui.open(this.parent)),
     ];
   }
   override render(ctx: Ctx, mx: number, my: number) {
     if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
     else this.gui.dirtBackground(ctx);
     this.gui.textCenter(ctx, 'Options', this.gui.w / 2, 15, '#FFFFFF');
+    super.render(ctx, mx, my);
+  }
+  override key(e: KeyboardEvent) {
+    if (e.code === 'Escape') { this.ui.open(this.parent); return true; }
+    return super.key(e);
+  }
+}
+
+/** Distant terrain: low-detail land past the render distance, made from the world seed (like the Distant Horizons mod). */
+export class DistantTerrainScreen extends Screen {
+  constructor(ui: UI, public parent: Screen) { super(ui); }
+  override pausesGame = true;
+  override init() {
+    const W = this.gui.w, H = this.gui.h, x = W / 2 - 100;
+    const o = this.game.options;
+    const save = () => this.game.saveOptions();
+    const STEPS = [16, 24, 32, 48, 64, 96, 128, 192, 256];
+    const n = STEPS.length - 1;
+    const at = Math.max(0, STEPS.findIndex((s) => s >= o.lodDistance));
+    let y = Math.max(40, H / 4);
+    const row = () => { const r = y; y += 24; return r; };
+    this.widgets = [
+      new Button(this.ui, x, row(), 200, 20, () => `Distant Terrain: ${o.lod ? 'ON' : 'OFF'}`, () => { o.lod = !o.lod; save(); }),
+      new Slider(this.ui, x, row(), 200, 20, at / n, (v) => `Distance: ${STEPS[Math.round(v * n)]} chunks`, (v) => { o.lodDistance = STEPS[Math.round(v * n)]; save(); }, n),
+      new Button(this.ui, x, row(), 200, 20, () => `Detail: ${['Low', 'Medium', 'High'][o.lodQuality] ?? 'Medium'}`, () => { o.lodQuality = (o.lodQuality + 1) % 3; save(); }),
+      new Button(this.ui, x, H - 28, 200, 20, 'Done', () => this.ui.open(this.parent)),
+    ];
+  }
+  override render(ctx: Ctx, mx: number, my: number) {
+    if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
+    else this.gui.dirtBackground(ctx);
+    const W = this.gui.w;
+    this.gui.textCenter(ctx, 'Distant Terrain', W / 2, 15, '#FFFFFF');
+    const lines = ['Low-detail land out past your render distance,', 'made on this device from the world seed.', 'Changes to far-away land are not shown in it.'];
+    const y0 = Math.max(40, this.gui.h / 4) + 76;
+    lines.forEach((l, i) => this.gui.textCenter(ctx, l, W / 2, y0 + i * 10, '#A0A0A0'));
     super.render(ctx, mx, my);
   }
   override key(e: KeyboardEvent) {

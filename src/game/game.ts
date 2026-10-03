@@ -363,7 +363,7 @@ export class Game {
       sp.send({ t: 'death', msg });
       this.inDim(this.dims.get(sp.dim)!, () => {
         if (this.meta?.hardcore) p.setGameMode(GameMode.Spectator);
-        if (!p.creative) {
+        if (!p.creative && !this.keepInventory) {
           for (const s of [...p.inventory.main, ...p.inventory.armor]) if (s) this.dropItem(p.x, p.y + 1, p.z, s, true);
           p.inventory.clear();
         }
@@ -401,6 +401,16 @@ export class Game {
     this.say(`<${sp.name}> ${msg}`);
   }
 
+  /** Game rule keepInventory: nothing is dropped on death, and experience is kept. */
+  get keepInventory() {
+    return !!this.meta?.keepInventory;
+  }
+  set keepInventory(v: boolean) {
+    if (!this.meta) return;
+    this.meta.keepInventory = v;
+    this.say(`§7Gamerule keepInventory is now set to: ${v}`);
+  }
+
   say(msg: string) {
     for (const p of this.players) p.send({ t: 'chat', msg });
   }
@@ -414,7 +424,7 @@ export class Game {
       p.setGameMode(GameMode.Spectator);
       return;
     }
-    p.respawn();
+    p.respawn(this.keepInventory);
     if (sp.dim !== 'overworld') this.travel(sp, 'overworld', true);
     else sp.pendingArrival = { x: p.x, y: p.y, z: p.z, toSpawn: true };
   }

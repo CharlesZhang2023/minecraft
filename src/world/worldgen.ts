@@ -92,25 +92,82 @@ export class WorldGen {
     if (cached) return cached;
     const g = new Float32Array(GX * GX * GY);
     for (let gx = 0; gx < GX; gx++)
-      for (let gz = 0; gz < GX; gz++) {
-        const wx = cx * 16 + gx * 4, wz = cz * 16 + gz * 4;
-        const p = this.params(wx, wz);
-        for (let gy = 0; gy < GY; gy++) {
-          const y = gy * 8;
-          let d = p.base - y;
-          // only bother with 3D noise near the surface; weaker above the base height so
-          // overhangs form cliffs rather than floating islands
-          if (Math.abs(d) < p.amp * 1.6 + 8) {
-            const n = this.d3.sample3(wx / 56, y / 36, wz / 56) * p.amp * 1.6;
-            d += d < 0 ? n * Math.max(0.25, 1 + d / (p.amp * 2.5)) : n;
-          }
-          if (y > 250) d = -100;
-          g[(gx * GX + gz) * GY + gy] = d;
-        }
-      }
+      for (let gz = 0; gz < GX; gz++) this.gridColumn(cx * 16 + gx * 4, cz * 16 + gz * 4, g, (gx * GX + gz) * GY);
     if (this.gridCache.size > 256) this.gridCache.clear();
     this.gridCache.set(key, g);
     return g;
+  }
+
+  /** One column of the density grid (33 samples, 8 blocks apart) at a world position on the 4-block grid. */
+  private gridColumn(wx: number, wz: number, out: Float32Array, o: number) {
+    const p = this.params(wx, wz);
+    for (let gy = 0; gy < GY; gy++) {
+      const y = gy * 8;
+      let d = p.base - y;
+      // only bother with 3D noise near the surface; weaker above the base height so
+      // overhangs form cliffs rather than floating islands
+      if (Math.abs(d) < p.amp * 1.6 + 8) {
+        const n = this.d3.sample3(wx / 56, y / 36, wz / 56) * p.amp * 1.6;
+        d += d < 0 ? n * Math.max(0.25, 1 + d / (p.amp * 2.5)) : n;
+      }
+      if (y > 250) d = -100;
+      out[o + gy] = d;
+    }
+  }
+
+  /**
+   * The ground on a regular grid, worked out straight from the noise without generating any chunk (for distant
+   * low-detail terrain). Sample (i, k) is at (x0 + i * step, z0 + k * step) for i, k in [0, n): the height of the top
+   * solid block, the biome and the top block, as `generate` makes them before caves, trees and structures.
+   */
+  surfaceGrid(x0: number, z0: number, step: number, n: number): { height: Int16Array; biome: Uint8Array; top: Uint16Array } {
+    const height = new Int16Array(n * n), biome = new Uint8Array(n * n), top = new Uint16Array(n * n);
+    // density columns on the 4-block grid, each followed by the highest grid level that is solid
+    const cols = new Map<number, Float32Array>();
+    const col = (wx: number, wz: number) => {
+      const k = (wx / 4 + 0x100000) * 0x200000 + (wz / 4 + 0x100000);
+      let c = cols.get(k);
+      if (!c) {
+        c = new Float32Array(GY + 1);
+        this.gridColumn(wx, wz, c, 0);
+        let t = -1;
+        for (let gy = GY - 1; gy >= 0; gy--) if (c[gy] > 0) { t = gy; break; }
+        c[GY] = t;
+        cols.set(k, c);
+      }
+      return c;
+    };
+    for (let k = 0; k < n; k++)
+      for (let i = 0; i < n; i++) {
+        const x = x0 + i * step, z = z0 + k * step;
+        const gx = Math.floor(x / 4) * 4, gz = Math.floor(z / 4) * 4;
+        const fx = (x - gx) / 4, fz = (z - gz) / 4;
+        // the same trilinear blend as `density` (corners a: x z, b: x+1 z, c: x z+1, d: x+1 z+1)
+        const A = col(gx, gz), Bc = fx ? col(gx + 4, gz) : A, C = fz ? col(gx, gz + 4) : A, D = fx && fz ? col(gx + 4, gz + 4) : fx ? Bc : C;
+        let sh = 0;
+        const hi = Math.max(A[GY], Bc[GY], C[GY], D[GY]);
+        for (let y = Math.min(250, hi * 8 + 7); y > 0; y--) {
+          const gy = y >> 3, fy = (y & 7) / 8;
+          const a = A[gy] + (A[gy + 1] - A[gy]) * fy;
+          const b = Bc[gy] + (Bc[gy + 1] - Bc[gy]) * fy;
+          const c = C[gy] + (C[gy + 1] - C[gy]) * fy;
+          const d = D[gy] + (D[gy + 1] - D[gy]) * fy;
+          const ab = a + (b - a) * fx;
+          const cd = c + (d - c) * fx;
+          if (ab + (cd - ab) * fz > 0) { sh = y; break; }
+        }
+        const j = k * n + i;
+        const bm = this.biomeAt(x, z, sh, this.params(x, z));
+        height[j] = sh;
+        biome[j] = bm;
+        top[j] = this.topBlock(bm, sh, x, z);
+      }
+    return { height, biome, top };
+  }
+
+  /** The trees `generate` grows from one chunk, written through `set` (which may get blocks outside the chunk). */
+  treesOf(cx: number, cz: number, set: Setter) {
+    this.placeTrees(cx, cz, set);
   }
 
   /** Trilinear density lookup (same arithmetic used for filling and for queries). */

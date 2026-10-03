@@ -22,7 +22,7 @@ export class Commands {
     try {
       switch (cmd) {
         case 'help':
-          out.push('§eAvailable commands:', '/gamemode <survival|creative|adventure|spectator>', '/time <set|add> <day|night|noon|midnight|value>', '/weather <clear|rain|thunder>', '/tp <x> <y> <z>', '/give <item> [count]', '/summon <mob> [x y z]', '/kill', '/difficulty <peaceful|easy|normal|hard>', '/seed', '/spawnpoint', '/setblock <x> <y> <z> <block>', '/clear', '/xp <amount>', '/gamerule doDaylightCycle <true|false>', '/effect <effect|clear> [seconds] [amplifier]', '/locate stronghold', '/dimension <overworld|nether|end>', '/enchant <enchantment> [level]', '/heal');
+          out.push('§eAvailable commands:', '/gamemode <survival|creative|adventure|spectator>', '/time <set|add> <day|night|noon|midnight|value>', '/weather <clear|rain|thunder>', '/tp <x> <y> <z>', '/give <item> [count]', '/summon <mob> [x y z]', '/kill', '/difficulty <peaceful|easy|normal|hard>', '/seed', '/spawnpoint', '/setblock <x> <y> <z> <block>', '/clear', '/xp <amount>', '/gamerule <doDaylightCycle|keepInventory> [true|false]', '/effect <effect|clear> [seconds] [amplifier]', '/locate stronghold', '/dimension <overworld|nether|end>', '/enchant <enchantment> [level]', '/heal');
           break;
         case 'gamemode':
         case 'gm': {
@@ -156,10 +156,22 @@ export class Commands {
           else p.addXp(parseInt(args[0] ?? '0') || 0);
           out.push(`Gave ${args[0]} experience to Player`);
           break;
-        case 'gamerule':
-          if (args[0] === 'doDaylightCycle') { g.doDaylightCycle = args[1] !== 'false'; out.push(`Gamerule doDaylightCycle is now set to: ${g.doDaylightCycle}`); }
-          else throw new Error('Unknown gamerule');
+        case 'gamerule': {
+          const rules: Record<string, [() => boolean, (v: boolean) => void]> = {
+            doDaylightCycle: [() => g.doDaylightCycle, (v) => (g.doDaylightCycle = v)],
+            keepInventory: [() => g.keepInventory, (v) => (g.keepInventory = v)],
+          };
+          const name = Object.keys(rules).find((r) => r.toLowerCase() === (args[0] ?? '').toLowerCase());
+          if (!name) throw new Error(args[0] ? `Unknown gamerule '${args[0]}'. Try: ${Object.keys(rules).join(', ')}` : `Usage: /gamerule <${Object.keys(rules).join('|')}> [true|false]`);
+          const [get, set] = rules[name];
+          const v = (args[1] ?? '').toLowerCase();
+          if (!v) { out.push(`Gamerule ${name} is currently set to: ${get()}`); break; }
+          if (v !== 'true' && v !== 'false') throw new Error(`Invalid value '${args[1]}': expected true or false`);
+          set(v === 'true');
+          // keepInventory tells everyone itself
+          if (name !== 'keepInventory') out.push(`Gamerule ${name} is now set to: ${get()}`);
           break;
+        }
         case 'effect': {
           // /effect <effect|clear> [seconds] [amplifier]
           const name = (args[0] ?? '').replace(/^minecraft:/, '');

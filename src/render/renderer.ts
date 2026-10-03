@@ -5,6 +5,7 @@ import { BlockAtlas } from './atlas';
 import { Mat4, mat4, perspective, lookDir, multiply, invert, identity } from '../math';
 import type { Chunk } from '../world/world';
 import type { MeshResult } from '../world/mesher';
+import type { LodDraw } from '../world/lod';
 import { Random } from '../noise';
 import { Img } from './pixels';
 
@@ -52,6 +53,11 @@ export interface EnvState {
 
 const MAX_QUADS = 1 << 18;
 
+/** A distant-terrain tile's vertex buffer. */
+interface LodGPU { vao: WebGLVertexArrayObject; waterVao: WebGLVertexArrayObject; vbo: WebGLBuffer; bytes: number }
+/** Chunks across the distant-terrain mask (centred on the player, wrapping). */
+const LOD_MASK = 64;
+
 export class Renderer {
   gl: GL;
   atlas!: BlockAtlas;
@@ -64,6 +70,13 @@ export class Renderer {
   cloudProg: Program;
   lineProg: Program;
   overlayProg: Program;
+  lodProg: Program;
+  lodBytes = 0;
+  drawnLod = 0;
+  private lodMaskTex: WebGLTexture;
+  private lodProj = mat4();
+  private lodViewProj = mat4();
+  private lodPlanes = new Float32Array(24);
   indexBuffer: WebGLBuffer;
   proj: Mat4 = mat4();
   view: Mat4 = mat4();
@@ -103,6 +116,12 @@ export class Renderer {
     this.cloudProg = program(gl, SH.CLOUD_VS, SH.CLOUD_FS);
     this.lineProg = program(gl, SH.LINE_VS, SH.LINE_FS);
     this.overlayProg = program(gl, SH.OVERLAY_VS, SH.OVERLAY_FS);
+    this.lodProg = program(gl, SH.LOD_VS, SH.LOD_FS);
+    this.lodMaskTex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, this.lodMaskTex);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8, LOD_MASK, LOD_MASK);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 
     // shared quad index buffer
     const idx = new Uint32Array(MAX_QUADS * 6);
@@ -267,34 +286,12 @@ export class Renderer {
     }
     multiply(this.viewProj, this.proj, this.view);
     invert(this.invViewProj, this.viewProj);
-    this.extractPlanes();
-  }
-
-  private extractPlanes() {
-    const m = this.viewProj, p = this.planes;
-    const rows = [
-      [m[3] + m[0], m[7] + m[4], m[11] + m[8], m[15] + m[12]],
-      [m[3] - m[0], m[7] - m[4], m[11] - m[8], m[15] - m[12]],
-      [m[3] + m[1], m[7] + m[5], m[11] + m[9], m[15] + m[13]],
-      [m[3] - m[1], m[7] - m[5], m[11] - m[9], m[15] - m[13]],
-      [m[3] + m[2], m[7] + m[6], m[11] + m[10], m[15] + m[14]],
-      [m[3] - m[2], m[7] - m[6], m[11] - m[10], m[15] - m[14]],
-    ];
-    rows.forEach((r, i) => {
-      const l = Math.hypot(r[0], r[1], r[2]);
-      p[i * 4] = r[0] / l; p[i * 4 + 1] = r[1] / l; p[i * 4 + 2] = r[2] / l; p[i * 4 + 3] = r[3] / l;
-    });
+    extractPlanes(this.viewProj, this.planes);
   }
 
   /** AABB in camera-relative coordinates */
   boxVisible(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): boolean {
-    const p = this.planes;
-    for (let i = 0; i < 6; i++) {
-      const a = p[i * 4], b = p[i * 4 + 1], c = p[i * 4 + 2], d = p[i * 4 + 3];
-      const x = a > 0 ? x1 : x0, y = b > 0 ? y1 : y0, z = c > 0 ? z1 : z0;
-      if (a * x + b * y + c * z + d < 0) return false;
-    }
-    return true;
+    return boxInPlanes(this.planes, x0, y0, z0, x1, y1, z1);
   }
 
   chunkVisible(cx: number, cz: number) {
@@ -476,6 +473,103 @@ export class Renderer {
     return drawn;
   }
 
+  // ------------------------------------------------------------------ distant terrain
+  /** A tile's quads (16 bytes each, see LodTileMesh); the water quads follow the `opaque` ground quads. */
+  uploadLod(data: ArrayBuffer, opaque: number): LodGPU {
+    const gl = this.gl;
+    const vbo = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    // one instance per quad; WebGL2 has no base instance, so the water quads get a second VAO pointing past the ground
+    const vaoAt = (first: number) => {
+      const vao = gl.createVertexArray()!, o = first * 16;
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribIPointer(0, 4, gl.SHORT, 16, o);
+      gl.vertexAttribDivisor(0, 1);
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribIPointer(1, 2, gl.UNSIGNED_SHORT, 16, o + 8);
+      gl.vertexAttribDivisor(1, 1);
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, 16, o + 12);
+      gl.vertexAttribDivisor(2, 1);
+      gl.bindVertexArray(null);
+      return vao;
+    };
+    this.lodBytes += data.byteLength;
+    return { vao: vaoAt(0), waterVao: vaoAt(opaque), vbo, bytes: data.byteLength };
+  }
+
+  freeLod(m: unknown) {
+    const g = m as LodGPU, gl = this.gl;
+    gl.deleteVertexArray(g.vao);
+    gl.deleteVertexArray(g.waterVao);
+    gl.deleteBuffer(g.vbo);
+    this.lodBytes -= g.bytes;
+  }
+
+  /**
+   * Distant terrain, drawn after the sky and before the chunks, with its own (much deeper) projection. `mask` marks the
+   * chunks drawn in full (LOD_MASK x LOD_MASK, indexed by chunk coordinates modulo LOD_MASK, around chunk mcx, mcz):
+   * distant terrain is hidden there. `snow` is the colour of snow on tree tops (0..255). The depth buffer is cleared afterwards, so the chunks always draw over it.
+   */
+  drawLod(tiles: readonly LodDraw[], mask: Uint8Array, mcx: number, mcz: number, far: number, snow: [number, number, number]) {
+    const gl = this.gl, cam = this.cam, p = this.lodProg;
+    perspective(this.lodProj, (cam.fov * Math.PI) / 180, this.width / this.height, 8, far);
+    multiply(this.lodViewProj, this.lodProj, this.view);
+    extractPlanes(this.lodViewProj, this.lodPlanes);
+    const masked = (cx: number, cz: number) => Math.abs(cx - mcx) < LOD_MASK / 2 && Math.abs(cz - mcz) < LOD_MASK / 2 && mask[(cz & (LOD_MASK - 1)) * LOD_MASK + (cx & (LOD_MASK - 1))] > 0;
+    const covered = (t: LodDraw) => {
+      if (t.size > 256) return false;
+      for (let cz = t.z >> 4; cz < (t.z + t.size) >> 4; cz++) for (let cx = t.x >> 4; cx < (t.x + t.size) >> 4; cx++) if (!masked(cx, cz)) return false;
+      return true;
+    };
+    const vis = tiles.filter((t) => t.mesh && boxInPlanes(this.lodPlanes, t.x - cam.x, t.minY - cam.y, t.z - cam.z, t.x + t.size - cam.x, t.maxY - cam.y, t.z + t.size - cam.z) && !covered(t));
+    this.drawnLod = vis.length;
+    if (!vis.length) return;
+    gl.useProgram(p.prog);
+    gl.uniformMatrix4fv(p.u.u_viewProj, false, this.lodViewProj);
+    const pixel = (2 * Math.tan((cam.fov * Math.PI) / 360)) / this.height;
+    gl.uniform1f(p.u.u_pixelSize, pixel);
+    gl.uniform3f(p.u.u_snow, snow[0] / 255, snow[1] / 255, snow[2] / 255);
+    this.setCommonUniforms(p);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.lodMaskTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, LOD_MASK, LOD_MASK, gl.RED, gl.UNSIGNED_BYTE, mask);
+    gl.uniform1i(p.u.u_mask, 1);
+    gl.uniform2i(p.u.u_maskCenter, mcx, mcz);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
+    gl.enable(gl.CULL_FACE);
+    gl.cullFace(gl.BACK);
+    const each = (water: boolean) => {
+      gl.uniform1f(p.u.u_water, water ? 1 : 0);
+      for (const t of vis) {
+        const n = water ? t.water : t.opaque;
+        if (!n) continue;
+        gl.uniform3f(p.u.u_offset, t.x - cam.x, -cam.y, t.z - cam.z);
+        gl.uniform2i(p.u.u_tileChunk, t.x >> 4, t.z >> 4);
+        gl.uniform2i(p.u.u_tileCell, Math.floor(t.x / t.cell), Math.floor(t.z / t.cell));
+        gl.uniform1f(p.u.u_cell, t.cell);
+        const m = t.mesh as LodGPU;
+        gl.bindVertexArray(water ? m.waterVao : m.vao);
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n);
+      }
+    };
+    gl.disable(gl.BLEND);
+    each(false);
+    gl.enable(gl.BLEND);
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    each(true);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+  }
+
   /** Draw the dynamic mesh (particles, items, falling blocks...) with the block atlas. */
   drawDyn(mesh: DynMesh, opts: { blend?: boolean; model?: Mat4; overlay?: [number, number, number, number]; cull?: boolean; fullbright?: boolean; depthTest?: boolean; alphaCut?: number; viewProj?: Mat4; wrap?: boolean } = {}) {
     if (mesh.count === 0) return;
@@ -612,6 +706,30 @@ export class Renderer {
 }
 
 const IDENT = mat4();
+
+function extractPlanes(m: Mat4, p: Float32Array) {
+  const rows = [
+    [m[3] + m[0], m[7] + m[4], m[11] + m[8], m[15] + m[12]],
+    [m[3] - m[0], m[7] - m[4], m[11] - m[8], m[15] - m[12]],
+    [m[3] + m[1], m[7] + m[5], m[11] + m[9], m[15] + m[13]],
+    [m[3] - m[1], m[7] - m[5], m[11] - m[9], m[15] - m[13]],
+    [m[3] + m[2], m[7] + m[6], m[11] + m[10], m[15] + m[14]],
+    [m[3] - m[2], m[7] - m[6], m[11] - m[10], m[15] - m[14]],
+  ];
+  rows.forEach((r, i) => {
+    const l = Math.hypot(r[0], r[1], r[2]);
+    p[i * 4] = r[0] / l; p[i * 4 + 1] = r[1] / l; p[i * 4 + 2] = r[2] / l; p[i * 4 + 3] = r[3] / l;
+  });
+}
+
+function boxInPlanes(p: Float32Array, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) {
+  for (let i = 0; i < 6; i++) {
+    const a = p[i * 4], b = p[i * 4 + 1], c = p[i * 4 + 2], d = p[i * 4 + 3];
+    const x = a > 0 ? x1 : x0, y = b > 0 ? y1 : y0, z = c > 0 ? z1 : z0;
+    if (a * x + b * y + c * z + d < 0) return false;
+  }
+  return true;
+}
 
 function makeCloudMap(): Uint8Array {
   const m = new Uint8Array(256 * 256);

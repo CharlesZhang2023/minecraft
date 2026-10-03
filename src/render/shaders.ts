@@ -306,3 +306,93 @@ void main() {
   float v = smoothstep(0.35, 0.85, length(d) * 1.2) * u_vignette;
   o = vec4(mix(u_color.rgb, vec3(0.0), v / max(u_color.a + v, 1e-4)), max(u_color.a, v));
 }`;
+
+// Distant terrain (LOD tiles): flat-coloured boxes lit by the sky, hidden wherever a real chunk is drawn.
+export const LOD_VS = /* glsl */ `#version 300 es
+// one instance per quad (see LodTileMesh): its corners are made here
+layout(location=0) in ivec4 a_box; // x, z, y0, y1 (y in 1/8 blocks)
+layout(location=1) in uvec2 a_quad; // length along the face, face | lights << 8
+layout(location=2) in vec4 a_col;
+uniform mat4 u_viewProj;
+uniform vec3 u_offset; // tile corner relative to the camera
+uniform float u_cell;
+out vec4 v_col;
+out vec3 v_dist;
+out vec2 v_cellPos;
+out float v_light;
+flat out int v_face;
+flat out int v_snow; // a snowy top (its colour is what's under the snow)
+// unit-box corners per face, counter-clockwise seen from outside (as the chunk mesher)
+const vec3 CORNERS[24] = vec3[24](
+  vec3(0,0,0), vec3(0,0,1), vec3(0,1,1), vec3(0,1,0),
+  vec3(1,0,1), vec3(1,0,0), vec3(1,1,0), vec3(1,1,1),
+  vec3(0,0,0), vec3(1,0,0), vec3(1,0,1), vec3(0,0,1),
+  vec3(0,1,0), vec3(0,1,1), vec3(1,1,1), vec3(1,1,0),
+  vec3(1,0,0), vec3(0,0,0), vec3(0,1,0), vec3(1,1,0),
+  vec3(0,0,1), vec3(1,0,1), vec3(1,1,1), vec3(0,1,1));
+const int TRI[6] = int[6](0, 1, 2, 0, 2, 3);
+void main() {
+  int face = int(a_quad.y & 7u); // (the low byte also has the snow and ledge bits)
+  vec3 c = CORNERS[face * 4 + TRI[gl_VertexID]];
+  float len = float(a_quad.x);
+  vec3 lo = vec3(float(a_box.x), float(a_box.z) / 8.0, float(a_box.y));
+  vec3 size = face <= 1 ? vec3(0.0, float(a_box.w - a_box.z) / 8.0, len)
+            : face <= 3 ? vec3(len, 0.0, u_cell)
+            : vec3(len, float(a_box.w - a_box.z) / 8.0, 0.0);
+  vec3 local = lo + c * size;
+  vec3 p = local + u_offset;
+  gl_Position = u_viewProj * vec4(p, 1.0);
+  v_col = a_col;
+  v_dist = p;
+  uint lights = a_quad.y >> 8u;
+  v_light = float(c.y > 0.5 ? lights >> 4u : lights & 15u);
+  v_face = face;
+  v_snow = int((a_quad.y >> 3u) & 1u);
+  // a point just inside the cell this face belongs to (walls sit on the line between two cells)
+  vec2 n = face == 0 ? vec2(-1.0, 0.0) : face == 1 ? vec2(1.0, 0.0) : face == 4 ? vec2(0.0, -1.0) : face == 5 ? vec2(0.0, 1.0) : vec2(0.0);
+  v_cellPos = local.xz - n * 0.05;
+}`;
+
+export const LOD_FS = /* glsl */ `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D u_mask; // chunks drawn in full (64x64, wrapping)
+uniform ivec2 u_maskCenter;
+uniform ivec2 u_tileChunk; // tile corner in chunks
+uniform ivec2 u_tileCell; // tile corner in cells
+uniform float u_cell;
+uniform float u_water;
+uniform float u_pixelSize; // the height of a pixel one block from the camera
+uniform vec3 u_snow;
+${LIGHTING}
+${FOG}
+in vec4 v_col;
+in vec3 v_dist;
+in vec2 v_cellPos;
+in float v_light;
+flat in int v_face;
+flat in int v_snow;
+out vec4 o;
+void main() {
+  ivec2 c = u_tileChunk + ivec2(floor(v_cellPos / 16.0));
+  ivec2 rel = c - u_maskCenter;
+  if (abs(rel.x) < 32 && abs(rel.y) < 32 && texelFetch(u_mask, ivec2(int(mod(float(c.x), 64.0)), int(mod(float(c.y), 64.0))), 0).r > 0.5) discard;
+  float shade = v_face <= 1 ? 0.6 : v_face == 2 ? 0.5 : v_face == 3 ? 1.0 : 0.8;
+  // a little brightness noise per cell, so flat ground doesn't look painted
+  ivec2 cell = u_tileCell + ivec2(floor(v_cellPos / u_cell));
+  uint h = uint(cell.x) * 0x8da6b343u ^ uint(cell.y) * 0xd8163841u;
+  h = (h ^ (h >> 13u)) * 0x5bd1e995u;
+  h ^= h >> 15u;
+  float n = (float(h & 1023u) / 1023.0 - 0.5) * 0.07;
+  vec3 base = v_col.rgb;
+  if (v_snow == 1) {
+    // snow seen almost edge-on, or so far off that a cell's top is under a couple of pixels tall, makes white slivers
+    // that blink as the camera moves: it's left out there (we see what's under it), fading in as it faces us
+    float d = length(v_dist);
+    float sinUp = abs(v_dist.y) / d; // how steeply we look at the top
+    float tall = u_cell * sinUp / (d * u_pixelSize);
+    base = mix(base, u_snow, smoothstep(0.05, 0.12, sinUp) * smoothstep(0.75, 2.5, tall));
+  }
+  vec3 col = base * shade * (1.0 + n) * lightmap(v_light, 0.0);
+  o = vec4(applyFog(col, v_dist), u_water > 0.5 ? v_col.a : 1.0);
+}`;

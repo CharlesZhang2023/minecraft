@@ -2,6 +2,8 @@
 // (so walking feels instant), and tells the server what the player does each tick. Single-player starts a server
 // in this page and talks to it over a loopback connection; joining someone else's game uses WebRTC instead.
 import { Renderer, Camera } from '../render/renderer';
+import { LodManager } from '../world/lod';
+import { LOD_TEXTURES, type LodPalette } from '../world/lodgen';
 import { World, Dimension, TileEntity } from '../world/world';
 import { Player } from '../game/player';
 import { Input } from '../game/input';
@@ -132,6 +134,10 @@ export class Client {
   private torchFlickerDX = 0;
   titleYaw = 0;
   private uiCanvas: HTMLCanvasElement;
+  /** Distant terrain (the Distant Terrain option), built from the seed of the overworld we're in. */
+  lod: LodManager | null = null;
+  /** Which chunks around the camera are drawn in full (64x64, wrapping), so distant terrain stays out of their way. */
+  private lodMask = new Uint8Array(64 * 64);
 
   // ---- connection
   /** The simulation, when it runs in this page (single-player, or hosting). */
@@ -370,6 +376,7 @@ export class Client {
     conn?.close('quit');
     if (server) await server.close();
     this.dropWorld();
+    this.stopLod();
     this.player = null;
     this.entities = [];
     this.meta = null;
@@ -1038,6 +1045,24 @@ export class Client {
   }
 
   // ------------------------------------------------------------------ rendering
+  /** Start or stop distant terrain to match the option and the world; true when it's on here (the overworld). */
+  private syncLod(w: World): boolean {
+    if (!this.options.lod || this.panorama) { this.stopLod(); return false; }
+    if (w.dimension !== 'overworld') return false; // kept for the trip back
+    if (this.lod && this.lod.seed !== w.seed) this.stopLod();
+    if (!this.lod) {
+      const palette: LodPalette = {};
+      for (const n of LOD_TEXTURES) { const c = this.renderer.atlas.average(n); if (c) palette[n] = c; }
+      this.lod = new LodManager(w.seed, palette, { upload: (d, n) => this.renderer.uploadLod(d, n), free: (m) => this.renderer.freeLod(m) });
+    }
+    return true;
+  }
+
+  stopLod() {
+    this.lod?.destroy();
+    this.lod = null;
+  }
+
   render() {
     const r = this.renderer;
     const ctx = this.ctx;
@@ -1099,9 +1124,24 @@ export class Client {
     });
     const nv = p.effects.get('night_vision');
     env.nightVision = nv ? (nv.dur > 200 ? 1 : 0.7 + Math.sin(((nv.dur - t) * Math.PI) * 0.2) * 0.3) : 0;
+    // distant terrain: the fog moves out to where it ends (under water or in lava there's nothing to see that far)
+    const lodRange = this.options.lodDistance * 16;
+    const lod = this.syncLod(w) && !underwater && !inLava ? this.lod : null;
+    if (lod) {
+      lod.update(cam.x, cam.z, lodRange, [1.5, 2, 3][this.options.lodQuality] ?? 2, w.renderDistance * 16);
+      env.fogStart = Math.max(env.fogStart, lodRange * 0.3);
+      env.fogEnd = Math.max(env.fogEnd, lodRange);
+    }
     r.beginFrame(env);
     if (end) r.drawEndSky();
     else if (!nether) r.drawSky();
+    if (lod) {
+      const mcx = Math.floor(cam.x / 16), mcz = Math.floor(cam.z / 16), mask = this.lodMask;
+      mask.fill(0);
+      for (const c of w.chunks.values()) if (c.mesh && Math.abs(c.cx - mcx) < 32 && Math.abs(c.cz - mcz) < 32) mask[(c.cz & 63) * 64 + (c.cx & 63)] = 255;
+      const snow = this.renderer.atlas.average('snow') ?? [240, 250, 250];
+      r.drawLod(lod.draws(), mask, mcx, mcz, lodRange * 1.25 + 256, [snow[0], snow[1], snow[2]]);
+    } else r.drawnLod = 0;
     r.drawChunks(w.chunks.values(), 'opaque');
     this.entityRenderer.render(this, t);
     this.drawSelection();
@@ -1204,6 +1244,7 @@ export class Client {
       `${this.fps} fps (${this.frameMs.toFixed(1)} ms frame)`,
       `C: ${this.renderer.drawnChunks}/${chunks.filter((c) => c.mesh).length} D: ${w.renderDistance}, ${(this.renderer.chunkBytes / 1048576).toFixed(1)} MB meshes`,
       `E: ${this.entities.length}, P: ${this.particles!.list.length}`,
+      ...(this.lod ? [`LOD: ${this.renderer.drawnLod}/${this.lod.draws().length} tiles (${this.lod.wanted} wanted, ${this.lod.pending} building), ${(this.lod.bytes / 1048576).toFixed(1)} MB`] : []),
       '',
       `XYZ: ${p.x.toFixed(3)} / ${p.y.toFixed(5)} / ${p.z.toFixed(3)}`,
       `Block: ${bx} ${by} ${bz}`,

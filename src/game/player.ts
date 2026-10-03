@@ -309,7 +309,8 @@ export class Player extends LivingEntity {
     }
   }
 
-  respawn() {
+  /** Back to life at the spawn point; `keep` (the keepInventory rule) keeps the experience too. */
+  respawn(keep = false) {
     this.dead = false;
     this.health = this.maxHealth;
     this.food = 20;
@@ -320,9 +321,11 @@ export class Player extends LivingEntity {
     this.deathTime = 0;
     this.hurtTime = 0;
     this.fallDistance = 0;
-    this.xpLevel = 0;
-    this.xpProgress = 0;
-    this.xpTotal = 0;
+    if (!keep) {
+      this.xpLevel = 0;
+      this.xpProgress = 0;
+      this.xpTotal = 0;
+    }
     this.clearEffects();
     this.vx = this.vy = this.vz = 0;
     this.setPos(this.spawnX + 0.5, this.spawnY, this.spawnZ + 0.5);
