@@ -23,6 +23,12 @@ export interface Link {
   /** Called (again) whenever the connection is (re)made. */
   onOpen(fn: () => void): void;
   readonly connected: boolean;
+  /** Still trying to be connected (not stopped). */
+  readonly active: boolean;
+  /** Disconnect and stop trying. */
+  stop?(): void;
+  /** Connect with another pairing code or port (also after `stop`). */
+  retarget?(pair: string, port: number): void;
 }
 
 /** The dev server's bridge, over Vite's hot-reload socket. */
@@ -30,7 +36,7 @@ export function hmrLink(): Link | null {
   const hot = import.meta.hot;
   if (!hot) return null;
   return {
-    kind: 'dev', connected: true,
+    kind: 'dev', connected: true, active: true,
     send: (e, d) => hot.send(e, d as never),
     on: (e, fn) => hot.on(e, fn as never),
     onOpen: (fn) => hot.on('vite:ws:connect', fn),
@@ -41,16 +47,26 @@ export function hmrLink(): Link | null {
 export function localLink(pair: string, port: number): Link {
   const handlers = new Map<string, ((d: never) => void)[]>();
   const opens: (() => void)[] = [];
-  let ws: WebSocket | null = null, wait = 1000;
+  let ws: WebSocket | null = null, wait = 1000, active = true, gen = 0, retry: ReturnType<typeof setTimeout> | undefined;
+  const drop = () => {
+    gen++;
+    clearTimeout(retry);
+    if (ws) { ws.onclose = null; ws.close(); ws = null; }
+  };
   const link: Link = {
     kind: 'online',
     get connected() { return ws?.readyState === WebSocket.OPEN; },
+    get active() { return active; },
     send: (e, d) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ e, d })); },
     on: (e, fn) => { const l = handlers.get(e) ?? []; l.push(fn); handlers.set(e, l); },
     onOpen: (fn) => { opens.push(fn); },
+    stop: () => { active = false; drop(); },
+    retarget: (p, n) => { drop(); pair = p; port = n; active = true; wait = 1000; connect(); },
   };
   const connect = () => {
-    try { ws = new WebSocket(`ws://127.0.0.1:${port}/game?pair=${encodeURIComponent(pair)}`); } catch { setTimeout(connect, wait); return; }
+    const mine = gen;
+    const again = () => { if (active && mine === gen) retry = setTimeout(connect, wait); };
+    try { ws = new WebSocket(`ws://127.0.0.1:${port}/game?pair=${encodeURIComponent(pair)}`); } catch { again(); return; }
     ws.onopen = () => { wait = 1000; for (const f of opens) f(); };
     ws.onmessage = (m) => {
       let msg: { e?: string; d?: unknown };
@@ -58,7 +74,7 @@ export function localLink(pair: string, port: number): Link {
       for (const f of handlers.get(String(msg.e)) ?? []) f(msg.d as never);
     };
     // the bridge isn't running (yet), or stopped: keep trying, more slowly
-    ws.onclose = () => { ws = null; setTimeout(connect, wait); wait = Math.min(wait * 1.6, 15000); };
+    ws.onclose = () => { ws = null; again(); wait = Math.min(wait * 1.6, 15000); };
   };
   connect();
   return link;
@@ -145,11 +161,11 @@ export function attach(game: Client, link: Link) {
   if (link.kind === 'online') {
     let was = false;
     link.onOpen(() => {
-      if (!was) game.ui.chat.add('§dAn agent on this computer is connected to this tab (mc online). To stop it, close the tab or add #agent=off to the address.');
+      if (!was) game.ui.chat.add('§dAn agent on this computer is connected to this tab (mc online). To stop it: Options > More... > Agent > Disconnect, or close the tab.');
       was = true;
     });
     Events.hudRender.register(({ ctx, client, width }) => {
-      if (client.hideHud) return;
+      if (client.hideHud || !link.active) { if (!link.active) was = false; return; }
       const gui = client.ui.gui;
       const t = link.connected ? 'Agent' : 'Agent: waiting for mc online';
       const x = width - gui.font.width(t) - 3;

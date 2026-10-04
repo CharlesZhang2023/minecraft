@@ -10,6 +10,7 @@ import { getTexture } from '../render/textures';
 import { MultiplayerScreen, HostScreen } from './multiplayer';
 import { GENERATOR_VERSION } from '../world/worldgen';
 import { SkinScreen } from './skinscreen';
+import { AgentScreen } from './agentscreen';
 
 const SPLASHES = [
   'Now in JavaScript!', 'Also try Terraria!', '100% procedural!', 'Punching trees!', 'Blocky!', 'Made with WebGL 2!', 'Now with caves!',
@@ -437,7 +438,6 @@ export class OptionsScreen extends Screen {
     const row = () => { const r = y; y += 24; return r; };
     const onoff = (b: boolean) => (b ? 'ON' : 'OFF');
     const r1 = row(), r2 = row(), r3 = row(), r4 = row(), r5 = row(), r6 = row(), r7 = row();
-    const host = this.game.world && !this.game.panorama && !this.game.remote ? this.game.server : null;
     this.widgets = [
       new Slider(this.ui, x0, r1, 150, 20, (o.fov - 30) / 80, (v) => `FOV: ${Math.round(30 + v * 80) === 70 ? 'Normal' : Math.round(30 + v * 80) === 110 ? 'Quake Pro' : Math.round(30 + v * 80)}`, (v) => { o.fov = Math.round(30 + v * 80); save(); }),
       new Button(this.ui, x1, r1, 150, 20, () => `Difficulty: ${['Peaceful', 'Easy', 'Normal', 'Hard'][o.difficulty]}`, () => { if (this.game.meta?.hardcore) return; o.difficulty = (o.difficulty + 1) % 4; save(); }),
@@ -452,10 +452,8 @@ export class OptionsScreen extends Screen {
       new Button(this.ui, x0, r6, 150, 20, () => `Particles: ${['All', 'Decreased', 'Minimal'][o.particles]}`, () => { o.particles = (o.particles + 1) % 3; save(); }),
       new Button(this.ui, x1, r6, 150, 20, () => `Invert Mouse: ${onoff(o.invertY)}`, () => { o.invertY = !o.invertY; save(); }),
       new Button(this.ui, x0, r7, 150, 20, () => `Show FPS: ${onoff(o.showFps)}`, () => { o.showFps = !o.showFps; save(); }),
-      // in your own world the last slot is the keepInventory rule (items stay with you when you die)
-      host
-        ? new Button(this.ui, x1, r7, 150, 20, () => `Keep Inventory: ${onoff(host.keepInventory)}`, () => { host.keepInventory = !host.keepInventory; })
-        : new Button(this.ui, x1, r7, 150, 20, 'Play Music Now', () => { this.game.audio.init(); this.game.audio.playPiece(); }),
+      // the rest (game rules, music, the agent) is one screen further
+      new Button(this.ui, x1, r7, 150, 20, 'More...', () => this.ui.open(new MoreOptionsScreen(this.ui, this))),
       new Button(this.ui, x0, H - 28, 98, 20, 'Skin...', () => this.ui.open(new SkinScreen(this.ui, this))),
       new Button(this.ui, W / 2 - 51, H - 28, 102, 20, 'Distant Terrain...', () => this.ui.open(new DistantTerrainScreen(this.ui, this))),
       new Button(this.ui, W / 2 + 57, H - 28, 98, 20, 'Done', () => this.ui.open(this.parent)),
@@ -465,6 +463,35 @@ export class OptionsScreen extends Screen {
     if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
     else this.gui.dirtBackground(ctx);
     this.gui.textCenter(ctx, 'Options', this.gui.w / 2, 15, '#FFFFFF');
+    super.render(ctx, mx, my);
+  }
+  override key(e: KeyboardEvent) {
+    if (e.code === 'Escape') { this.ui.open(this.parent); return true; }
+    return super.key(e);
+  }
+}
+
+/** More options: the keepInventory rule (your own world), music on demand, and the agent connection. */
+export class MoreOptionsScreen extends Screen {
+  constructor(ui: UI, public parent: Screen) { super(ui); }
+  override pausesGame = true;
+  override init() {
+    const W = this.gui.w, H = this.gui.h, x = W / 2 - 100;
+    const host = this.game.world && !this.game.panorama && !this.game.remote ? this.game.server : null;
+    let y = Math.max(40, H / 4);
+    const row = () => { const r = y; y += 24; return r; };
+    this.widgets = [
+      // items stay with you when you die; a rule of the world, so only in your own
+      Object.assign(new Button(this.ui, x, row(), 200, 20, () => (host ? `Keep Inventory: ${host.keepInventory ? 'ON' : 'OFF'}` : 'Keep Inventory: in your own world'), () => { if (host) host.keepInventory = !host.keepInventory; }), { enabled: !!host }),
+      new Button(this.ui, x, row(), 200, 20, 'Play Music Now', () => { this.game.audio.init(); this.game.audio.playPiece(); }),
+      new Button(this.ui, x, row(), 200, 20, 'Agent...', () => this.ui.open(new AgentScreen(this.ui, this))),
+      new Button(this.ui, x, H - 28, 200, 20, 'Done', () => this.ui.open(this.parent)),
+    ];
+  }
+  override render(ctx: Ctx, mx: number, my: number) {
+    if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
+    else this.gui.dirtBackground(ctx);
+    this.gui.textCenter(ctx, 'More Options', this.gui.w / 2, 15, '#FFFFFF');
     super.render(ctx, mx, my);
   }
   override key(e: KeyboardEvent) {

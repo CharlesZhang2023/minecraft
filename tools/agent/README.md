@@ -19,16 +19,20 @@ node tools/agent/mc.mjs online          # starts the bridge on this computer, pr
                                         #   https://mc.iloveust.com/#agent=<token>
 ```
 
-Open that link in Chrome or Edge (the tab you play in). Once the top right shows a green **Agent**, `mc` and Claude
-Code's `minecraft` tools act on the world in that tab: open or create worlds, build, take pictures, chat. With Claude
-Code, the MCP tool `online` does the same and hands you the link.
+Open that link in Chrome or Edge (the tab you play in), or in the game go to **Options > More... > Agent**, paste the
+link (or just the code after `#agent=`) and press **Connect**. Once the top right shows a green **Agent**, `mc` and
+Claude Code's `minecraft` tools act on the world in that tab: open or create worlds, build, take pictures, chat.
+With Claude Code, the MCP tool `online` does the same and hands you the link.
+
+The Agent screen shows whether the bridge is reached, has **Disconnect**, and **Remember on this device** (new tabs
+connect by themselves until you disconnect). Keep Inventory and Play Music Now moved to the same **More...** screen.
 
 - **Nothing runs on the game's server.** The tab connects *out* to `ws://127.0.0.1:47821` on your own computer; the
   site only serves the (static) agent code, which is fetched only when a tab is opened with a pairing link.
 - The bridge listens on 127.0.0.1 only, accepts game tabs only from `https://mc.iloveust.com` (and localhost) that
   show the pairing token, and accepts requests only from local programs with its API token.
 - The link's token is never sent to the server (it's in the `#` part) and is removed from the address bar. The tab
-  stays paired across reloads until it's closed; `#agent=off` unpairs it. `mc online rotate` makes a new token (old
+  stays paired across reloads until it's closed (or Disconnect, or `#agent=off`). `mc online rotate` makes a new token (old
   links stop working), `mc online stop` stops the bridge.
 - `--port` and `--site` pick another port or address (e.g. a self-hosted copy).
 - Chrome may ask whether the site may "access other apps and services on this device": allow it.
@@ -205,4 +209,4 @@ Engine pieces it added: `ServerPlayer.views` and `Client.views` (stream and draw
 `ServerPlayer.select`, `Client.steer` (walking the player), `Mob.noAi`, `drawLines(..., xray)`.
 
 Tests: `shots/agent1.mjs` (background tab, pause, far areas, reload), `agent2.mjs` (the methods), `agent3.mjs` (two
-players), `agent4.mjs <site>` (a tab paired with `mc online`), `agentlna.mjs` (the deployed site may reach the bridge).
+players), `agent4.mjs <site>` (a tab paired with `mc online`), `agentui.mjs [site] [phone]` (the Agent screen), `agentlna.mjs` (the deployed site may reach the bridge).

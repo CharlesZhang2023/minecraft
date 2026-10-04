@@ -15,7 +15,7 @@ The game runs in a browser tab served by the Vite dev server; the agent harness 
 - Otherwise use the CLI with Bash: `node tools/agent/mc.mjs <method> ...` (`mc help`, `mc help <method>`). Pictures
   are saved to files (the path is printed): look at them with the Read tool.
 - `status` first. If nothing is connected and the person wants their own game on https://mc.iloveust.com, use
-  `online` (MCP) / `node tools/agent/mc.mjs online` and give them the link it prints to open; their tab then connects
+  `online` (MCP) / `node tools/agent/mc.mjs online` and give them the link it prints to open (or they paste it in Options > More... > Agent); their tab then connects
   to this computer. For a world of your own, `launch` (MCP) / `node tools/agent/mc.mjs launch --new mode=creative`
   opens a headless browser. When the person has the game open, the tools act on their world
   as the host: say what you are about to do, mark areas (`mark`), keep changes undoable, and don't move their player
