@@ -141,6 +141,11 @@ export class ServerPlayer {
   dir: [number, number, number] | null = null;
   dim: Dimension = 'overworld';
   viewDistance = 8;
+  /**
+   * More places this player's client sees besides where they stand (a camera looking at somewhere else): chunks
+   * there are streamed too, `r` chunks around each. Their dimension is the player's.
+   */
+  views: { x: number; z: number; r: number }[] = [];
   /** Waiting for the ground under a portal / respawn spot to load. */
   pendingArrival: { x: number; y: number; z: number; toSpawn: boolean; stay?: boolean } | null = null;
   portalTime = 0;
@@ -195,6 +200,13 @@ export class ServerPlayer {
   }
   /** Something to tell the client at the end of this tick (sounds, particles, pickups...). */
   event(e: unknown) { this.events.push(e); }
+
+  /** Hold another hotbar slot (the client follows). */
+  select(n: number) {
+    this.entity.inventory.selected = n;
+    this.forcedSel = n;
+    this.send({ t: 'sel', n });
+  }
 
   /** Where the server moved us (teleports, respawn): the client must follow before its positions count again. */
   teleported() {
@@ -463,30 +475,33 @@ export class ServerPlayer {
    */
   private streamChunks(w: import('../world/world').World) {
     // one ring past the view distance: a chunk can only be drawn once all its neighbours are there
-    const p = this.entity, r = this.viewDistance + 1, near = this.simRadius();
-    const pcx = Math.floor(p.x) >> 4, pcz = Math.floor(p.z) >> 4;
+    const p = this.entity, near = this.simRadius();
+    const centers = [{ cx: Math.floor(p.x) >> 4, cz: Math.floor(p.z) >> 4, r: this.viewDistance + 1, near }];
+    // (the server isn't keeping chunks loaded around extra views, so nothing there is worth waiting for)
+    for (const v of this.views) centers.push({ cx: Math.floor(v.x) >> 4, cz: Math.floor(v.z) >> 4, r: Math.max(1, Math.min(this.viewDistance, v.r | 0)) + 1, near: -1 });
     for (const k of this.sentChunks.keys()) {
       const cx = Math.floor(k / 0x10000) - 0x8000, cz = (k % 0x10000) - 0x8000;
-      const dx = cx - pcx, dz = cz - pcz;
-      if (dx * dx + dz * dz > (r + 2) * (r + 2)) {
+      if (centers.every((c) => (cx - c.cx) ** 2 + (cz - c.cz) ** 2 > (c.r + 2) * (c.r + 2))) {
         this.sentChunks.delete(k);
         this.send({ t: 'unchunk', cx, cz });
       }
     }
     let budget = this.conn.kind === 'local' ? 24 : 6;
     if (this.conn.backlog() > 512 * 1024) return;
-    const want: [number, number, number][] = [];
-    for (let dz = -r; dz <= r; dz++)
-      for (let dx = -r; dx <= r; dx++) {
-        const d = dx * dx + dz * dz;
-        if (d > (r + 0.5) * (r + 0.5)) continue;
-        const cx = pcx + dx, cz = pcz + dz, k = chunkKey(cx, cz);
-        const st = this.sentChunks.get(k);
-        if (st !== undefined) continue;
-        want.push([d, cx, cz]);
-      }
+    const want: [number, number, number, number][] = [];
+    const seen = new Set<number>();
+    for (const c of centers)
+      for (let dz = -c.r; dz <= c.r; dz++)
+        for (let dx = -c.r; dx <= c.r; dx++) {
+          const d = dx * dx + dz * dz;
+          if (d > (c.r + 0.5) * (c.r + 0.5)) continue;
+          const cx = c.cx + dx, cz = c.cz + dz, k = chunkKey(cx, cz);
+          if (this.sentChunks.has(k) || seen.has(k)) continue;
+          seen.add(k);
+          want.push([d, cx, cz, c.near]);
+        }
     want.sort((a, b) => a[0] - b[0]);
-    for (const [d, cx, cz] of want) {
+    for (const [d, cx, cz, near] of want) {
       if (budget <= 0) break;
       const k = chunkKey(cx, cz);
       const c = w.getChunk(cx, cz);
@@ -497,7 +512,7 @@ export class ServerPlayer {
         else { this.sendChunk(cx, cz, c); budget--; }
         continue;
       }
-      if (d <= (near + 0.5) * (near + 0.5)) continue; // the server is loading it
+      if (near >= 0 && d <= (near + 0.5) * (near + 0.5)) continue; // the server is loading it
       const key = cx + ',' + cz;
       if (!w.savedKeys.has(key)) {
         // never changed: exactly what the seed makes

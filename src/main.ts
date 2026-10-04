@@ -47,6 +47,17 @@ async function start() {
     };
   }
   game.start();
+  // programs on the player's own computer (the `mc` command, AI agents over MCP) can drive this tab: in development
+  // through the dev server, and anywhere through `mc online` once the tab is opened with its pairing link
+  const pairing = agentPairing();
+  // a pairing link (or #agent=off) typed into an open tab: start over with it
+  window.addEventListener('hashchange', () => { if (/(?:^#|&)agent=/.test(location.hash)) location.reload(); });
+  if (pairing || import.meta.env.DEV) {
+    import('./agent').then((m) => {
+      const link = pairing ? m.localLink(pairing.pair, pairing.port) : m.hmrLink();
+      if (link) m.attach(game, link);
+    }).catch((e) => console.warn('agent bridge', e));
+  }
   // never lose progress: save when the tab is hidden or closed
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && game.world && !game.panorama) game.saveWorld();
@@ -76,6 +87,27 @@ async function start() {
     navigator.serviceWorker.register('./sw.js').then((reg) => {
       if (navigator.onLine) (reg.active ?? reg.waiting ?? reg.installing)?.postMessage('precache');
     }).catch(() => {});
+  }
+}
+
+/**
+ * `#agent=<token>[@port]` (the link `mc online` prints) pairs this tab with the agent bridge on this computer; the tab
+ * remembers it until it's closed (`#agent=off` forgets it). The fragment never reaches the server, and it's taken out
+ * of the address bar so it isn't shared by accident.
+ */
+function agentPairing(): { pair: string; port: number } | null {
+  const KEY = 'mc-agent-pair';
+  const m = /(?:^#|&)agent=([\w-]+)(?:@(\d+))?/.exec(location.hash);
+  try {
+    if (m) {
+      if (m[1] === 'off') sessionStorage.removeItem(KEY);
+      else sessionStorage.setItem(KEY, JSON.stringify({ pair: m[1], port: Number(m[2] ?? 47821) }));
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+    const saved = sessionStorage.getItem(KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return m && m[1] !== 'off' ? { pair: m[1], port: Number(m[2] ?? 47821) } : null;
   }
 }
 

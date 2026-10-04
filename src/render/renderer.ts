@@ -19,6 +19,12 @@ export interface Camera {
    * things within `far` blocks in front of and behind it are drawn.
    */
   ortho?: number;
+  /** Flat projections: draw only what is at least this far in front of the camera (0 cuts away all in front of it). */
+  near?: number;
+  /** Flat projections: draw nothing farther than this in front of the camera. */
+  depth?: number;
+  /** The colour behind everything (and of the fog), instead of the sky's: cut views show cut solid blocks in it. */
+  background?: [number, number, number];
   roll?: number;
   bobX?: number; bobY?: number;
 }
@@ -276,7 +282,7 @@ export class Renderer {
     this.cam = cam;
     if (cam.ortho) {
       const h = cam.ortho, w = (h * this.width) / this.height;
-      ortho(this.proj, -w, w, -h, h, -far, far);
+      ortho(this.proj, -w, w, -h, h, cam.near ?? -far, cam.depth ?? far);
     } else perspective(this.proj, (cam.fov * Math.PI) / 180, this.width / this.height, near, far);
     lookDir(this.view, cam.yaw, cam.pitch);
     if (cam.roll) {
@@ -612,19 +618,22 @@ export class Renderer {
     gl.disable(gl.BLEND);
   }
 
-  drawLines(verts: Float32Array, color: [number, number, number, number]) {
+  /** Line segments (pairs of camera-relative points); `xray` draws them through blocks too. */
+  drawLines(verts: Float32Array, color: [number, number, number, number], xray = false) {
     const gl = this.gl;
     gl.useProgram(this.lineProg.prog);
     gl.uniformMatrix4fv(this.lineProg.u.u_viewProj, false, this.viewProj);
     gl.uniform4fv(this.lineProg.u.u_color, color);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.enable(gl.DEPTH_TEST);
+    if (xray) gl.disable(gl.DEPTH_TEST);
+    else gl.enable(gl.DEPTH_TEST);
     gl.depthMask(false);
     gl.bindVertexArray(this.lineVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.lineVbo);
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
     gl.drawArrays(gl.LINES, 0, verts.length / 3);
+    gl.enable(gl.DEPTH_TEST);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
     gl.bindVertexArray(null);

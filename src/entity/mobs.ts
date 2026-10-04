@@ -20,6 +20,8 @@ export abstract class Mob extends LivingEntity {
   skin = 'steve';
   hostile = false;
   persist = true;
+  /** Stands still and does nothing of its own (tools placing mobs as scenery or test targets); physics still apply. */
+  noAi = false;
   target: LivingEntity | null = null;
   path: PathNode[] | null = null;
   pathTimer = 0;
@@ -73,8 +75,10 @@ export abstract class Mob extends LivingEntity {
     this.forward = 0;
     this.strafe = 0;
     this.jumping = false;
-    this.ai();
-    this.followPath();
+    if (!this.noAi) {
+      this.ai();
+      this.followPath();
+    }
     this.livingTick();
     this.updateRotations();
     // ambient sound
@@ -256,7 +260,7 @@ export abstract class Mob extends LivingEntity {
   }
 
   toJSON() {
-    return { type: this.typeName.toLowerCase(), x: this.x, y: this.y, z: this.z, yaw: this.yaw, health: this.health, baby: this.baby, ...this.extraJSON() };
+    return { type: this.typeName.toLowerCase(), x: this.x, y: this.y, z: this.z, yaw: this.yaw, health: this.health, baby: this.baby, ...(this.noAi ? { noAi: true } : {}), ...this.extraJSON() };
   }
   extraJSON(): Record<string, unknown> { return {}; }
   load(d: { x: number; y: number; z: number; yaw: number; health: number; baby?: boolean } & Record<string, unknown>) {
@@ -264,6 +268,7 @@ export abstract class Mob extends LivingEntity {
     this.yaw = this.bodyYaw = this.headYaw = d.yaw;
     this.health = d.health;
     this.baby = !!d.baby;
+    this.noAi = !!d.noAi;
     this.loadExtra(d);
   }
   loadExtra(_d: Record<string, unknown>) {}

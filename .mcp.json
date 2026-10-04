@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "minecraft": {
+      "command": "npm",
+      "args": ["run", "--silent", "mcp"]
+    }
+  }
+}

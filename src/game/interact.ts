@@ -342,6 +342,11 @@ export class Interaction {
     return true;
   }
 
+  /** One right-click at the acting player's current target (tools acting for a player). */
+  useNow() {
+    this.use(true);
+  }
+
   private use(fresh: boolean) {
     const g = this.game, p = this.player, w = this.world;
     this.useDelay = 4;
@@ -933,6 +938,18 @@ export class Interaction {
   private setPlaced(x: number, y: number, z: number, v: number, soundBlock: number): boolean {
     const g = this.game, w = this.world;
     if (!w.set(x, y, z, v)) return false;
+    this.initTile(x, y, z, v);
+    const def = BLOCKS[idOf(v)];
+    if (def.mod && def.behavior?.onPlaced) callBlock(idOf(v), 'onPlaced', () => def.behavior!.onPlaced!({ ...blockCtx(g, x, y, z, v), player: this.player }), undefined);
+    if (Events.blockPlaced.any) Events.blockPlaced.fire({ game: g, player: this.player, x, y, z, v });
+    g.playBlockSound(soundBlock, x, y, z, 'place');
+    this.consume(1);
+    return true;
+  }
+
+  /** A block was just put at (x, y, z): give it its tile entity (chests, furnaces...) and let it settle. */
+  initTile(x: number, y: number, z: number, v: number) {
+    const g = this.game, w = this.world;
     const id = idOf(v);
     if (id === B.CHEST) w.setTile(x, y, z, { type: 'chest', items: new Array(27).fill(null) });
     if (id === B.FURNACE) w.setTile(x, y, z, { type: 'furnace', slots: [null, null, null], burn: 0, burnMax: 0, cook: 0 });
@@ -949,12 +966,7 @@ export class Interaction {
       const beh = def.behavior;
       if (beh?.tile) w.setTile(x, y, z, { ...callBlock(id, 'tile create', () => beh.tile!.create(blockCtx(g, x, y, z, v)), {}), type: def.name } as never);
       if (beh?.redstone) g.redstone.update(x, y, z);
-      if (beh?.onPlaced) callBlock(id, 'onPlaced', () => beh.onPlaced!({ ...blockCtx(g, x, y, z, v), player: this.player }), undefined);
     }
-    if (Events.blockPlaced.any) Events.blockPlaced.fire({ game: g, player: this.player, x, y, z, v });
-    g.playBlockSound(soundBlock, x, y, z, 'place');
-    this.consume(1);
-    return true;
   }
 
   private noEntities(x: number, y: number, z: number, v: number): boolean {

@@ -23,6 +23,16 @@ npm run preview
 
 Click the game to capture the mouse. Worlds save automatically to IndexedDB.
 
+## Agents (Claude Code, scripts)
+
+The dev server lets programs on this computer look at and change the running game: blocks, text blueprints,
+shapes, commands, entities, the player, pictures from any camera, text maps, chat and events, and JavaScript inside
+the game. Claude Code gets it as MCP tools (`.mcp.json`, server `minecraft`) plus the `minecraft-world` skill; in a
+terminal it's `node tools/agent/mc.mjs` (`mc status`, `mc map`, `mc shot view=iso`, `mc build house.json`...).
+For the deployed game, `mc online` runs a bridge on your computer and prints a link
+(`https://mc.iloveust.com/#agent=...`): the tab opened with it connects to your computer, never to the server, and
+agents work in that world. With no game open, `mc launch` starts a headless browser with a world of its own. See [tools/agent/README.md](tools/agent/README.md) and [the API](tools/agent/API.md).
+
 ## Features
 
 **World**
@@ -164,8 +174,9 @@ src/game     game loop (20 TPS), player, interaction, block ticks, items, recipe
 src/entity   entity physics (vanilla collision), living entities, mobs & AI, pathfinding, spawning, boats
 src/ui       bitmap font, GUI primitives, isometric item icons, HUD, menus, containers, trading
 src/mod      mod loader, registries and per-world id binding, events, mixins, mod API, repository client
+src/agent    the agent API inside the game tab (development only): blocks, blueprints, pictures, events, code
 mods/        the mod repository (example mods + SDK types), built by tools/vite-mods.ts
-tools/       headless Playwright scenario runner used for visual regression screenshots
+tools/       headless Playwright scenario runner; tools/agent: the agent bridge, `mc` CLI and MCP server
 ```
 
 ## Mobile / touch

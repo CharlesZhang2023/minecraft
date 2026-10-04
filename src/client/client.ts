@@ -49,7 +49,7 @@ import type { ServerPlayer } from '../server/splayer';
 import { Events } from '../mod/events';
 import { makeRenderContext } from '../mod/render';
 import { session, live, CHANNELS, KEYBINDS, VIEW, type HostModInfo } from '../mod/hooks';
-import type { ClientView, ViewAim } from './view';
+import type { ClientView, ViewAim, MoveInput } from './view';
 import { bind } from '../mod/registry';
 import { modState, guard } from '../mod/state';
 import { CONFIGS } from '../mod/config';
@@ -543,6 +543,7 @@ export class Client {
     let inp = this.ui.screen || !loaded ? { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false } : this.moveInput();
     const view = this.view;
     if (view?.move && !this.ui.screen && loaded) inp = this.viewDo('move', (v) => v.move!(inp, this), inp);
+    if (this.steer && loaded) inp = this.steer(inp);
     // a view aiming the player (a free pointer instead of the crosshair) is asked once a tick
     this.viewAim = view?.aim && !this.ui.screen ? this.viewDo('aim', (v) => v.aim!(this), null) : undefined;
     if (loaded) {
@@ -1097,8 +1098,19 @@ export class Client {
   }
   /** Is our own player drawn (third person, or a view that shows it)? */
   get drawsSelf() {
-    return this.thirdPerson !== 0 || !!this.view?.showSelf;
+    return this.thirdPerson !== 0 || !!this.view?.showSelf || !!this.cameraOverride;
   }
+  /**
+   * Frames are drawn from this camera instead of the player's eyes (pictures taken from elsewhere, by tools). The
+   * player is drawn, nothing is held in hand and nothing shakes.
+   */
+  cameraOverride: Partial<Camera> | null = null;
+  /** Tools walking the player: given this tick's movement keys, the movement to use instead. */
+  steer: ((inp: MoveInput) => MoveInput) | null = null;
+  /** Drawn into the world after blocks and entities (lines and boxes from tools, with `r.drawLines`). */
+  overlays: ((r: Renderer, cam: Camera) => void)[] = [];
+  /** More places to draw besides around the player (the server must stream them: `ServerPlayer.views`). */
+  views: { x: number; z: number; r: number }[] = [];
 
   /** Phones aiming by touch: the block or mob under the finger is the target, and there's no crosshair. */
   touchAim() {
@@ -1217,21 +1229,23 @@ export class Client {
       return;
     }
     const p = this.player, t = this.partial, w = this.world;
-    const view = this.view;
+    const view = this.view, shot = this.cameraOverride;
+    // a mod's view or a fixed camera: no shaking, bobbing or pulling back, and no hand
+    const free = !!view || !!shot;
     // camera
     const eye = this.eyePos(t);
     let yaw = p.pyaw + (p.yaw - p.pyaw) * t, pitch = p.ppitch + (p.pitch - p.ppitch) * t;
     const cam: Camera = { x: eye.x, y: eye.y, z: eye.z, yaw: (yaw * Math.PI) / 180, pitch: (pitch * Math.PI) / 180, fov: this.options.fov * (this.pFovMod + (this.fovMod - this.pFovMod) * t) };
     if (p.inWater && idOf(w.get(Math.floor(eye.x), Math.floor(eye.y), Math.floor(eye.z))) === B.WATER) cam.fov *= 60 / 70;
-    if (p.dead && !view) { cam.roll = (Math.min(20, p.deathTime + t) / 20) * (Math.PI / 4); cam.y -= Math.min(1.2, (p.deathTime + t) * 0.06); }
+    if (p.dead && !free) { cam.roll = (Math.min(20, p.deathTime + t) / 20) * (Math.PI / 4); cam.y -= Math.min(1.2, (p.deathTime + t) * 0.06); }
     // hurt tilt
-    if (p.hurtTime > 0 && !p.dead && !view) {
+    if (p.hurtTime > 0 && !p.dead && !free) {
       let f = (p.hurtTime - t) / p.hurtDuration;
       f = Math.sin(f * f * f * f * Math.PI);
       cam.roll = ((-f * 14) * Math.PI) / 180 * Math.cos(((p.lastHurtDirection) * Math.PI) / 180);
     }
     // view bobbing
-    if (this.options.viewBobbing && this.thirdPerson === 0 && !p.flying && !view) {
+    if (this.options.viewBobbing && this.thirdPerson === 0 && !p.flying && !free) {
       const dw = p.distWalked - p.pDistWalked;
       const f1 = -(p.distWalked + dw * t);
       const f2 = p.pCameraYaw + (p.cameraYaw - p.pCameraYaw) * t;
@@ -1240,7 +1254,7 @@ export class Client {
       cam.roll = (cam.roll ?? 0) + ((Math.sin(f1 * Math.PI) * f2 * 3) * Math.PI) / 180;
       cam.pitch += ((Math.abs(Math.cos(f1 * Math.PI - 0.2) * f2) * 5 + (p.pCameraPitch + (p.cameraPitch - p.pCameraPitch) * t)) * Math.PI) / 180;
     }
-    if (this.thirdPerson && !view) {
+    if (this.thirdPerson && !free) {
       // pull the camera back, stopping at blocks
       const front = this.thirdPerson === 2;
       if (front) { yaw += 180; pitch = -pitch; cam.yaw += Math.PI; cam.pitch = -cam.pitch; }
@@ -1250,12 +1264,14 @@ export class Client {
       if (hit) dist = Math.max(0.3, hit.t - 0.2);
       cam.x -= d.x * dist; cam.y -= d.y * dist; cam.z -= d.z * dist;
     }
-    if (view?.camera) this.viewDo('camera', (v) => v.camera!(cam, this, t), undefined);
+    if (shot) Object.assign(cam, { roll: 0, bobX: 0, bobY: 0, ortho: undefined }, shot);
+    else if (view?.camera) this.viewDo('camera', (v) => v.camera!(cam, this, t), undefined);
     const ortho = !!cam.ortho;
     this.cam = cam;
     this.audio.setListener(eye.x, eye.y, eye.z, yaw);
     r.setupCamera(cam, 0.05, Math.max(256, w.renderDistance * 16 * 1.5 + 64));
-    w.update(p.x, p.z, (cx, cz) => r.chunkVisible(cx, cz));
+    if (this.views.length) w.updateCenters([{ x: p.x, z: p.z, r: w.renderDistance }, ...this.views], (cx, cz) => r.chunkVisible(cx, cz));
+    else w.update(p.x, p.z, (cx, cz) => r.chunkVisible(cx, cz));
 
     const camBlock = w.get(Math.floor(cam.x), Math.floor(cam.y), Math.floor(cam.z));
     // (a flat projection's camera sits at what it looks at, not in front of it: no being under water there)
@@ -1272,6 +1288,7 @@ export class Client {
     const nv = p.effects.get('night_vision');
     env.nightVision = nv ? (nv.dur > 200 ? 1 : 0.7 + Math.sin(((nv.dur - t) * Math.PI) * 0.2) * 0.3) : 0;
     if (view?.brightness) env.nightVision = Math.max(env.nightVision, view.brightness);
+    if (cam.background) env.fogColor = cam.background;
     // distant terrain: the fog moves out to where it ends (under water or in lava there's nothing to see that far)
     const lodRange = this.options.lodDistance * 16;
     const lod = this.syncLod(w) && !underwater && !inLava && !ortho ? this.lod : null;
@@ -1294,6 +1311,7 @@ export class Client {
     r.drawChunks(w.chunks.values(), 'opaque');
     this.entityRenderer.render(this, t);
     this.drawSelection();
+    for (const f of this.overlays) f(r, cam);
     const pm = r.dyn;
     pm.reset();
     this.particles!.build(pm, cam.x, cam.y, cam.z, t, yaw, pitch);
@@ -1322,12 +1340,12 @@ export class Client {
       }
     }
     // first-person hand
-    if (this.thirdPerson === 0 && !view && !this.hideHud && !p.spectator && !this.panorama) this.entityRenderer.renderHand(this, t);
+    if (this.thirdPerson === 0 && !free && !this.hideHud && !p.spectator && !this.panorama) this.entityRenderer.renderHand(this, t);
     // overlays
     if (underwater) r.drawOverlay([0.02, 0.05, 0.25, 0.25], 0.5);
     else if (inLava) r.drawOverlay([0.8, 0.25, 0, 0.6]);
-    else if (p.fireTicks > 0 && !p.creative && !view) r.drawOverlay([1, 0.45, 0, 0.18]);
-    if (camBlock && BLOCKS[idOf(camBlock)].opaque && !p.spectator && this.thirdPerson === 0 && !view) r.drawOverlay([0.05, 0.05, 0.05, 0.95]);
+    else if (p.fireTicks > 0 && !p.creative && !free) r.drawOverlay([1, 0.45, 0, 0.18]);
+    if (camBlock && BLOCKS[idOf(camBlock)].opaque && !p.spectator && this.thirdPerson === 0 && !free) r.drawOverlay([0.05, 0.05, 0.05, 0.95]);
     if (this.sleepFade > 0) r.drawOverlay([0.02, 0.02, 0.06, Math.min(1, this.sleepFade)]);
     if (this.portalTime > 0) {
       const f = Math.min(1, (this.portalTime + t) / 80);
@@ -1340,7 +1358,7 @@ export class Client {
   private drawSelection() {
     const r = this.renderer, w = this.world!, cam = this.cam;
     const tgt = this.target;
-    if (!tgt || this.hideHud || this.ui.screen?.hidesSelection) return;
+    if (!tgt || this.hideHud || this.cameraOverride || this.ui.screen?.hidesSelection) return;
     const v = w.get(tgt.x, tgt.y, tgt.z);
     const shapes = selectionShapes(v, (a, b, c) => w.get(tgt.x + a, tgt.y + b, tgt.z + c));
     if (!shapes.length) return;

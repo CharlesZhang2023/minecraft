@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "mc": "node tools/agent/mc.mjs",
+    "mcp": "node tools/agent/mcp.mjs"
   },
   "devDependencies": {
     "playwright": "1.57",
