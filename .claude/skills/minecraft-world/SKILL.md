@@ -19,7 +19,8 @@ The game runs in a browser tab served by the Vite dev server; the agent harness 
   to this computer. For a world of your own, `launch` (MCP) / `node tools/agent/mc.mjs launch --new mode=creative`
   opens a headless browser. When the person has the game open, the tools act on their world
   as the host: say what you are about to do, mark areas (`mark`), keep changes undoable, and don't move their player
-  (`tp`) unless asked.
+  (`tp`) or switch their world (`open`) unless asked. Tests and scripts must pick their own tab by name
+  (`?agent=<name>`), never "any tab on the site".
 - Several dev servers can run (the person's and test ones): `sessions` lists the tabs; set `MC_PORT` to pick a server.
 
 ## Coordinates
