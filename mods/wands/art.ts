@@ -2,7 +2,8 @@
 // the wands, the light sprites spells are drawn with, the target dummy, and the sounds.
 import type { ModContext, Img } from '../sdk';
 import { SPELLS, TYPE_COLORS, NOTE_PITCH, type SpellDef, type Icon } from './spells';
-import { PALETTE, ICONS } from './icons';
+import { NAMES, PALETTE, DATA } from './icons';
+import { decodeIcons } from './iconcodec';
 
 type RGB = [number, number, number];
 const hex = (h: string): RGB => { const v = parseInt(h.replace('#', ''), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
@@ -152,25 +153,13 @@ function badge(p: Pix, kind: string, c: RGB) {
 }
 
 // ------------------------------------------------------------------ Noita's icons (icons.ts, packed by tools/make_icons.py)
-let palette: Uint8Array | null = null;
-const byName = new Map<string, string>();
-const b64 = (t: string) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+let icons: Map<string, Uint8Array> | null = null;
 /** A spell's Noita icon as 256 RGBA pixels, or null if it has none. */
 function noitaIcon(s: SpellDef): Uint8Array | null {
   const name = s.noita ?? s.name;
   if (!name) return null;
-  if (!palette) { palette = b64(PALETTE); for (const k of Object.keys(ICONS)) byName.set(k.toLowerCase(), k); }
-  const key = byName.get(name.toLowerCase());
-  if (!key) return null;
-  const raw = b64(ICONS[key]), out = new Uint8Array(256 * 4);
-  let i = 0;
-  for (let k = 0; k + 1 < raw.length; k += 2) {
-    const t = raw[k] | (raw[k + 1] << 8);
-    if (t & 0x8000) { i += t & 0x7fff; continue; }
-    out.set(palette.subarray(t * 4, t * 4 + 4), i * 4);
-    i++;
-  }
-  return out;
+  icons ??= decodeIcons(NAMES, PALETTE, DATA);
+  return icons.get(name.toLowerCase()) ?? null;
 }
 
 /** A spell's card: a dark back in its type's colour, its Noita icon on it (or a picture painted here). */

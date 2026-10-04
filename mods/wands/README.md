@@ -22,7 +22,8 @@ file disagree, the code wins. Fix the file when you notice.
 | `catalog/modifiers.ts` | everywhere | Projectile modifiers, and the helper projectiles some of them cast. |
 | `catalog/casting.ts` | everywhere | Multicasts, "other" spells (triggers, copies, requirements, notes), utility spells, passives. |
 | `spells.ts` | everywhere | Loads the catalogue in order and exports `SPELLS`, `SPELL_BY_ID`, `SPELL_INDEX` (network numbers), `TYPE_ORDER`, `TYPE_NAMES`, `TYPE_COLORS`, plus everything in `spelldefs.ts`. Import spells from here. |
-| `icons.ts` | page (client) | Generated: Noita's 422 spell icons, packed (a palette and run-length coded 16x16 pictures), keyed by the Noita spell's English name. |
+| `icons.ts` | page (client) | Generated: Noita's 422 spell icons (16x16), packed losslessly into 49 KB: a shared palette, and per icon its own few colours, the box around its visible pixels, a visibility bit per pixel and 0-6 colour bits per visible pixel. `NAMES` gives the order (the Noita spells' English names). |
+| `iconcodec.ts` | page (client) | `decodeIcons`: unpacks `icons.ts` into 256 RGBA pixels per icon. No game imports. |
 | `wand.ts` | everywhere | `WandData` / `WandStats` (stored in `stack.tag.wand`), tiers, stat rolls, the starter and Spell Lab wands, `fixUses`, tooltip lines, stat limits, `sanitize`. |
 | `engine.ts` | everywhere | The deck: `Runtime`, `newRuntime`, `catchUp` (mana, timers, use regen), `fire`, `finalProjs`, and `previewCycle` for the editor. Pure logic. |
 | `motion.ts` | server + clients | Projectile flight shared by both sides: `rayBlocks` (voxel walk), `displacement` (sine/spiral), `steer` (gravity, drag, accel, chaos, homing, and the steering both sides can work out), `orbitAt`, `bounce`, `rayEnd`. |
