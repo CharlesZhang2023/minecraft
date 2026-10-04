@@ -6,13 +6,16 @@ export type {
 } from '../src/mod/types';
 export type { BlockRef, ItemRef, ItemProps } from '../src/mod/registry';
 export type { RenderContext } from '../src/mod/render';
-export type { CommandDef, CommandCtx, FeatureSpec, OreSpec, ChunkGenCtx } from '../src/mod/hooks';
+export type { CommandDef, CommandCtx, FeatureSpec, OreSpec, ChunkGenCtx, TouchButtonDef } from '../src/mod/hooks';
 export type { ConfigSchema, ConfigEntry } from '../src/mod/config';
 export type { Injection, CallbackInfo } from '../src/mod/mixin';
 export type { EventName } from '../src/mod/events';
 export type { Box, Shape, Neighbor } from '../src/world/models';
 export type { BlockOpts, BlockDef } from '../src/world/blocks';
 export type { ItemStack, ItemDef } from '../src/game/items';
+export type { Ingredient } from '../src/game/recipes';
+export type { Slot } from '../src/ui/containers';
+export type { Inventory } from '../src/game/inventory';
 export type { Img } from '../src/render/pixels';
 export type { Mat4 } from '../src/math';
 export type { Game } from '../src/game/game';

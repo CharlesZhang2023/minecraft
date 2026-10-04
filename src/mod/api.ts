@@ -11,7 +11,7 @@ import { Events, type EventName, type EventFn } from './events';
 import { inject, type Injection } from './mixin';
 import {
   COMMANDS, CHANNELS, ENTITIES, FEATURES, MAX_PAYLOAD, live,
-  type CommandDef, type EntityFactory, type FeatureSpec, type OreSpec, type ScreenFactory, type TileRenderer, type EntityRendererFn,
+  type CommandDef, type EntityFactory, type FeatureSpec, type OreSpec, type ScreenFactory, type TileRenderer, type EntityRendererFn, type TouchButtonDef,
 } from './hooks';
 import { defineConfig, type ConfigSchema, type ConfigValues } from './config';
 import { modState } from './state';
@@ -69,6 +69,8 @@ export interface ClientApi {
   configScreen(make: (parent: Screen) => Screen): void;
   /** Show a screen now (page only). */
   openScreen(s: Screen | null): void;
+  /** A button on phones' touch controls (what a key binding is on a keyboard). */
+  touchButton(id: string, def: TouchButtonDef): void;
 }
 
 export interface ModContext {
@@ -135,7 +137,7 @@ export function createContext(manifest: ModManifest, mc: Mc, client: ClientApi |
   const worker = modState.realm === 'worker';
   const inertClient: ClientApi = {
     texture: noop, itemSprite: noop, sound: noop, screen: noop, keybind: noop, tileRenderer: noop, entityRenderer: noop,
-    creativeTab: noop, configScreen: noop, openScreen: noop,
+    creativeTab: noop, configScreen: noop, openScreen: noop, touchButton: noop,
   };
   const ctx: ModContext = {
     id, version: manifest.version, manifest, realm: modState.realm, mc,

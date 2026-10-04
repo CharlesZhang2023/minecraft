@@ -123,7 +123,14 @@ Click the game to capture the mouse. Worlds save automatically to IndexedDB.
   browser) or from a file, and turns them on or off. Each mod gets a generated settings page.
 - Multiplayer: guests are switched to the host's mods automatically. Client-only mods stay with each player.
 - Example mods: Rubies (ore, tools, a mob), Computers (a scriptable terminal with redstone), Kinetics
-  (rotational power with animated machines), Minimap. See [mods/README.md](mods/README.md) to write your own.
+  (rotational power with animated machines), Minimap, and Wands (below). See [mods/README.md](mods/README.md) to
+  write your own.
+- **Wands** brings in Noita's wands and spells. A wand fires its spells like a deck of cards, so about a hundred
+  spells combine: projectiles, modifiers, multicasts and formations, triggers and timers, Alpha/Omega and Divide By,
+  materials, clouds and fields. Hold the use button (press and hold on phones) to cast. The editor (R, or the wand
+  button on phones) is modelled on the Spell Lab mod: drag or tap spells, see what each cast fires, edit the stats in
+  creative, and keep layouts in a wand box. A target dummy measures damage per second. Wands are crafted, spells
+  come from arcane scrolls and monsters, and it all works in multiplayer.
 
 ## Controls
 

@@ -47,6 +47,7 @@ import { RoomHost } from '../net/signal';
 import { fingerprint, cleanName, MAX_PLAYERS } from '../net/protocol';
 import type { ServerPlayer } from '../server/splayer';
 import { Events } from '../mod/events';
+import { makeRenderContext } from '../mod/render';
 import { session, live, CHANNELS, KEYBINDS, type HostModInfo } from '../mod/hooks';
 import { bind } from '../mod/registry';
 import { modState, guard } from '../mod/state';
@@ -1271,6 +1272,16 @@ export class Client {
       r.gl.depthMask(false);
       r.drawDyn(pm, { blend: true, cull: false, fullbright: true, alphaCut: 0.004 });
       r.gl.depthMask(true);
+    }
+    // mods' glowing things (spells): added on top, so overlapping glows brighten like light does
+    if (Events.worldRenderGlow.any && modState.active.size) {
+      pm.reset();
+      Events.worldRenderGlow.fire(makeRenderContext(this, this.entityRenderer, pm, t));
+      if (pm.count) {
+        r.gl.depthMask(false);
+        r.drawDyn(pm, { blend: true, additive: true, cull: false, fullbright: true, alphaCut: 0.004 });
+        r.gl.depthMask(true);
+      }
     }
     // first-person hand
     if (this.thirdPerson === 0 && !this.hideHud && !p.spectator && !this.panorama) this.entityRenderer.renderHand(this, t);

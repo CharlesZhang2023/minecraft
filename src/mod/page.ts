@@ -26,12 +26,13 @@ import { registerTexture, getTexture } from '../render/textures';
 import { registerItemSprite } from '../render/itemsprites';
 import { registerSound, synth, SAMPLE_RATE } from '../game/audio';
 import { modelBoxes, collisionShapes, selectionShapes } from '../world/models';
-import { SCREENS, KEYBINDS, TILE_RENDERERS, ENTITY_RENDERERS, CREATIVE_TABS, CONFIG_SCREENS, live } from './hooks';
+import { SCREENS, KEYBINDS, TILE_RENDERERS, ENTITY_RENDERERS, CREATIVE_TABS, CONFIG_SCREENS, TOUCH_BUTTONS, live } from './hooks';
 import type { ClientApi } from './api';
 import { blockCtx } from './blockctx';
 import { tex } from '../world/blocks';
 import type { Img } from '../render/pixels';
 import { Random } from '../noise';
+import { device } from '../game/device';
 
 /** The game's classes and helpers (page only). */
 export const pageMc = {
@@ -39,6 +40,8 @@ export const pageMc = {
   Redstone, BlockTicker, Inventory, UI, Screen, Button, Slider, TextField, ContainerScreen, Hud, Renderer, EntityRenderer,
   modelBoxes, collisionShapes, selectionShapes,
   math, pixels, synth, SAMPLE_RATE,
+  /** Touch or mouse mode (`device.touch`), so screens can tell a finger from a mouse. */
+  device,
   /** A block texture's pixels by name (16x16 RGBA), e.g. to paint a mod texture over 'stone'. */
   getTexture,
   /** The context block hooks get, for any block (server side: inside the simulation's current dimension). */
@@ -91,6 +94,12 @@ export function clientApi(mod: string): ClientApi {
     },
     configScreen(make) { CONFIG_SCREENS.set(mod, make); },
     openScreen(s) { live.client?.ui.open(s); },
+    touchButton(id, def) {
+      const key = id.includes(':') ? id : `${mod}:${id}`;
+      const i = TOUCH_BUTTONS.findIndex((b) => b.id === key);
+      if (i >= 0) TOUCH_BUTTONS.splice(i, 1);
+      TOUCH_BUTTONS.push({ ...def, mod, id: key });
+    },
   };
 }
 

@@ -112,6 +112,7 @@ uniform float u_alphaCut;
 uniform vec4 u_overlay;
 uniform float u_fullbright;
 uniform float u_wrap;
+uniform float u_additive;
 ${LIGHTING}
 ${FOG}
 in vec3 v_uv;
@@ -127,7 +128,9 @@ void main() {
   vec3 c = t.rgb * v_col.rgb;
   c *= mix(lightmap(v_light.x, v_light.y), vec3(1.0), u_fullbright);
   c = mix(c, u_overlay.rgb, u_overlay.a);
-  o = vec4(applyFog(c, v_dist), t.a * v_col.a);
+  // added light fades out into the fog instead of turning fog-coloured
+  if (u_additive > 0.5) o = vec4(c, t.a * v_col.a * (1.0 - clamp((length(v_dist) - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0)));
+  else o = vec4(applyFog(c, v_dist), t.a * v_col.a);
 }`;
 
 export const ENTITY_VS = /* glsl */ `#version 300 es

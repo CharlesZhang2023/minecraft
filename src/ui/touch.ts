@@ -4,9 +4,10 @@
 // forward; double-tap forward to sprint), a jump button bottom right (double-tap to fly in creative, and
 // the pad's middle descends while flying), chat and pause buttons top centre, and a hotbar that shrinks to
 // fit, ending in a "..." cell for the inventory; hold a slot to drop its stack. Drag anywhere else to look,
-// tap to place / use (or hit a mob), and press and hold to mine (or eat, drink, draw a bow). Facing a mob or
-// vehicle that has a use (ride, trade, feed, shear...) brings up a button for it above the hotbar, so tapping
-// a mob always means hitting it.
+// tap to place / use (or hit a mob), and press and hold to mine (or eat, drink, draw a bow, use a hold-to-use
+// mod item such as a wand). Facing a mob or vehicle that has a use (ride, trade, feed, shear...) brings up a button
+// for it above the hotbar, so tapping a mob always means hitting it. Mods can add buttons of their own (a wand's
+// editor), stacked above the jump button.
 // Options > Controls swaps the D-pad for a floating joystick, and touch aiming (act on what's under the
 // finger, no crosshair, the default) for crosshair aiming (act on whatever the crosshair is on).
 // In menus and containers: taps are clicks, vertical drags scroll lists, and "Split" / "Shift" toggles stand
@@ -25,6 +26,8 @@ import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import type { ItemStack } from '../game/items';
 import type { Player } from '../game/player';
+import { TOUCH_BUTTONS } from '../mod/hooks';
+import { isActive, guard } from '../mod/state';
 
 const LOOK_SENS = 2.2; // mouse-equivalent pixels per CSS pixel of finger travel
 const HOLD_MS = 380; // long press on the look area starts mining
@@ -191,6 +194,12 @@ export class TouchControls {
       }
     }
     out.push(jump);
+    // mods' buttons, stacked up from the jump button
+    let k = 0;
+    for (const m of TOUCH_BUTTONS) {
+      if (!isActive(m.mod) || !guard(m.mod, 'touch button', () => m.visible(this.game), false)) continue;
+      out.push({ id: 'mod:' + m.id, x: jump.x, y: jump.y - ++k * PAD_S, w: PAD_B, h: PAD_B });
+    }
     const mid = Math.floor(W / 2);
     out.push({ id: 'chat', x: mid - 8, y: 1, w: 16, h: 16 }, { id: 'pause', x: mid + 10, y: 1, w: 16, h: 16 });
     const u = this.useTarget;
@@ -281,6 +290,10 @@ export class TouchControls {
         if (p.riding) this.game.conn?.send({ t: 'dismount' });
         else this.sneak = !this.sneak;
       } else if (b.id === 'use' && this.useTarget) this.game.useEntity(this.useTarget.e);
+      else if (b.id.startsWith('mod:')) {
+        const m = TOUCH_BUTTONS.find((x) => 'mod:' + x.id === b.id);
+        if (m) guard(m.mod, 'touch button', () => m.onPress(this.game), undefined);
+      }
       return;
     }
     const cell = this.hotbarCell(gx, gy);
@@ -542,7 +555,7 @@ export class TouchControls {
         // press and hold: mine, or eat / drink / draw the bow
         const held = p.inventory.held(), it = held ? getItem(held.id) : null;
         t.holding = true;
-        t.hold = it && (it.food || it.drink || held!.id === I.BOW) ? 2 : 0;
+        t.hold = it && (it.food || it.drink || held!.id === I.BOW || it.behavior?.useTick) ? 2 : 0;
         inp.mouseDown.add(t.hold);
         inp.mousePressedQ.push(t.hold);
         buzz(12);
@@ -611,6 +624,12 @@ export class TouchControls {
       const on = this.pressed.has(b.id) || dirs.has(b.id) || (b.id === 'sneak' && this.sneak);
       drawPadButton(ctx, b, on);
       if (b.id === 'use') { this.ui.gui.textCenter(ctx, this.useTarget!.label, b.x + b.w / 2, b.y + 5, '#FFFFFF'); continue; }
+      if (b.id.startsWith('mod:')) {
+        const m = TOUCH_BUTTONS.find((x) => 'mod:' + x.id === b.id);
+        if (m?.icon) guard(m.mod, 'touch button', () => m.icon!(ctx, b.x, b.y, b.w, b.h), undefined);
+        else if (m?.label) this.ui.gui.textCenter(ctx, m.label, b.x + b.w / 2, b.y + b.h / 2 - 4, '#FFFFFF');
+        continue;
+      }
       const glyph = b.id === 'sneak' ? (flying ? 'down' : riding ? 'dismount' : 'sneak') : b.id === 'jump' ? (flying ? 'up' : 'jump') : b.id;
       drawGlyph(ctx, glyph, b.x + b.w / 2, b.y + b.h / 2);
     }

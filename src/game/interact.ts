@@ -42,6 +42,8 @@ export class Interaction {
   /** Position of the dragon egg last punched while the button is held (so holding doesn't re-teleport it). */
   private eggKey = '';
   private rightWasDown = false;
+  /** A mod item being used continuously (ItemBehavior.useTick): which hotbar slot, and for how many ticks. */
+  private holding: { slot: number; ticks: number } | null = null;
 
   constructor(private game: Game) {}
 
@@ -81,6 +83,7 @@ export class Interaction {
     if (right) {
       if (this.eating > 0) this.continueEating();
       else if (this.usingBow) this.bowTicks++;
+      else if (this.holdUse()) { /* a hold-to-use mod item (wands) */ }
       else if (clicks.includes(2) || this.useDelay === 0) this.use(clicks.includes(2));
     } else this.stopUsing();
     this.leftWasDown = left;
@@ -757,8 +760,31 @@ export class Interaction {
     }
   }
 
+  /** Mod items used for as long as the button is held: their useTick runs instead of any right-click use. */
+  private holdUse(): boolean {
+    const p = this.player, held = p.inventory.held();
+    const item = held ? getItem(held.id) : undefined;
+    const ib = item?.behavior;
+    if (!held || !ib?.useTick || p.spectator) { this.endHold(); return false; }
+    if (this.holding && this.holding.slot !== p.inventory.selected) this.endHold();
+    const h = (this.holding ??= { slot: p.inventory.selected, ticks: 0 });
+    guard(item!.mod, 'useTick', () => ib.useTick!({ ...this.itemCtx(held), ticks: h.ticks }), undefined);
+    h.ticks++;
+    return true;
+  }
+
+  private endHold() {
+    const h = this.holding;
+    if (!h) return;
+    this.holding = null;
+    const p = this.game.player, held = p?.inventory.main[h.slot];
+    const item = held ? getItem(held.id) : undefined;
+    if (p && held && item?.behavior?.useStop) guard(item.mod, 'useStop', () => item.behavior!.useStop!({ ...this.itemCtx(held), ticks: h.ticks }), undefined);
+  }
+
   private stopUsing() {
     const p = this.game.player;
+    this.endHold();
     if (this.usingBow && p) this.releaseBow();
     this.eating = 0;
     if (p) p.eatingTicks = 0;
@@ -1094,31 +1120,46 @@ export class Interaction {
     g.particles!.explosion(x, y, z);
     for (let i = 0; i < 16; i++) g.particles!.explosion(x + (this.rng.next() - 0.5) * power * 1.5, y + (this.rng.next() - 0.5) * power * 1.5, z + (this.rng.next() - 0.5) * power * 1.5);
     // destroy blocks
-    const t = g.ticker!;
+    this.destroyBlocks([...affected].map((k) => k.split(',').map(Number) as [number, number, number]), { drops: 1 / power, fire, fx: 'smoke' });
+  }
+
+  /**
+   * Destroy blocks the way an explosion does: TNT primes, containers spill, neighbours update once at the end, mod
+   * blocks hear about it. Each block drops its items (as if mined with the right tool) with probability `drops`;
+   * `fire` sets some of the gaps alight; `fx` is the puff each block leaves. Returns how many blocks went.
+   */
+  destroyBlocks(list: Iterable<readonly [number, number, number]>, opts: { drops?: number; fire?: boolean; fx?: 'smoke' | 'break' | 'none' } = {}): number {
+    const g = this.game, w = this.world, t = g.ticker!;
+    const drops = opts.drops ?? 1, fx = opts.fx ?? 'break';
     t.suppress = true;
-    const changed: [number, number, number][] = [];
-    for (const k of affected) {
-      const [bx, by, bz] = k.split(',').map(Number);
-      const v = w.get(bx, by, bz);
-      const id = idOf(v);
-      if (id === 0) continue;
-      if (id === B.TNT) { w.set(bx, by, bz, B.AIR); this.primeTnt(bx, by, bz, true); continue; }
-      if (this.rng.next() < 1 / power) {
-        const def = BLOCKS[id];
-        // explosions harvest as if with the correct tool
-        const tool: ItemDef | undefined = def.harvestLevel >= 0 && def.tool ? { id: -1, name: 'explosion', display: '', maxStack: 1, tool: { type: def.tool, level: 3, speed: 1, damage: 0 } } : undefined;
-        for (const d of blockDrops(id, metaOf(v), tool, this.rng)) g.dropItem(bx + 0.5, by + 0.5, bz + 0.5, d);
+    const changed: [number, number, number, number][] = [];
+    try {
+      for (const [bx, by, bz] of list) {
+        const v = w.get(bx, by, bz);
+        const id = idOf(v);
+        if (id === 0) continue;
+        if (id === B.TNT) { w.set(bx, by, bz, B.AIR); this.primeTnt(bx, by, bz, true); continue; }
+        if (drops > 0 && this.rng.next() < drops) {
+          const def = BLOCKS[id];
+          // harvested as if with the correct tool
+          const tool: ItemDef | undefined = def.harvestLevel >= 0 && def.tool ? { id: -1, name: 'explosion', display: '', maxStack: 1, tool: { type: def.tool, level: 3, speed: 1, damage: 0 } } : undefined;
+          for (const d of blockDrops(id, metaOf(v), tool, this.rng)) g.dropItem(bx + 0.5, by + 0.5, bz + 0.5, d);
+        }
+        if (fx === 'smoke' && this.rng.int(4) === 0) g.particles!.smoke(bx + this.rng.next(), by + this.rng.next(), bz + this.rng.next(), true);
+        else if (fx === 'break' && changed.length < 24) g.particles!.blockBreak(bx, by, bz, id, this.tintAt(bx, by, bz, id));
+        this.dropTileContents(bx, by, bz, v);
+        w.set(bx, by, bz, B.AIR);
+        changed.push([bx, by, bz, v]);
       }
-      if (this.rng.int(4) === 0) g.particles!.smoke(bx + this.rng.next(), by + this.rng.next(), bz + this.rng.next(), true);
-      this.dropTileContents(bx, by, bz, v);
-      w.set(bx, by, bz, B.AIR);
-      changed.push([bx, by, bz]);
+    } finally {
+      t.suppress = false;
     }
-    t.suppress = false;
-    for (const [bx, by, bz] of changed) {
+    for (const [bx, by, bz, v] of changed) {
       for (const [dx, dy, dz] of FACE_DIRS) t.neighborChanged(bx + dx, by + dy, bz + dz);
-      if (fire && this.rng.int(3) === 0 && w.getId(bx, by, bz) === B.AIR && OPAQUE[w.getId(bx, by - 1, bz)]) w.set(bx, by, bz, B.FIRE);
+      if (BLOCKS[idOf(v)].behavior?.onBreak) this.broken(bx, by, bz, v, null);
+      if (opts.fire && this.rng.int(3) === 0 && w.getId(bx, by, bz) === B.AIR && OPAQUE[w.getId(bx, by - 1, bz)]) w.set(bx, by, bz, B.FIRE);
     }
+    return changed.length;
   }
 
   private exposure(x: number, y: number, z: number, e: Entity): number {
@@ -1151,7 +1192,7 @@ export class Interaction {
     const s = p.inventory.held();
     if (!s || p.dead) return;
     const n = all ? s.count : 1;
-    const drop = { id: s.id, count: n, damage: s.damage };
+    const drop = { ...s, count: n };
     s.count -= n;
     if (s.count <= 0) p.inventory.setHeld(null);
     this.throwStack(drop);

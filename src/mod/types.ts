@@ -165,6 +165,14 @@ export interface ItemCtx {
 export interface ItemBehavior {
   /** Right-click in the air. Return true if it did something. */
   use?(c: ItemCtx): boolean;
+  /**
+   * Hold-to-use items (wands, beams...): runs every tick while the use button is held, from `ticks` 0 at the press,
+   * instead of any right-click use (blocks aren't opened, nothing is placed). On phones, press and hold uses it
+   * (instead of mining) and a tap is a short press.
+   */
+  useTick?(c: ItemCtx & { ticks: number }): void;
+  /** The button was let go (or the item put away) after `ticks` ticks of useTick. */
+  useStop?(c: ItemCtx & { ticks: number }): void;
   /** Right-click on a block (before the block's own use). Return true if it did something. */
   useOnBlock?(c: ItemCtx & { x: number; y: number; z: number; face: number; v: number }): boolean;
   /** Hit an entity with it. */

@@ -58,6 +58,16 @@ export const ENTITY_RENDERERS = new Map<string, { mod: string; draw: EntityRende
 export interface CreativeTab { mod: string; id: string; name: string; icon: () => number; items: () => ItemStack[] }
 export const CREATIVE_TABS: CreativeTab[] = [];
 export const CONFIG_SCREENS = new Map<string, (parent: Screen) => Screen>();
+/** An on-screen button for phones, shown while playing (stacked above the jump button) when `visible` says so. */
+export interface TouchButtonDef {
+  /** Short text, drawn when there's no `icon`. */
+  label?: string;
+  /** Draw the button's face, in GUI units (the button is w x h at x, y). */
+  icon?(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void;
+  visible(client: Client): boolean;
+  onPress(client: Client): void;
+}
+export const TOUCH_BUTTONS: (TouchButtonDef & { mod: string; id: string })[] = [];
 
 // ------------------------------------------------------------------ entities
 export type EntityFactory = (world: World, game: Game) => Entity;

@@ -340,14 +340,16 @@ export interface ItemStack {
   name?: string; // custom name from an anvil
   repair?: number; // anvil prior-work penalty
   fw?: Firework; // firework rockets and stars
+  /** Mods: JSON data of their own (a wand's spells...). Stacks only stack when their tags match. Replace it, don't mutate it. */
+  tag?: Record<string, unknown>;
 }
 /** One burst of a firework: `shape` indexes FIREWORK_SHAPES; colours are 0xRRGGBB. */
 export interface FireworkExplosion { shape: number; colors: number[]; fade?: number[]; trail?: boolean; twinkle?: boolean }
 /** A rocket's flight duration (gunpowder used) and bursts; a star carries its one burst in `ex`. */
 export interface Firework { flight?: number; ex?: FireworkExplosion[] }
 export const stack = (id: number, count = 1, damage = 0): ItemStack => ({ id, count, damage });
-export const cloneStack = (s: ItemStack | null): ItemStack | null => (s ? { ...s, damage: s.damage ?? 0, ...(s.ench ? { ench: { ...s.ench } } : {}) } : null);
-export const sameItem = (a: ItemStack | null, b: ItemStack | null) => !!a && !!b && a.id === b.id && (a.damage ?? 0) === (b.damage ?? 0) && JSON.stringify(a.ench ?? null) === JSON.stringify(b.ench ?? null) && (a.name ?? '') === (b.name ?? '') && (a.repair ?? 0) === (b.repair ?? 0) && JSON.stringify(a.fw ?? null) === JSON.stringify(b.fw ?? null);
+export const cloneStack = (s: ItemStack | null): ItemStack | null => (s ? { ...s, damage: s.damage ?? 0, ...(s.ench ? { ench: { ...s.ench } } : {}), ...(s.tag ? { tag: structuredClone(s.tag) } : {}) } : null);
+export const sameItem = (a: ItemStack | null, b: ItemStack | null) => !!a && !!b && a.id === b.id && (a.damage ?? 0) === (b.damage ?? 0) && JSON.stringify(a.ench ?? null) === JSON.stringify(b.ench ?? null) && (a.name ?? '') === (b.name ?? '') && (a.repair ?? 0) === (b.repair ?? 0) && JSON.stringify(a.fw ?? null) === JSON.stringify(b.fw ?? null) && JSON.stringify(a.tag ?? null) === JSON.stringify(b.tag ?? null);
 /** Display name (custom anvil name if set). */
 export const stackName = (s: ItemStack) => s.name ?? getItem(s.id).display;
 export const maxStack = (s: ItemStack) => getItem(s.id).maxStack;

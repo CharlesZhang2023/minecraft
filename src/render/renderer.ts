@@ -571,7 +571,7 @@ export class Renderer {
   }
 
   /** Draw the dynamic mesh (particles, items, falling blocks...) with the block atlas. */
-  drawDyn(mesh: DynMesh, opts: { blend?: boolean; model?: Mat4; overlay?: [number, number, number, number]; cull?: boolean; fullbright?: boolean; depthTest?: boolean; alphaCut?: number; viewProj?: Mat4; wrap?: boolean } = {}) {
+  drawDyn(mesh: DynMesh, opts: { blend?: boolean; additive?: boolean; model?: Mat4; overlay?: [number, number, number, number]; cull?: boolean; fullbright?: boolean; depthTest?: boolean; alphaCut?: number; viewProj?: Mat4; wrap?: boolean } = {}) {
     if (mesh.count === 0) return;
     const gl = this.gl;
     mesh.upload();
@@ -583,6 +583,7 @@ export class Renderer {
     gl.uniform4fv(p.u.u_overlay, opts.overlay ?? [0, 0, 0, 0]);
     gl.uniform1f(p.u.u_fullbright, opts.fullbright ? 1 : 0);
     gl.uniform1f(p.u.u_wrap, opts.wrap ? 1 : 0);
+    gl.uniform1f(p.u.u_additive, opts.additive ? 1 : 0);
     gl.uniform1f(p.u.u_alphaCut, opts.alphaCut ?? (opts.blend ? 0.01 : 0.5));
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.atlas.texture);
@@ -593,7 +594,8 @@ export class Renderer {
     else gl.enable(gl.CULL_FACE);
     if (opts.blend) {
       gl.enable(gl.BLEND);
-      gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      if (opts.additive) gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE, gl.ZERO, gl.ONE);
+      else gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     } else gl.disable(gl.BLEND);
     gl.bindVertexArray(mesh.vao);
     gl.drawElements(gl.TRIANGLES, (mesh.count / 4) * 6, gl.UNSIGNED_INT, 0);

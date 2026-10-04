@@ -90,6 +90,8 @@ export const Events = {
   hudRender: ev<(c: { ctx: Ctx; client: Client; width: number; height: number; partial: number }) => void>('hudRender'),
   /** Draw into the world after entities (opaque pass), see RenderContext. */
   worldRender: ev<(r: RenderContext) => void>('worldRender'),
+  /** Draw glowing things (spells, beams): added onto the scene, full bright, after everything else in the world. */
+  worldRenderGlow: ev<(r: RenderContext) => void>('worldRenderGlow'),
   tooltip: ev<(c: { stack: ItemStack; lines: string[] }) => void>('tooltip'),
   screenOpen: ev<(c: { screen: Screen | null }) => void>('screenOpen'),
 };

@@ -32,7 +32,7 @@ export interface RenderContext {
   /** An item as dropped items look, centred at (x, y, z); `m` scales / turns it. */
   item(id: number, x: number, y: number, z: number, m?: Mat4 | null, light?: [number, number]): void;
   /** A camera-facing square. */
-  billboard(x: number, y: number, z: number, size: number, layer: number, color?: number, light?: [number, number]): void;
+  billboard(x: number, y: number, z: number, size: number, layer: number, color?: number, light?: [number, number], alpha?: number): void;
   /** A quad from four world-space corners (counter-clockwise), uv in 0..1. */
   quad(p: readonly number[], layer: number, uv?: readonly number[], color?: number, alpha?: number, light?: [number, number]): void;
 }
@@ -107,15 +107,15 @@ export function makeRenderContext(client: Client, er: EntityRenderer, mesh: DynM
       if (m) multiply(tmp, tmp, m);
       er.appendItem(mesh, id, tmp, sky, blk);
     },
-    billboard(x, y, z, size, layer, color = 0xffffff, lt) {
+    billboard(x, y, z, size, layer, color = 0xffffff, lt, alpha = 1) {
       const [sky, blk] = lt ?? light(x, y, z);
       const s = size, X = x - cam.x, Y = y - cam.y, Z = z - cam.z;
       const rx = -Math.cos(cam.yaw) * s / 2, rz = -Math.sin(cam.yaw) * s / 2;
       const ux = -Math.sin(cam.yaw) * Math.sin(cam.pitch) * s / 2, uy = Math.cos(cam.pitch) * s / 2, uz = Math.cos(cam.yaw) * Math.sin(cam.pitch) * s / 2;
-      mesh.v(X - rx - ux, Y - uy, Z - rz - uz, 0, 1, layer, color, 1, sky, blk);
-      mesh.v(X + rx - ux, Y - uy, Z + rz - uz, 1, 1, layer, color, 1, sky, blk);
-      mesh.v(X + rx + ux, Y + uy, Z + rz + uz, 1, 0, layer, color, 1, sky, blk);
-      mesh.v(X - rx + ux, Y + uy, Z - rz + uz, 0, 0, layer, color, 1, sky, blk);
+      mesh.v(X - rx - ux, Y - uy, Z - rz - uz, 0, 1, layer, color, alpha, sky, blk);
+      mesh.v(X + rx - ux, Y - uy, Z + rz - uz, 1, 1, layer, color, alpha, sky, blk);
+      mesh.v(X + rx + ux, Y + uy, Z + rz + uz, 1, 0, layer, color, alpha, sky, blk);
+      mesh.v(X - rx + ux, Y + uy, Z - rz + uz, 0, 0, layer, color, alpha, sky, blk);
     },
     quad(p, layer, uv = [0, 0, 1, 1], color = 0xffffff, alpha = 1, lt) {
       const [sky, blk] = lt ?? light(p[0], p[1], p[2]);
