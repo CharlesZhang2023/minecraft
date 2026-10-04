@@ -2,7 +2,7 @@
 import { GL, program, Program, DynMesh } from './gl';
 import * as SH from './shaders';
 import { BlockAtlas } from './atlas';
-import { Mat4, mat4, perspective, lookDir, multiply, invert, identity } from '../math';
+import { Mat4, mat4, perspective, ortho, lookDir, multiply, invert, identity } from '../math';
 import type { Chunk } from '../world/world';
 import type { MeshResult } from '../world/mesher';
 import type { LodDraw } from '../world/lod';
@@ -13,6 +13,12 @@ export interface Camera {
   x: number; y: number; z: number;
   yaw: number; pitch: number; // radians
   fov: number; // degrees
+  /**
+   * A flat (orthographic) projection showing this many blocks above and below the middle of the view, for
+   * top-down and isometric views. The camera then sits at the point it looks at (fog is measured from there), and
+   * things within `far` blocks in front of and behind it are drawn.
+   */
+  ortho?: number;
   roll?: number;
   bobX?: number; bobY?: number;
 }
@@ -268,7 +274,10 @@ export class Renderer {
   // ------------------------------------------------------------------ camera
   setupCamera(cam: Camera, near = 0.05, far = 1000) {
     this.cam = cam;
-    perspective(this.proj, (cam.fov * Math.PI) / 180, this.width / this.height, near, far);
+    if (cam.ortho) {
+      const h = cam.ortho, w = (h * this.width) / this.height;
+      ortho(this.proj, -w, w, -h, h, -far, far);
+    } else perspective(this.proj, (cam.fov * Math.PI) / 180, this.width / this.height, near, far);
     lookDir(this.view, cam.yaw, cam.pitch);
     if (cam.roll) {
       const r = mat4();

@@ -42,7 +42,7 @@ const USE_CONE = Math.cos((40 * Math.PI) / 180); // and how near the middle of t
 
 const buzz = (ms: number) => { if (navigator.userActivation?.hasBeenActive) navigator.vibrate?.(ms); };
 
-type Role = 'pad' | 'stick' | 'look' | 'btn' | 'hotbar' | 'screen' | 'tool' | 'none';
+type Role = 'pad' | 'stick' | 'look' | 'btn' | 'hotbar' | 'screen' | 'tool' | 'view' | 'none';
 
 interface Touch {
   id: number;
@@ -169,6 +169,9 @@ export class TouchControls {
   }
   private get flying() { return !!this.game.player?.flying; }
   private get joystick() { return this.game.options.touchMove === 'joystick'; }
+  /** A mod's view with a free pointer: its touches go to it, and without `touchPad` there's no pad, jump or hotbar. */
+  private get viewFree() { return !!this.game.view?.freePointer; }
+  private get noPad() { const v = this.game.view; return !!v?.freePointer && !v.touchPad; }
   /** Is the D-pad currently held forwards (which shows the diagonal buttons)? */
   private forward() {
     for (const t of this.touches.values()) if (t.role === 'pad' && (t.id2 === 'up' || t.id2 === 'upleft' || t.id2 === 'upright')) return true;
@@ -183,7 +186,9 @@ export class TouchControls {
     const [ox, oy] = padOrigin(H);
     const out: Btn[] = [];
     const jump = { id: 'jump', x: W - 12 - PAD_B, y: oy + PAD_S, w: PAD_B, h: PAD_B };
-    if (this.joystick) {
+    const noPad = this.noPad;
+    if (noPad) { /* the view has the whole screen */ }
+    else if (this.joystick) {
       // the stick floats on the left; sneak moves next to jump
       out.push({ ...jump, id: 'sneak', x: jump.x - PAD_S - 2 });
     } else {
@@ -193,7 +198,7 @@ export class TouchControls {
         out.push({ id, x: ox + c * PAD_S, y: oy + r * PAD_S, w: PAD_B, h: PAD_B });
       }
     }
-    out.push(jump);
+    if (!noPad) out.push(jump);
     // mods' buttons, stacked up from the jump button
     let k = 0;
     for (const m of TOUCH_BUTTONS) {
@@ -225,7 +230,7 @@ export class TouchControls {
   /** Hotbar cell under a GUI point: 0..n-1 a slot, n the "..." cell, -1 none. */
   private hotbarCell(gx: number, gy: number): number {
     const g = this.ui.gui, p = this.game.player;
-    if (!p || p.spectator || this.game.hideHud) return -1;
+    if (!p || p.spectator || this.game.hideHud || this.noPad || this.game.view?.hud === 'none') return -1;
     const hb = touchHotbar(g.w, g.h);
     if (gy < hb.y - 3 || gx < hb.x || gx >= hb.x + hb.w) return -1;
     return Math.max(0, Math.min(hb.n, Math.floor((gx - hb.x - 1) / 20)));
@@ -303,8 +308,13 @@ export class TouchControls {
       if (cell < touchHotbar(this.ui.gui.w, this.ui.gui.h).n) p.inventory.selected = cell;
       return;
     }
-    if (this.joystick && gx < this.ui.gui.w * 0.42 && gy > this.ui.gui.h * 0.25 && ![...this.touches.values()].some((o) => o !== t && o.role === 'stick')) {
+    if (this.joystick && !this.noPad && gx < this.ui.gui.w * 0.42 && gy > this.ui.gui.h * 0.25 && ![...this.touches.values()].some((o) => o !== t && o.role === 'stick')) {
       t.role = 'stick';
+      return;
+    }
+    if (this.viewFree) {
+      t.role = 'view';
+      this.ui.toView('down', gx, gy, 0, 0, t.id);
       return;
     }
     t.role = 'look';
@@ -378,6 +388,7 @@ export class TouchControls {
     switch (t.role) {
       case 'pad': { const sc = this.ui.gui.scale; this.setDir(t, this.padDir(x / sc, y / sc)); break; }
       case 'stick': this.updateStick(t); break;
+      case 'view': { const sc = this.ui.gui.scale; this.ui.toView('move', x / sc, y / sc, 0, 0, t.id); break; }
       case 'look':
         inp.dx += (dx / k) * LOOK_SENS;
         inp.dy += (dy / k) * LOOK_SENS;
@@ -421,6 +432,7 @@ export class TouchControls {
         inp.stick = null;
         inp.virtual.delete('ControlLeft');
         break;
+      case 'view': { const sc = this.ui.gui.scale; this.ui.toView(cancelled ? 'cancel' : 'up', x / sc, y / sc, 0, 0, t.id); break; }
       case 'look':
         if (t.holding) inp.mouseDown.delete(t.hold);
         else if (!cancelled && !t.moved && performance.now() - t.t0 < TAP_MS && this.isPlaying()) this.tap();
@@ -544,7 +556,7 @@ export class TouchControls {
     else inp.virtual.delete('ShiftLeft');
     if (!playing) { this.useTarget = null; return; }
     const p = this.game.player!;
-    this.useTarget = this.game.hideHud ? null : this.findUseTarget();
+    this.useTarget = this.game.hideHud || this.noPad ? null : this.findUseTarget();
     const hb = touchHotbar(this.ui.gui.w, this.ui.gui.h);
     if (p.inventory.selected >= hb.n) p.inventory.selected = hb.n - 1;
     const now = performance.now();
@@ -573,8 +585,14 @@ export class TouchControls {
     });
   }
 
+  /** The view's fingers are gone (a screen opened, or the touches were dropped). */
+  private cancelView() {
+    for (const t of this.touches.values()) if (t.role === 'view') this.ui.toView('cancel', t.x / this.ui.gui.scale, t.y / this.ui.gui.scale, 0, 0, t.id);
+  }
+
   private releaseAll() {
     const inp = this.game.input;
+    this.cancelView();
     this.touches.clear();
     this.pressed.clear();
     this.pulses = [];
@@ -591,6 +609,7 @@ export class TouchControls {
     this.sneak = this.rightTool = this.shiftTool = false;
     // only let go of mouse buttons touch pressed: the click that switched modes may be a real one
     const touchMouse = this.pulses.length > 0 || [...this.touches.values()].some((t) => (t.role === 'look' && t.holding) || t.down);
+    this.cancelView();
     this.touches.clear();
     this.pressed.clear();
     this.pulses = [];
@@ -618,7 +637,7 @@ export class TouchControls {
     const dirs = new Set<string>();
     for (const t of this.touches.values()) if (t.role === 'pad' && t.id2) dirs.add(t.id2);
     const flying = this.flying;
-    if (this.joystick) this.drawStick(ctx);
+    if (this.joystick && !this.noPad) this.drawStick(ctx);
     const riding = !!g.player?.riding;
     for (const b of this.buttons()) {
       const on = this.pressed.has(b.id) || dirs.has(b.id) || (b.id === 'sneak' && this.sneak);

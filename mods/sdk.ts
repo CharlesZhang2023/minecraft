@@ -20,6 +20,8 @@ export type { Img } from '../src/render/pixels';
 export type { Mat4 } from '../src/math';
 export type { Game } from '../src/game/game';
 export type { Client } from '../src/client/client';
+export type { ClientView, ViewPointer, ViewAim, MoveInput } from '../src/client/view';
+export type { Camera } from '../src/render/renderer';
 export type { Player } from '../src/game/player';
 export type { Entity } from '../src/entity/entity';
 export type { World } from '../src/world/world';

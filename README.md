@@ -123,8 +123,8 @@ Click the game to capture the mouse. Worlds save automatically to IndexedDB.
   browser) or from a file, and turns them on or off. Each mod gets a generated settings page.
 - Multiplayer: guests are switched to the host's mods automatically. Client-only mods stay with each player.
 - Example mods: Rubies (ore, tools, a mob), Computers (a scriptable terminal with redstone), Kinetics
-  (rotational power with animated machines), Minimap, and Wands (below). See [mods/README.md](mods/README.md) to
-  write your own.
+  (rotational power with animated machines), Minimap, Wands and Overseer (below). See [mods/README.md](mods/README.md)
+  to write your own.
 - **Wands** brings in Noita's wands and spells: 425 of them, nearly all of Noita's, with Noita's icons. A wand fires
   its spells like a deck of cards, so they combine: projectiles, modifiers, multicasts and formations, triggers and
   timers, larpas and orbits, requirements, Greek letters and Divide By, materials and puddles that stain creatures,
@@ -132,6 +132,12 @@ Click the game to capture the mouse. Worlds save automatically to IndexedDB.
   button on phones) is modelled on the Spell Lab mod: drag or tap spells, see what each cast fires, edit the stats in
   creative, and keep layouts in a wand box. A target dummy measures damage per second. Wands are crafted, spells
   come from arcane scrolls and monsters, and it all works in multiplayer.
+- **Overseer** is a 2.5D strategy view inspired by Reign of Nether. Press V (or the eye button on phones) to look down
+  on the world through a flat, turnable camera. In the god view you have no body of your own: you pick a side
+  (Villagers or Monsters), place a free town hall, and command units that chop trees, mine, farm and hunt, put up
+  buildings block by block, train soldiers and archers, and fight monsters, nightly raids and (if the host allows)
+  other players. Tab switches to the hero view: your own character, walked with WASD relative to the screen,
+  fighting, mining and building at the mouse pointer. See [mods/overseer/README.md](mods/overseer/README.md).
 
 ## Controls
 

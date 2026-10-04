@@ -216,8 +216,10 @@ export class EntityRenderer {
     dyn.reset();
     let modCtx: RenderContext | null = null;
     const list: Entity[] = [...game.entities];
-    if (game.thirdPerson && game.player) list.push(game.player);
+    if (game.drawsSelf && game.player) list.push(game.player);
     for (const e of list) {
+      // spectators are invisible to everyone else
+      if (e instanceof Player && e.spectator && e !== game.player) continue;
       const x = e.lerpX(t) - cam.x, y = e.lerpY(t) - cam.y, z = e.lerpZ(t) - cam.z;
       if (x * x + y * y + z * z > 96 * 96) continue;
       if (!this.r.boxVisible(x - e.width, y - 0.5, z - e.width, x + e.width, y + e.height + 0.5, z + e.width)) continue;
@@ -227,7 +229,7 @@ export class EntityRenderer {
       if (e instanceof FireworkRocket) {
         // one pulling a glider flies with it (and isn't drawn in our own face)
         const a = e.attached;
-        if (a === game.player && game.thirdPerson === 0) continue;
+        if (a === game.player && !game.drawsSelf) continue;
         const rx = a ? a.lerpX(t) - cam.x : x, ry = a ? a.lerpY(t) - cam.y : y, rz = a ? a.lerpZ(t) - cam.z : z;
         this.billboard(dyn, rx, ry + 0.125, rz, 0.25, TEXTURES.indexOf('item/firework_rocket'), 0xffffff, sky, blk);
       } else if (e instanceof ItemEntity) this.drawItemEntity(dyn, e, x, y, z, t, sky, blk);
@@ -292,7 +294,8 @@ export class EntityRenderer {
     sh.reset();
     const layer = TEXTURES.indexOf('entity_shadow');
     for (const e of list) {
-      if (e === game.player && game.thirdPerson === 0) continue;
+      if (e === game.player && !game.drawsSelf) continue;
+      if (e instanceof Player && e.spectator) continue;
       const size = e instanceof ItemEntity ? 0.15 : e instanceof LivingEntity ? Math.max(0.3, e.width * 0.7) * ((e as unknown as { baby?: boolean }).baby ? 0.5 : 1) : 0;
       if (size <= 0 || (e as LivingEntity).deathTime > 0) continue;
       const ex = e.lerpX(t), ey = e.lerpY(t), ez = e.lerpZ(t);
@@ -557,16 +560,18 @@ export class EntityRenderer {
           pose.leftLeg = [-Math.PI * 2 / 5, -Math.PI / 10, 0];
         }
         const offs: Record<string, [number, number, number]> | undefined = sneak ? { rightLeg: [0, -3, 4], leftLeg: [0, -3, 4], head: [0, 1, 0], hat: [0, 1, 0] } : undefined;
-        if (e instanceof Player) {
-          // players wear their own skin, outer layer and all
-          const pl = this.playerLook(e.look, e.slim);
+        // players wear their own skin, outer layer and all (and so does a mob with a player's `look`)
+        const look = e instanceof Player ? e.look : typeof anyE.look === 'string' ? anyE.look : null;
+        if (look !== null) {
+          const pl = this.playerLook(look, e instanceof Player ? e.slim : !!anyE.slim);
           withOverlays(pose);
           if (offs) withOverlays(offs);
           this.drawModel(pl.model, pl.skin, base, pose, light, overlay, undefined, 1, offs);
         } else this.drawModel(model, skin, base, pose, light, overlay, new Set(['hat']), 1, offs);
-        // held item
+        // held item, and armour on a mob that wears some (`armorItems`: helmet, chest, legs, boots)
         const held = anyE.heldItem as number | undefined;
         if (held) this.drawHeldThirdPerson(held, base, pose.rightArm, light, offs?.rightArm);
+        if (Array.isArray(anyE.armorItems)) this.drawArmor(anyE.armorItems as ({ id: number } | null)[], base, pose, light, overlay, offs);
         if (e instanceof Player) {
           this.drawArmor(e.inventory.armor, base, pose, light, overlay, offs);
           if (e.inventory.armor[1]?.id === I6.ELYTRA) this.drawElytra(e, base, light, overlay);
@@ -998,7 +1003,7 @@ export class EntityRenderer {
     const p = e.angler, cam = this.r.cam;
     const yaw = ((p.pyaw + (p.yaw - p.pyaw) * t) * Math.PI) / 180;
     let sx: number, sy: number, sz: number;
-    if (game.thirdPerson === 0) {
+    if (!game.drawsSelf) {
       // from the rod tip at the lower right of the view
       const d = game.lookVec(p.yaw, p.pitch);
       const rx = -Math.cos(yaw), rz = -Math.sin(yaw);

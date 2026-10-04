@@ -6,7 +6,7 @@ import { World } from '../world/world';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { Mob, Monster, Animal } from '../entity/mobs';
-import { ItemEntity } from '../entity/item';
+import { ItemEntity, Arrow } from '../entity/item';
 import { Player } from '../game/player';
 import { Interaction } from '../game/interact';
 import { Commands } from '../game/commands';
@@ -26,7 +26,7 @@ import { registerTexture, getTexture } from '../render/textures';
 import { registerItemSprite } from '../render/itemsprites';
 import { registerSound, synth, SAMPLE_RATE } from '../game/audio';
 import { modelBoxes, collisionShapes, selectionShapes } from '../world/models';
-import { SCREENS, KEYBINDS, TILE_RENDERERS, ENTITY_RENDERERS, CREATIVE_TABS, CONFIG_SCREENS, TOUCH_BUTTONS, live } from './hooks';
+import { SCREENS, KEYBINDS, TILE_RENDERERS, ENTITY_RENDERERS, CREATIVE_TABS, CONFIG_SCREENS, TOUCH_BUTTONS, VIEW, live } from './hooks';
 import type { ClientApi } from './api';
 import { blockCtx } from './blockctx';
 import { tex } from '../world/blocks';
@@ -36,7 +36,7 @@ import { device } from '../game/device';
 
 /** The game's classes and helpers (page only). */
 export const pageMc = {
-  Game, Dim, Client, World, Entity, LivingEntity, Mob, Monster, Animal, ItemEntity, Player, ServerPlayer, Interaction, Commands,
+  Game, Dim, Client, World, Entity, LivingEntity, Mob, Monster, Animal, ItemEntity, Arrow, Player, ServerPlayer, Interaction, Commands,
   Redstone, BlockTicker, Inventory, UI, Screen, Button, Slider, TextField, ContainerScreen, Hud, Renderer, EntityRenderer,
   modelBoxes, collisionShapes, selectionShapes,
   math, pixels, synth, SAMPLE_RATE,
@@ -100,6 +100,14 @@ export function clientApi(mod: string): ClientApi {
       if (i >= 0) TOUCH_BUTTONS.splice(i, 1);
       TOUCH_BUTTONS.push({ ...def, mod, id: key });
     },
+    setView(view) {
+      const was = VIEW.view;
+      if (!view && VIEW.mod !== mod) return;
+      VIEW.mod = view ? mod : '';
+      VIEW.view = view;
+      live.client?.viewChanged(was);
+    },
+    view() { return VIEW.mod === mod ? VIEW.view : null; },
   };
 }
 

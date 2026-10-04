@@ -12,6 +12,8 @@ export class Input {
   wheel = 0;
   mouseX = 0;
   mouseY = 0;
+  /** Is the mouse over the page (false once it has left the window)? */
+  mouseInside = true;
   /** Real pointer lock (desktop). */
   pointerLocked = false;
   /** Keys held by on-screen controls. */
@@ -66,8 +68,10 @@ export class Input {
       this.mouseDown.delete(e.button);
       this.onMouseUp(this.mouseX, this.mouseY, e.button);
     });
+    document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) this.mouseInside = false; });
     window.addEventListener('mousemove', (e) => {
       if (device.recentTouch()) return;
+      this.mouseInside = true;
       if (this.pointerLocked) {
         this.dx += e.movementX;
         this.dy += e.movementY;

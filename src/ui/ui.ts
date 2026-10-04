@@ -59,7 +59,8 @@ export class UI {
       if (this.screen) {
         this.forward('down', { b });
         this.screen.mouseDown(mx, my, b);
-      } else if (game.world && !inp.locked) inp.lock();
+      } else if (this.viewPointer()) this.toView('down', mx, my, b, 0);
+      else if (game.world && !inp.locked) inp.lock();
     };
     inp.onMouseUp = (x, y, b) => {
       const [mx, my] = this.toGui(x, y);
@@ -67,17 +68,30 @@ export class UI {
       this.my = my;
       this.buttons = Math.max(0, this.buttons - 1);
       this.forward('up', { b });
-      this.screen?.mouseUp(mx, my, b);
+      if (this.screen) this.screen.mouseUp(mx, my, b);
+      else if (this.viewPointer()) this.toView('up', mx, my, b, 0);
     };
     inp.onWheel = (d) => {
       this.forward('wheel', { d });
-      this.screen?.wheel(d);
+      if (this.screen) this.screen.wheel(d);
+      else if (this.viewPointer()) this.toView('wheel', this.mx, this.my, 0, d);
     };
     inp.onLockChange = (locked) => {
-      // Esc released the pointer while playing -> open the pause menu
-      if (!locked && !this.screen && game.world && !game.panorama) this.open(new Menus.PauseScreen(this));
+      // Esc released the pointer while playing -> open the pause menu (a view with a free pointer never holds it)
+      if (!locked && !this.screen && game.world && !game.panorama && !this.viewPointer()) this.open(new Menus.PauseScreen(this));
     };
     this.open(new Menus.TitleScreen(this));
+  }
+
+  /** Is a mod's view taking the mouse in the world (no screen open)? */
+  viewPointer() {
+    const g = this.game;
+    return !this.screen && !!g.world && !g.panorama && !!g.view?.freePointer;
+  }
+  /** Mouse or finger activity in the world, for the view. */
+  toView(type: 'down' | 'move' | 'up' | 'wheel' | 'cancel', x: number, y: number, button: number, d: number, touch: number | null = null) {
+    const g = this.game;
+    g.viewDo('pointer', (v) => v.onPointer?.({ type, x, y, button, d, touch }, g), undefined);
   }
 
   toGui(x: number, y: number): [number, number] {
@@ -117,7 +131,7 @@ export class UI {
       s.init();
       this.game.input.unlock();
       if (device.touch) this.touch.syncKeyboard();
-    } else if (this.game.world && !this.game.panorama) {
+    } else if (this.game.world && !this.game.panorama && !this.game.view?.freePointer) {
       this.game.input.lock();
     }
     if (!s && device.touch) this.touch.syncKeyboard();
@@ -136,7 +150,8 @@ export class UI {
       this.my = my;
       // only drags matter to the server's copy of a window
       if (this.buttons > 0) this.forward('move', {});
-      this.screen?.mouseMove(mx, my);
+      if (this.screen) this.screen.mouseMove(mx, my);
+      else if (this.viewPointer() && !device.touch) this.toView('move', mx, my, 0, 0);
     }
   }
 
@@ -187,6 +202,8 @@ export class UI {
       return this.screen.key(e) || true;
     }
     if (!g.world || g.panorama) return false;
+    // a mod's view sees keys first (a strategy view's hotkeys)
+    if (g.view?.key && g.viewDo('key', (v) => v.key!(e, g), false)) return true;
     switch (e.code) {
       case 'Escape': this.open(new Menus.PauseScreen(this)); return true;
       case 'KeyE': if (!g.player!.dead) { this.suppressChar = true; this.openInventory(); } return true;
@@ -248,7 +265,7 @@ export class UI {
     const [mx, my] = this.toGui(g.input.mouseX, g.input.mouseY);
     if (g.world && g.player && !g.panorama && !g.hideHud) g.nameTags(ctx);
     if (g.world && g.player && !g.panorama) this.hud.render(ctx);
-    if (g.world && !g.panorama && !this.screen && !g.input.locked && !g.hideHud) {
+    if (g.world && !g.panorama && !this.screen && !g.input.locked && !g.hideHud && !g.view?.freePointer) {
       const t = 'Click to play';
       const w = this.gui.font.width(t) + 8;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';

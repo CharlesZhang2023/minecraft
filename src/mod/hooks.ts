@@ -2,6 +2,7 @@
 // the game's heavier modules, so the worker realm can share it (it only uses the world features).
 import type { Game } from '../game/game';
 import type { Client } from '../client/client';
+import type { ClientView } from '../client/view';
 import type { Player } from '../game/player';
 import type { World, Dimension } from '../world/world';
 import type { Entity } from '../entity/entity';
@@ -115,6 +116,10 @@ export const MOD_NAMES = new Map<string, string>();
 
 /** The page's client and running simulation, for API calls that need them (set by the game). */
 export const live = { client: null as Client | null, game: null as Game | null };
+
+// ------------------------------------------------------------------ the camera and controls (one mod's view at a time)
+/** The view a mod has set (`mod.client.setView`): the client asks it while that mod is in play. */
+export const VIEW = { mod: '', view: null as ClientView | null };
 
 // ------------------------------------------------------------------ the mod session (implemented by the loader)
 /** A mod as a host describes it to guests. */

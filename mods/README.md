@@ -12,7 +12,7 @@ Contents: [The model](#how-the-game-is-put-together) · [Quick start](#quick-sta
 [Build and test](#build-install-and-test) · [Lifecycle](#lifecycle-and-entrypoints) · [The context](#the-context-mod) ·
 [Blocks](#blocks) · [Items](#items) · [Recipes](#recipes) · [World generation](#world-generation) ·
 [Entities](#entities-and-mobs) · [Commands](#commands) · [Server side](#programming-the-server-side) ·
-[Events](#events) · [Client side](#programming-the-client-side) · [Rendering](#rendering) · [Screens](#screens) ·
+[Events](#events) · [Client side](#programming-the-client-side) · [Rendering](#rendering) · [Views](#views-camera-and-controls) · [Screens](#screens) ·
 [Phones](#phones-and-touch) · [Settings](#settings) · [Networking](#networking) · [Mixins](#mixins) ·
 [Ids and worlds](#ids-worlds-and-missing-mods) · [Multiplayer](#multiplayer) · [Rules and pitfalls](#rules-and-pitfalls) ·
 [Examples](#example-mods) · [Where things are](#where-things-are) · [Publishing](#publishing)
@@ -284,7 +284,7 @@ The full typed interface is `ModContext` in `src/mod/api.ts`.
 | `mod.channel(name)` | A network channel between clients and the server. [Networking](#networking) |
 | `mod.config(schema)` | Per-browser settings with a generated settings page. [Settings](#settings) |
 | `mod.worldData(defaults)` | Data saved with the world, on the server: returns a getter for the current world's copy. |
-| `mod.client.*` | Page-only extension points: `texture`, `itemSprite`, `sound`, `screen`, `keybind`, `touchButton`, `tileRenderer`, `entityRenderer`, `creativeTab`, `configScreen`, `openScreen`. |
+| `mod.client.*` | Page-only extension points: `texture`, `itemSprite`, `sound`, `screen`, `keybind`, `touchButton`, `tileRenderer`, `entityRenderer`, `creativeTab`, `configScreen`, `openScreen`, `setView`, `view`. |
 | `mod.mc` | The game's pieces (below). |
 
 ### `mod.mc`
@@ -311,7 +311,7 @@ Page only, from `pageMc` in `src/mod/page.ts`:
 
 | | |
 |---|---|
-| Classes | `Game`, `Dim`, `Client`, `World`, `Entity`, `LivingEntity`, `Mob`, `Monster`, `Animal`, `ItemEntity`, `Player`, `ServerPlayer`, `Interaction`, `Commands`, `Redstone`, `BlockTicker`, `Inventory`, `UI`, `Screen`, `Button`, `Slider`, `TextField`, `ContainerScreen`, `Hud`, `Renderer`, `EntityRenderer`. Use them to subclass, to `instanceof`-check, or as mixin targets. |
+| Classes | `Game`, `Dim`, `Client`, `World`, `Entity`, `LivingEntity`, `Mob`, `Monster`, `Animal`, `ItemEntity`, `Arrow`, `Player`, `ServerPlayer`, `Interaction`, `Commands`, `Redstone`, `BlockTicker`, `Inventory`, `UI`, `Screen`, `Button`, `Slider`, `TextField`, `ContainerScreen`, `Hud`, `Renderer`, `EntityRenderer`. Use them to subclass, to `instanceof`-check, or as mixin targets. |
 | `modelBoxes`, `collisionShapes`, `selectionShapes` | A block state's boxes and shapes. |
 | `math` | `mat4()`, `identity`, `translate`, `scale`, `rotateX/Y/Z`, `multiply`, `invert`… (column-major `Float32Array`). |
 | `pixels` | Painting 16×16 images: `newImg()`, `hex('#rrggbb')`, `set(img, x, y, rgb, a?)`, `get`, `shade(rgb, f)`, `mix(a, b, t)`, `art(img, rows, palette)`, `copy`, `paletteNoise(img, r, palette)`, `blobField(r)`. |
@@ -534,7 +534,9 @@ mod.item('ghoul_spawn_egg', { display: 'Spawn Ghoul', egg: 'mymod:ghoul' });
   `'creeper'`, `'spider'`, `'pig'`, `'cow'`, `'sheep'`, `'chicken'`, `'enderman'`, `'slime'`, `'wolf'`, `'squid'`,
   `'bat'`, `'villager'`, `'ghast'`, `'blaze'`, `'silverfish'`, `'horse'`. Skins usually share their mob's name
   (`'zombie'`, `'skeleton'`, `'pigman'`…). To draw your own, use `mod.client.entityRenderer('ghoul', (r, e) => …)`
-  (see [Rendering](#rendering) and the Rubies beetle).
+  (see [Rendering](#rendering) and the Rubies beetle). A biped mob with a `look` field (a player skin preset such as
+  `'knight'`, or an imported skin) is drawn in that player skin, and one with `armorItems` (four `{ id }` or null:
+  helmet, chest, legs, boots) wears that armour; `heldItem` (an item id) is drawn in its hand.
 - **Spawning.** Spawn eggs (`egg`), `/summon mymod:ghoul`, and `game.interact.spawnMob('mymod:ghoul', x, y, z)`
   all work. There's no natural-spawning API: spawn from `serverTick` yourself if you want that.
 - **Attacks and damage.** `entity.damage(amount, source, attacker)` returns whether it applied. Sources include
@@ -598,6 +600,10 @@ What `game` offers (a cheat sheet; read the file for more):
 does. TNT primes, containers spill, neighbours update once at the end, and mod blocks get `onBreak`. Each block
 drops its items with probability `drops` (0-1), as if mined with the right tool. `fire` lights some of the gaps,
 and `fx` is `'break'`, `'smoke'` or `'none'`. Prefer it over a loop of `world.set(…, 0)`.
+
+**Keeping places loaded.** The world is simulated around players. To keep somewhere else ticking (a town whose
+owner looks elsewhere), set `dim.keepLoaded = [{ x, z, r }]` on a dimension (`game.dims`): block coordinates and a
+radius in chunks. Keep the list short and the radii small; it only counts while someone is in that dimension.
 
 **`worldData`.** `const data = mod.worldData(() => ({ next: 1, list: {} }))` returns a getter. `data()` is the
 current world's object, created from the defaults the first time. Change it in place: it is saved with the world.
@@ -699,6 +705,34 @@ Renderers draw into the world every frame, in world coordinates, through a `Rend
 
 Tips: look up texture layers once (they don't change after load). Very large or very close glows wash out the
 screen, so shrink them near the camera. Skip far-away things.
+
+---
+
+## Views (camera and controls)
+
+A mod can take over how the world is seen and played: a top-down or isometric view, a strategy game's free mouse
+pointer, a cutscene. `mod.client.setView(view)` installs a `ClientView` (`src/client/view.ts`), and
+`setView(null)` gives first-person play back. One view is active at a time (setting one replaces another mod's), it
+only works while its mod is in play, and errors in it are reported like any hook's. Every member is optional:
+
+| | |
+|---|---|
+| `camera(cam, client, partial)` | Change this frame's `Camera` after the game has set it up: `x y z`, `yaw`/`pitch` (radians), `fov`. Setting `cam.ortho = n` switches to a flat (orthographic) projection showing `n` blocks above and below the middle of the screen; the camera then sits at the point looked at (fog is measured from there) and draws what's within the far distance in front of and behind it. There's no sky or clouds in that mode, and nothing tints the screen for the camera being in water or a wall. |
+| `showSelf` | Draw our own player (as in third person) and no first-person hand. |
+| `freePointer` | No pointer lock and no crosshair. Mouse clicks, drags, moves and the wheel in the world (and on phones every touch that misses the game's buttons) go to `onPointer`. |
+| `onPointer(e, client)` | `e.type` `down`/`move`/`up`/`wheel`/`cancel`, `e.x e.y` in GUI units, `e.button` (0 left, 1 middle, 2 right), `e.d` wheel steps, `e.touch` a finger's id (null for the mouse). Several fingers can be down. |
+| `key(e, client)` | Sees each key pressed while playing before the game does; return true to keep it (the game's own keys and mod key bindings then don't see it). Held keys still show in `client.input.isDown`. |
+| `look(dx, dy, client)` | Mouse-look movement, instead of turning the player. |
+| `move(inp, client)` | Turn the movement keys (`forward`, `strafe`, `jump`, `sneak`, `sprint`) into the player's walking; for example camera-relative walking, or nothing at all. |
+| `aim(client)` | Where the player aims (a unit direction from the eyes; the server picks the block or mob along it, within reach) and which buttons it holds and pressed this tick (0 attack/mine, 2 use/place). Replaces the crosshair and the mouse. Return null to aim at nothing. |
+| `hud` | `'none'` hides the game's HUD (hotbar, health, crosshair), keeping chat, messages and mods' `hudRender`. |
+| `touchPad` | Phones: keep the movement pad, jump button and hotbar (there's a character to walk). Without it they're hidden. |
+| `brightness` | Light the world up this much (0-1, like night vision), so a dark scene stays readable. |
+
+The player still exists while a view is on: the world loads around it and the server simulates around it, so a view
+that roams (a strategy camera) moves the player along (the Overseer puts its player in spectator mode and carries
+it under the camera). Picking what's under the pointer is up to the view: the Overseer's `cam.ts` has the ray
+through a screen point for a flat projection, a voxel ray walk and a point-to-screen projection.
 
 ---
 
@@ -937,6 +971,7 @@ Each example is a complete mod in this folder; read the one closest to what you'
 | `computer` (Computers) | `main.ts`, `shell.ts`, `terminal.ts` | A tile entity holding files and a program, a server-opened screen, channels for typing and saving (with validation), redstone in and out per side, per-world data, a sound, a setting. |
 | `kinetic` (Kinetics) | `main.ts` | Machines: power spread through neighbouring tile entities, animated tile renderers (spinning shafts, crank, windmill sails, millstone), custom shapes, a HUD readout. |
 | `minimap` (Minimap) | `main.ts` | A client-only mod (`"environment": "client"`): HUD drawing, a rebindable key, a generated settings page. |
+| `overseer` (Overseer) | `main.ts` (wiring), `defs.ts` (units, buildings, blueprints), `cam.ts`, `ctl.ts`, `hud.ts`, `units.ts`, `ai.ts`, `server.ts`, `place.ts`, `state.ts` | A view (`setView`): a flat 2.5D camera, a free pointer with mouse and touch gestures, camera-relative walking and pointer aiming for a hero. A strategy game on top: one mob class for many unit kinds drawn in player skins and armour, server-side unit AI (paths, fights, gathering, building block by block), shared placement rules for the client's ghost and the server's check, `keepLoaded`, a mixin that makes monsters target units, a command, host settings. Its own tour is [`overseer/README.md`](overseer/README.md). |
 | `wands` (Wands) | `main.ts` (wiring), `spelldefs.ts` + `catalog/*.ts` (data), `engine.ts`, `motion.ts`, `server.ts`, `status.ts`, `blocks.ts`, `fx.ts`, `hud.ts`, `editor.ts`, `dummy.ts`, `art.ts`, `icons.ts` | A large mod: hold-to-use items with data in `stack.tag`; server-side projectiles sent as compact per-tick events that each client flies itself; glow rendering; a phone-friendly editor screen with drag and drop, tap-to-move and undo, whose edits the server checks; a touch button; host settings; a mob drawn by its own renderer with private data kept off the entity. Its own reference is [`wands/README.md`](wands/README.md), and every spell is listed in [`wands/SPELLS.md`](wands/SPELLS.md). |
 
 ## Where things are
@@ -955,6 +990,7 @@ Each example is a complete mod in this folder; read the one closest to what you'
 | `src/game/game.ts`, `src/game/interact.ts` | The server: world, players, actions, explosions. |
 | `src/entity/*.ts` | Entities and mobs. |
 | `src/client/client.ts`, `src/ui/*.ts` | The client, screens, HUD, GUI helpers, touch controls. |
+| `src/client/view.ts` | `ClientView`: what a mod's view can take over. |
 | `tools/vite-mods.ts` | How mods are built and served. |
 
 ## Publishing

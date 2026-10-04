@@ -1,0 +1,10 @@
+{
+  "id": "overseer",
+  "version": "1.0.0",
+  "name": "Overseer",
+  "description": "A 2.5D strategy view inspired by Reign of Nether: look down on the world with no body of your own and command units that gather, build a town and fight, or walk your own hero under the same camera.",
+  "authors": ["Claude"],
+  "environment": "*",
+  "icon": "#5a7ad0",
+  "depends": { "minecraft": ">=1.0.0" }
+}

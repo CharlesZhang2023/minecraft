@@ -120,7 +120,8 @@ export abstract class Mob extends LivingEntity {
   }
 
   setPathTo(x: number, y: number, z: number, speed: number) {
-    const p = findPath(this.world, Math.floor(this.x), Math.floor(this.y + 0.01), Math.floor(this.z), Math.floor(x), Math.floor(y), Math.floor(z), Math.ceil(this.height), 300);
+    // (+0.13: standing on farmland or soul sand, a little under the next block, counts as on top)
+    const p = findPath(this.world, Math.floor(this.x), Math.floor(this.y + 0.13), Math.floor(this.z), Math.floor(x), Math.floor(y), Math.floor(z), Math.ceil(this.height), 300);
     this.path = p;
     this.aiSpeed = speed;
     return !!p;

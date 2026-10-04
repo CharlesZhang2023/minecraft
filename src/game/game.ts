@@ -62,6 +62,11 @@ export class Dim {
   /** Interaction for world-made events (explosions, falling blocks) that no player is behind. */
   interact: Interaction;
   emptyTicks = 0;
+  /**
+   * More places to keep loaded and simulated while anyone is in this dimension, besides around the players (a
+   * mod's town ticking on while its owner looks elsewhere). Radius in chunks; keep these few and small.
+   */
+  keepLoaded: { x: number; z: number; r: number }[] = [];
   /** Replication: each entity's encoded fields this tick, what changed since the last, and comparable copies. */
   states = new Map<number, State>();
   deltas = new Map<number, State>();
@@ -651,7 +656,7 @@ export class Game {
     const w = dim.world;
     const here = this.players.filter((p) => p.dim === w.dimension);
     w.renderDistance = this.simDistance;
-    w.updateCenters(here.map((p) => ({ x: p.entity.x, z: p.entity.z, r: p.simRadius() })));
+    w.updateCenters([...here.map((p) => ({ x: p.entity.x, z: p.entity.z, r: p.simRadius() })), ...dim.keepLoaded]);
     if (!here.length) return;
     if (w.dimension === 'end' && this.meta?.dragonKilled && this.ticks % 20 === 0) buildExitPortal(this);
     if (w.dimension === 'end') buildPending(this);

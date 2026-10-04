@@ -18,6 +18,7 @@ import { modState } from './state';
 import type { ModManifest, BlockBehavior, ItemBehavior } from './types';
 import type { Game } from '../game/game';
 import type { Client } from '../client/client';
+import type { ClientView } from '../client/view';
 import type { Player } from '../game/player';
 import type { Screen } from '../ui/screen';
 import type { Img } from '../render/pixels';
@@ -71,6 +72,13 @@ export interface ClientApi {
   openScreen(s: Screen | null): void;
   /** A button on phones' touch controls (what a key binding is on a keyboard). */
   touchButton(id: string, def: TouchButtonDef): void;
+  /**
+   * Take over the camera and controls (a top-down view, a cutscene), or give them back with null. One view at a
+   * time: setting one replaces any other mod's. See `ClientView`.
+   */
+  setView(view: ClientView | null): void;
+  /** This mod's view, if it's the one in use. */
+  view(): ClientView | null;
 }
 
 export interface ModContext {
@@ -137,7 +145,7 @@ export function createContext(manifest: ModManifest, mc: Mc, client: ClientApi |
   const worker = modState.realm === 'worker';
   const inertClient: ClientApi = {
     texture: noop, itemSprite: noop, sound: noop, screen: noop, keybind: noop, tileRenderer: noop, entityRenderer: noop,
-    creativeTab: noop, configScreen: noop, openScreen: noop, touchButton: noop,
+    creativeTab: noop, configScreen: noop, openScreen: noop, touchButton: noop, setView: noop, view: () => null,
   };
   const ctx: ModContext = {
     id, version: manifest.version, manifest, realm: modState.realm, mc,

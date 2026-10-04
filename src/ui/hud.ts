@@ -66,8 +66,12 @@ export class Hud {
     const W = gui.w, H = gui.h;
     if (g.hideHud) return;
     const cx = Math.floor(W / 2);
+    // a mod's view: no crosshair with a free pointer, and maybe no HUD at all (chat and messages stay)
+    const view = g.view;
+    if (view?.hud === 'none') { this.modsAndChat(ctx); return; }
+    if (view?.freePointer) { /* the pointer is the crosshair */ }
     // crosshair (inverted colours)
-    if (!g.showDebug && g.thirdPerson === 0 && !device.touch) this.crosshair(ctx);
+    else if (!g.showDebug && g.thirdPerson === 0 && !device.touch) this.crosshair(ctx);
     else if (!g.showDebug && g.thirdPerson === 0 && !g.touchAim()) {
       ctx.save();
       ctx.globalCompositeOperation = 'difference';
@@ -79,7 +83,7 @@ export class Hud {
       ctx.restore();
     } else if (g.showDebug && g.thirdPerson === 0) this.debugAxes(ctx, cx, Math.floor(H / 2));
     if (p.spectator) {
-      this.renderChatAndText(ctx);
+      this.modsAndChat(ctx);
       return;
     }
     // hotbar; on touch screens the Pocket Edition one: only the slots that fit, then "..." for the inventory
@@ -217,10 +221,15 @@ export class Hud {
     }
     if (!this.ui.screen && !g.hideHud) drawEffectsHud(ctx, this.ui);
     this.bossBar(ctx);
-    // mods' HUD (under the chat)
+    this.modsAndChat(ctx);
+  }
+
+  /** Mods' HUD, then the chat over it. */
+  private modsAndChat(ctx: Ctx) {
+    const g = this.ui.game, gui = this.ui.gui;
     if (Events.hudRender.any) {
       ctx.save();
-      Events.hudRender.fire({ ctx, client: g, width: W, height: H, partial: g.partial });
+      Events.hudRender.fire({ ctx, client: g, width: gui.w, height: gui.h, partial: g.partial });
       ctx.restore();
     }
     this.renderChatAndText(ctx);

@@ -48,7 +48,8 @@ import { fingerprint, cleanName, MAX_PLAYERS } from '../net/protocol';
 import type { ServerPlayer } from '../server/splayer';
 import { Events } from '../mod/events';
 import { makeRenderContext } from '../mod/render';
-import { session, live, CHANNELS, KEYBINDS, type HostModInfo } from '../mod/hooks';
+import { session, live, CHANNELS, KEYBINDS, VIEW, type HostModInfo } from '../mod/hooks';
+import type { ClientView, ViewAim } from './view';
 import { bind } from '../mod/registry';
 import { modState, guard } from '../mod/state';
 import { CONFIGS } from '../mod/config';
@@ -498,6 +499,8 @@ export class Client {
     const [dx, dy] = this.input.takeMouse();
     const p = this.player;
     if (!p || !this.input.locked || this.ui.screen) return;
+    const view = this.view;
+    if (view) { if (view.look && (dx || dy)) this.viewDo('look', (v) => v.look!(dx, dy, this), undefined); return; }
     if (p.sleeping) return;
     const o = this.options;
     const curve = (v: number) => { const s = v * 0.6 + 0.2; return s * s * s * 8 * 0.15; };
@@ -537,7 +540,11 @@ export class Client {
     this.handleKeys();
     p.preTick();
     const loaded = this.arrived && w.isLoaded(p.x, p.z);
-    const inp = this.ui.screen || !loaded ? { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false } : this.moveInput();
+    let inp = this.ui.screen || !loaded ? { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false } : this.moveInput();
+    const view = this.view;
+    if (view?.move && !this.ui.screen && loaded) inp = this.viewDo('move', (v) => v.move!(inp, this), inp);
+    // a view aiming the player (a free pointer instead of the crosshair) is asked once a tick
+    this.viewAim = view?.aim && !this.ui.screen ? this.viewDo('aim', (v) => v.aim!(this), null) : undefined;
     if (loaded) {
       if (p.riding) {
         if (inp.sneak) this.conn?.send({ t: 'dismount' });
@@ -571,7 +578,7 @@ export class Client {
     // potion swirls around entities under status effects
     for (const e of [p, ...this.entities]) {
       if (!(e instanceof LivingEntity) || !e.effectColor || e.dead) continue;
-      const own = e === p && this.thirdPerson === 0;
+      const own = e === p && !this.drawsSelf;
       if (this.rng.next() > (own ? 0.12 : e.effects.has('invisibility') ? 0.15 : 0.6)) continue;
       this.particles!.swirl(e.x + (this.rng.next() - 0.5) * e.width, e.y + this.rng.next() * e.height, e.z + (this.rng.next() - 0.5) * e.width, 0, 0.02, 0, e.effectColor);
     }
@@ -682,14 +689,16 @@ export class Client {
     const p = this.player!, conn = this.conn;
     if (!conn) return;
     const i = this.input;
-    const act = i.locked && !this.ui.screen && !p.dead;
-    const aim = this.touchAim() ? (i.aim ? this.screenRay(i.aim.x, i.aim.y) : null) : this.lookVec(p.yaw, p.pitch);
-    const pressed = i.takeMousePressed();
+    const va = this.viewAim;
+    const act = va !== undefined ? !!va && !this.ui.screen && !p.dead : i.locked && !this.ui.screen && !p.dead;
+    const aim = va !== undefined ? va?.dir ?? null : this.touchAim() ? (i.aim ? this.screenRay(i.aim.x, i.aim.y) : null) : this.lookVec(p.yaw, p.pitch);
+    const pressed = va ? [...va.pressed] : i.takeMousePressed();
+    if (va) i.takeMousePressed();
     const held = ['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft'].filter((k) => i.isDown(k));
     conn.send({
       t: 'in', x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, yaw: p.yaw, pitch: p.pitch,
       g: p.onGround, sn: p.sneaking, sp: p.sprinting, fl: p.flying, jp: inp.jump, gl: p.gliding, wh: p.wallHit, fw: inp.forward, st: inp.strafe,
-      j: p.jumps, sel: p.inventory.selected, act, md: act ? [...i.mouseDown] : [], mp: act ? pressed : [],
+      j: p.jumps, sel: p.inventory.selected, act, md: act ? (va ? [...va.down] : [...i.mouseDown]) : [], mp: act ? pressed : [],
       dir: aim ? [aim.x, aim.y, aim.z] : null, kd: held, kp: this.keyQueue, tp: this.tpId,
     });
     p.jumps = 0;
@@ -1068,6 +1077,29 @@ export class Client {
     this.conn?.send({ t: 'use', id: e.id });
   }
 
+  /** The camera-and-controls view a mod has set (while that mod is in play). */
+  get view(): ClientView | null {
+    return VIEW.view && modState.active.has(VIEW.mod) ? VIEW.view : null;
+  }
+  /** Call into the view, reporting what it throws against its mod. */
+  viewDo<T>(where: string, fn: (v: ClientView) => T, fallback: T): T {
+    const v = this.view;
+    return v ? guard(VIEW.mod, `view ${where}`, () => fn(v), fallback) : fallback;
+  }
+  /** This tick's aim from the view (undefined: the view doesn't aim; null: aiming at nothing). */
+  viewAim: ViewAim | null | undefined = undefined;
+  /** A view came or went: a free pointer lets go of the pointer lock, and leaving one takes it back. */
+  viewChanged(was: ClientView | null) {
+    const v = this.view;
+    if (v?.freePointer) { this.input.unlock(); this.input.mouseDown.clear(); }
+    else if (was?.freePointer && !this.ui.screen && this.world && !this.panorama) this.input.lock();
+    if (!v) this.viewAim = undefined;
+  }
+  /** Is our own player drawn (third person, or a view that shows it)? */
+  get drawsSelf() {
+    return this.thirdPerson !== 0 || !!this.view?.showSelf;
+  }
+
   /** Phones aiming by touch: the block or mob under the finger is the target, and there's no crosshair. */
   touchAim() {
     return device.touch && this.options.touchAim === 'touch';
@@ -1090,10 +1122,10 @@ export class Client {
   /** What's under the crosshair (or finger): for the selection box here; the server works it out for itself. */
   updateTarget() {
     const p = this.player!;
-    const aim = this.input.aim;
-    if (p.spectator || p.dead || (this.touchAim() && !aim)) { this.target = null; this.targetEntity = null; this.targetPart = null; return; }
+    const aim = this.input.aim, va = this.viewAim;
+    if (p.spectator || p.dead || (va !== undefined ? !va?.dir : this.touchAim() && !aim)) { this.target = null; this.targetEntity = null; this.targetPart = null; return; }
     const eye = this.eyePos(1);
-    const d = this.touchAim() && aim ? this.screenRay(aim.x, aim.y) : this.lookVec(p.yaw, p.pitch);
+    const d = va?.dir ?? (this.touchAim() && aim ? this.screenRay(aim.x, aim.y) : this.lookVec(p.yaw, p.pitch));
     const reach = this.reach();
     this.target = raycastBlocks(this.world!, eye.x, eye.y, eye.z, d.x, d.y, d.z, reach);
     let best: Entity | null = null, bestPart: string | null = null;
@@ -1185,20 +1217,21 @@ export class Client {
       return;
     }
     const p = this.player, t = this.partial, w = this.world;
+    const view = this.view;
     // camera
     const eye = this.eyePos(t);
     let yaw = p.pyaw + (p.yaw - p.pyaw) * t, pitch = p.ppitch + (p.pitch - p.ppitch) * t;
     const cam: Camera = { x: eye.x, y: eye.y, z: eye.z, yaw: (yaw * Math.PI) / 180, pitch: (pitch * Math.PI) / 180, fov: this.options.fov * (this.pFovMod + (this.fovMod - this.pFovMod) * t) };
     if (p.inWater && idOf(w.get(Math.floor(eye.x), Math.floor(eye.y), Math.floor(eye.z))) === B.WATER) cam.fov *= 60 / 70;
-    if (p.dead) { cam.roll = (Math.min(20, p.deathTime + t) / 20) * (Math.PI / 4); cam.y -= Math.min(1.2, (p.deathTime + t) * 0.06); }
+    if (p.dead && !view) { cam.roll = (Math.min(20, p.deathTime + t) / 20) * (Math.PI / 4); cam.y -= Math.min(1.2, (p.deathTime + t) * 0.06); }
     // hurt tilt
-    if (p.hurtTime > 0 && !p.dead) {
+    if (p.hurtTime > 0 && !p.dead && !view) {
       let f = (p.hurtTime - t) / p.hurtDuration;
       f = Math.sin(f * f * f * f * Math.PI);
       cam.roll = ((-f * 14) * Math.PI) / 180 * Math.cos(((p.lastHurtDirection) * Math.PI) / 180);
     }
     // view bobbing
-    if (this.options.viewBobbing && this.thirdPerson === 0 && !p.flying) {
+    if (this.options.viewBobbing && this.thirdPerson === 0 && !p.flying && !view) {
       const dw = p.distWalked - p.pDistWalked;
       const f1 = -(p.distWalked + dw * t);
       const f2 = p.pCameraYaw + (p.cameraYaw - p.pCameraYaw) * t;
@@ -1207,7 +1240,7 @@ export class Client {
       cam.roll = (cam.roll ?? 0) + ((Math.sin(f1 * Math.PI) * f2 * 3) * Math.PI) / 180;
       cam.pitch += ((Math.abs(Math.cos(f1 * Math.PI - 0.2) * f2) * 5 + (p.pCameraPitch + (p.cameraPitch - p.pCameraPitch) * t)) * Math.PI) / 180;
     }
-    if (this.thirdPerson) {
+    if (this.thirdPerson && !view) {
       // pull the camera back, stopping at blocks
       const front = this.thirdPerson === 2;
       if (front) { yaw += 180; pitch = -pitch; cam.yaw += Math.PI; cam.pitch = -cam.pitch; }
@@ -1217,14 +1250,17 @@ export class Client {
       if (hit) dist = Math.max(0.3, hit.t - 0.2);
       cam.x -= d.x * dist; cam.y -= d.y * dist; cam.z -= d.z * dist;
     }
+    if (view?.camera) this.viewDo('camera', (v) => v.camera!(cam, this, t), undefined);
+    const ortho = !!cam.ortho;
     this.cam = cam;
     this.audio.setListener(eye.x, eye.y, eye.z, yaw);
     r.setupCamera(cam, 0.05, Math.max(256, w.renderDistance * 16 * 1.5 + 64));
     w.update(p.x, p.z, (cx, cz) => r.chunkVisible(cx, cz));
 
     const camBlock = w.get(Math.floor(cam.x), Math.floor(cam.y), Math.floor(cam.z));
-    const underwater = idOf(camBlock) === B.WATER && cam.y < Math.floor(cam.y) + 1 - ((metaOf(camBlock) & 7) + 1) / 9 + 0.12;
-    const inLava = idOf(camBlock) === B.LAVA;
+    // (a flat projection's camera sits at what it looks at, not in front of it: no being under water there)
+    const underwater = !ortho && idOf(camBlock) === B.WATER && cam.y < Math.floor(cam.y) + 1 - ((metaOf(camBlock) & 7) + 1) / 9 + 0.12;
+    const inLava = !ortho && idOf(camBlock) === B.LAVA;
     const biome = this.biomeAt(Math.floor(p.x), Math.floor(p.z));
     const nether = w.dimension === 'nether', end = w.dimension === 'end';
     const rain = nether || end ? 0 : this.weather!.rain;
@@ -1235,16 +1271,18 @@ export class Client {
     });
     const nv = p.effects.get('night_vision');
     env.nightVision = nv ? (nv.dur > 200 ? 1 : 0.7 + Math.sin(((nv.dur - t) * Math.PI) * 0.2) * 0.3) : 0;
+    if (view?.brightness) env.nightVision = Math.max(env.nightVision, view.brightness);
     // distant terrain: the fog moves out to where it ends (under water or in lava there's nothing to see that far)
     const lodRange = this.options.lodDistance * 16;
-    const lod = this.syncLod(w) && !underwater && !inLava ? this.lod : null;
+    const lod = this.syncLod(w) && !underwater && !inLava && !ortho ? this.lod : null;
     if (lod) {
       lod.update(cam.x, cam.z, lodRange, [1.5, 2, 3][this.options.lodQuality] ?? 2, w.renderDistance * 16);
       env.fogStart = Math.max(env.fogStart, lodRange * 0.3);
       env.fogEnd = Math.max(env.fogEnd, lodRange);
     }
     r.beginFrame(env);
-    if (end) r.drawEndSky();
+    if (ortho) { /* no horizon to see: the fog colour behind everything */ }
+    else if (end) r.drawEndSky();
     else if (!nether) r.drawSky();
     if (lod) {
       const mcx = Math.floor(cam.x / 16), mcz = Math.floor(cam.z / 16), mask = this.lodMask;
@@ -1262,7 +1300,7 @@ export class Client {
     r.drawDyn(pm, { blend: false, cull: false, alphaCut: 0.1 });
     r.drawChunks(w.chunks.values(), 'trans');
     if (!nether && !end) {
-      r.drawClouds(192.33);
+      if (!ortho) r.drawClouds(192.33);
       this.weather!.render(t);
     }
     // firework sparks and flashes: soft-edged and fading, so blended, after everything solid
@@ -1284,12 +1322,12 @@ export class Client {
       }
     }
     // first-person hand
-    if (this.thirdPerson === 0 && !this.hideHud && !p.spectator && !this.panorama) this.entityRenderer.renderHand(this, t);
+    if (this.thirdPerson === 0 && !view && !this.hideHud && !p.spectator && !this.panorama) this.entityRenderer.renderHand(this, t);
     // overlays
     if (underwater) r.drawOverlay([0.02, 0.05, 0.25, 0.25], 0.5);
     else if (inLava) r.drawOverlay([0.8, 0.25, 0, 0.6]);
-    else if (p.fireTicks > 0 && !p.creative) r.drawOverlay([1, 0.45, 0, 0.18]);
-    if (camBlock && BLOCKS[idOf(camBlock)].opaque && !p.spectator && this.thirdPerson === 0) r.drawOverlay([0.05, 0.05, 0.05, 0.95]);
+    else if (p.fireTicks > 0 && !p.creative && !view) r.drawOverlay([1, 0.45, 0, 0.18]);
+    if (camBlock && BLOCKS[idOf(camBlock)].opaque && !p.spectator && this.thirdPerson === 0 && !view) r.drawOverlay([0.05, 0.05, 0.05, 0.95]);
     if (this.sleepFade > 0) r.drawOverlay([0.02, 0.02, 0.06, Math.min(1, this.sleepFade)]);
     if (this.portalTime > 0) {
       const f = Math.min(1, (this.portalTime + t) / 80);

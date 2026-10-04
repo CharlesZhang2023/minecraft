@@ -145,7 +145,9 @@ export class ModLoader {
     const url = URL.createObjectURL(new Blob([pkg.code + `\n//# sourceURL=mod:${m.id}@${m.version}.js`], { type: 'text/javascript' }));
     try {
       const module = (await import(/* @vite-ignore */ url)) as ModModule;
-      const ctx = createContext(m, { ...commonMc, ...pageMc } as unknown as Mc, clientApi(m.id));
+      // (defineProperties, not a spread: the spread would read `client` and `game` once, here, instead of live)
+      const mc = Object.defineProperties({ ...commonMc }, Object.getOwnPropertyDescriptors(pageMc));
+      const ctx = createContext(m, mc as unknown as Mc, clientApi(m.id));
       this.loaded.set(m.id, { manifest: m, pkg, module, ctx });
       MOD_NAMES.set(m.id, m.name ?? m.id);
       this.failed.delete(m.id);
