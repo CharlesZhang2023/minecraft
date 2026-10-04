@@ -2,8 +2,8 @@
 // as light (added onto the scene, so overlapping sparks glow brighter), with trails, impacts, explosions and
 // lightning. Bombs and rocks are drawn solid. Damage numbers float up from what your spells hit.
 import type { Client, RenderContext, Entity, Mc } from '../sdk';
-import { spellAt, type SpellDef, type Visual, type Path } from './spells';
-import { displacement, steer, bounce, rayBlocks, type Body } from './motion';
+import { spellAt, type SpellDef, type Visual, type Path, type Steer, type Orbit } from './spells';
+import { displacement, steer, bounce, rayBlocks, orbitAt, type Body } from './motion';
 import type { FxEvent } from './server';
 
 interface VP extends Body {
@@ -19,6 +19,12 @@ interface VP extends Body {
   dig: boolean;
   ox: number; oy: number; oz: number;
   caster: number;
+  invisible: boolean;
+  orbit?: Orbit;
+  /** Where a beam's light starts (its origin, or its last bounce). */
+  ax: number; ay: number; az: number;
+  /** Where it's been (worms draw their body along it). */
+  hist: number[];
 }
 /** A point of light (trails, sparks, debris). */
 interface Glow { x: number; y: number; z: number; px: number; py: number; pz: number; vx: number; vy: number; vz: number; age: number; life: number; size: number; col: number; grav: number; drag: number; tex: number; fade: number }
@@ -45,7 +51,9 @@ export class SpellFx {
   /** Effects quality: 1 full, 0.5 fewer particles. */
   quality = 1;
   /** Texture layers (set once the atlas exists). */
-  T = { glow: 0, core: 0, star: 0, ring: 0, bomb: 0, dyn: 0, holy: 0, rock: 0, void: 0, cloud: 0, storm: 0 };
+  T = { glow: 0, core: 0, star: 0, ring: 0, bomb: 0, dyn: 0, holy: 0, rock: 0, void: 0, cloud: 0, storm: 0, flesh: 0 };
+  /** Spell card art as texture layers, by spell id ('icon' projectiles are drawn with it). */
+  private icons = new Map<string, number>();
   ticks = 0;
   /** Projectiles and hits seen so far (tests, the console). */
   seen = { spawned: 0, hits: 0 };
@@ -70,12 +78,17 @@ export class SpellFx {
           x: e.p[0], y: e.p[1], z: e.p[2], px: e.p[0], py: e.p[1], pz: e.p[2], vx: e.v[0], vy: e.v[1], vz: e.v[2],
           age: 0, life: e.l, bounces: e.b, gravity: e.g, drag: e.dr, bounceKeep: e.bk, homing: e.h, path: e.pa as Path,
           speed0: Math.hypot(e.v[0], e.v[1], e.v[2]), seed: e.sd, ghost: !!e.gh, fuse: !!e.fu, stopped: false, dig: !!e.dg,
-          ox: e.p[0], oy: e.p[1], oz: e.p[2], caster: e.o[0] ?? -1,
+          ox: e.p[0], oy: e.p[1], oz: e.p[2], caster: e.o[0] ?? -1, steer: (e.st ?? []) as Steer[], invisible: !!e.iv,
+          ax: e.p[0], ay: e.p[1], az: e.p[2], hist: [],
         };
+        if (e.ob) {
+          vp.orbit = { around: e.ob[0] === 0 ? 'origin' : e.ob[0] === 1 ? 'caster' : 'parent', r: e.ob[1], w: e.ob[2], phase: e.ob[3], parent: e.ob[4] };
+          vp.ox = e.ob[5] ?? vp.ox; vp.oy = e.ob[6] ?? vp.oy; vp.oz = e.ob[7] ?? vp.oz;
+        }
         this.projs.set(e.i, vp);
         this.seen.spawned++;
         // a little flash at the wand
-        if (vp.speed0 > 0 && vp.visual !== 'tentacle') this.flash(vp.x, vp.y, vp.z, 0.25, vp.color, 3);
+        if (vp.speed0 > 0 && !vp.invisible && !vp.orbit && !['tentacle', 'beam', 'worm', 'mist', 'note'].includes(vp.visual)) this.flash(vp.x, vp.y, vp.z, 0.25, vp.color, 3);
         if (vp.visual === 'blast') this.flash(vp.x, vp.y, vp.z, 0.8, vp.color, 4);
         break;
       }
@@ -85,6 +98,7 @@ export class SpellFx {
         vp.x = e.p[0]; vp.y = e.p[1]; vp.z = e.p[2];
         vp.vx = e.v[0]; vp.vy = e.v[1]; vp.vz = e.v[2];
         vp.stopped = false;
+        if (vp.visual === 'beam') { vp.ax = vp.x; vp.ay = vp.y; vp.az = vp.z; }
         break;
       }
       case 'e': {
@@ -129,8 +143,10 @@ export class SpellFx {
   private impact(vp: VP, x: number, y: number, z: number, reason: string) {
     const col = this.colorOf(vp);
     vp.x = x; vp.y = y; vp.z = z;
+    if (vp.invisible) return;
     switch (vp.visual) {
-      case 'blast': case 'field': case 'cloud': return;
+      case 'blast': case 'field': case 'cloud': case 'none': case 'mist': case 'note': return;
+      case 'portal': case 'whitehole': this.flash(x, y, z, 1.2, col, 6, true); return;
       case 'heal': this.burst(x, y, z, 10, col, 0.08, 0.09, 14, -0.004); break;
       case 'tp': this.burst(x, y, z, 16, col, 0.12, 0.1, 14); this.flash(x, y, z, 0.8, col, 5, true); break;
       case 'dig': case 'saw': this.burst(x, y, z, 6, col, 0.1, 0.05, 8, 0.02); break;
@@ -163,6 +179,14 @@ export class SpellFx {
       for (let i = 0; i < 5; i++) this.zap(x, y, z, x + rnd(2.2), y + rnd(1.2), z + rnd(2.2), 0xffff90, 4, 0.08, 0.35);
     } else if (n === 'heal') {
       for (let i = 0; i < 6; i++) this.glow(x + rnd(0.4), y + rnd(0.5), z + rnd(0.4), 0, 0.04, 0, 0.12, 0x60ff80, 18, { tex: this.T.star, drag: 0.95 });
+    } else if (n === 'arc' && d) {
+      this.zap(x, y, z, d[0], d[1], d[2], d[3] ?? 0xffff80, 4, 0.1, 0.4);
+    } else if (n === 'st' && d) {
+      // drips of a condition's colour
+      const w2 = (d[1] ?? 0.6) / 2;
+      for (let i = 0; i < 2; i++) this.glow(x + rnd(w2), y + rnd(0.3), z + rnd(w2), 0, -0.02, 0, 0.07, d[0], 14, { grav: 0.006, drag: 0.98 });
+    } else if (n === 'quake') {
+      for (let i = 0; i < 8; i++) this.glow(x + rnd(6), y - 0.8, z + rnd(6), rnd(0.03), 0.06, rnd(0.03), 0.18, 0x907050, 14, { grav: 0.008 });
     } else if (n === 'tp') {
       for (let i = 0; i < 24; i++) {
         const a = (i / 24) * Math.PI * 2;
@@ -188,13 +212,24 @@ export class SpellFx {
       // fallback: the server's end message got lost
       if (vp.age > vp.life + 40) { this.projs.delete(vp.id); continue; }
       if (vp.visual === 'cloud' && vp.age === 1) { vp.y += 4; vp.py = vp.y; }
-      this.trail(vp, client, q);
+      if (vp.visual === 'worm' && vp.age % 2 === 0) { vp.hist.push(vp.x, vp.y, vp.z); if (vp.hist.length > 30) vp.hist.splice(0, 3); }
+      if (!vp.invisible) this.trail(vp, client, q);
+      if (vp.orbit) {
+        // circling: the centre is where it was cast, its caster, or another projectile
+        const o = vp.orbit;
+        let c: [number, number, number] | null = null;
+        if (o.around === 'origin') c = [vp.ox, vp.oy, vp.oz];
+        else if (o.around === 'caster') { const e = client.entities.find((x) => x.id === vp.caster); if (e) c = [e.x, e.y + 1.1, e.z]; }
+        else { const par = this.projs.get(o.parent ?? -1); if (par) c = [par.x, par.y, par.z]; }
+        if (c) { const [nx, ny, nz] = orbitAt(o, vp.age, c[0], c[1], c[2]); vp.vx = nx - vp.x; vp.vy = ny - vp.y; vp.vz = nz - vp.z; vp.x = nx; vp.y = ny; vp.z = nz; }
+        continue;
+      }
       if (vp.stopped || (vp.speed0 === 0 && vp.gravity === 0)) continue;
       steer(vp, vp.homing > 0 ? this.homingTarget(client, vp) : null);
       const [dx, dy, dz] = displacement(vp);
       const hit = vp.ghost || vp.dig ? null : rayBlocks(vp.x, vp.y, vp.z, dx, dy, dz, solid);
       if (hit) {
-        if (vp.bounces > 0) { bounce(vp, hit); continue; }
+        if (vp.bounces > 0) { bounce(vp, hit); vp.ax = vp.x; vp.ay = vp.y; vp.az = vp.z; continue; }
         vp.x = hit.x; vp.y = hit.y; vp.z = hit.z;
         if (vp.fuse) { vp.vx = vp.vy = vp.vz = 0; vp.gravity = 0; continue; }
         vp.stopped = true;
@@ -286,6 +321,19 @@ export class SpellFx {
         if (thunder && chance(0.06)) this.zap(x + rnd(r), y, z + rnd(r), x + rnd(r), y - 0.3, z + rnd(r), 0xc0d0ff, 3, 0.05, 0.3);
         break;
       }
+      case 'icon':
+        if (chance(0.25)) this.glow(x + rnd(s), y + rnd(s), z + rnd(s), rnd(0.02), 0.01, rnd(0.02), 0.06, col, 8, { tex: this.T.star });
+        if ((vp.spell.id === 'nuke' || vp.spell.id === 'giga_nuke' || vp.spell.id === 'magic_missile') && chance(0.6)) client.particles?.smoke(x, y, z);
+        break;
+      case 'portal': case 'whitehole':
+        if (chance(1)) { const a = Math.random() * Math.PI * 2, rr = s * 2.5; this.glow(x + Math.cos(a) * rr, y + rnd(rr * 0.5), z + Math.sin(a) * rr, -Math.cos(a) * 0.05, 0, -Math.sin(a) * 0.05, 0.07, col, 10, { tex: this.T.star }); }
+        break;
+      case 'worm':
+        if (chance(0.5)) this.glow(x + rnd(s), y + rnd(s), z + rnd(s), rnd(0.06), 0.05, rnd(0.06), 0.08, 0x806040, 12, { grav: 0.01 });
+        break;
+      case 'note':
+        if (chance(0.3)) this.glow(x, y, z, rnd(0.02), 0.03, rnd(0.02), 0.08, col, 12, { tex: this.T.star });
+        break;
       case 'liquid': case 'sand': case 'snow':
         if (chance(0.7)) this.glow(x, y, z, rnd(0.02), 0, rnd(0.02), s * 0.8, col, 6, { grav: 0.02, fade: 0.8 });
         if (vp.visual === 'liquid' && chance(0.2)) client.particles?.drip(x, y, z, vp.color !== 0x3070ff);
@@ -323,6 +371,7 @@ export class SpellFx {
       r.billboard(x, y, z, size, layer, col, L, a);
     };
     for (const vp of this.projs.values()) {
+      if (vp.invisible) continue;
       const [x, y, z] = this.lerp(vp, t);
       const col = this.colorOf(vp), s = vp.size;
       const sp = Math.hypot(vp.vx, vp.vy, vp.vz) || 1;
@@ -384,6 +433,25 @@ export class SpellFx {
           break;
         }
         case 'liquid': case 'sand': case 'snow': bb(x, y, z, s * 2.2, T.core, col, 0.85); break;
+        case 'beam': {
+          // a line of light from where it started (or last bounced) to where it is
+          const fade = Math.max(0.3, 1 - vp.age / (vp.life + 2));
+          this.ribbon(r, vp.ax, vp.ay, vp.az, x, y, z, s * 3, T.glow, col, fade);
+          this.ribbon(r, vp.ax, vp.ay, vp.az, x, y, z, s, T.core, 0xffffff, fade);
+          bb(x, y, z, s * 4, T.glow, col, 0.8);
+          break;
+        }
+        case 'mist':
+          for (let i = 0; i < 5; i++) { const a = time * 0.05 + i * 1.3 + vp.id; bb(x + Math.cos(a) * s * 0.5, y + Math.sin(a * 1.3) * 0.3, z + Math.sin(a) * s * 0.5, s * 1.6, T.glow, col, 0.28); }
+          break;
+        case 'portal': {
+          const k = 1 + Math.sin(time * 0.3 + vp.id) * 0.1;
+          bb(x, y, z, s * 3 * k, T.ring, col, 0.9); bb(x, y, z, s * 2.2, T.glow, col, 0.6); bb(x, y, z, s * 1.4, T.ring, 0xffffff, 0.4);
+          break;
+        }
+        case 'whitehole': bb(x, y, z, s * 5, T.glow, 0xfff8e0, 0.9); bb(x, y, z, s * 3, T.core, 0xffffff, 1); bb(x, y, z, s * 6, T.ring, 0xffe0a0, 0.5); break;
+        case 'icon': case 'note': bb(x, y, z, Math.max(0.3, s * 2.5), T.glow, col, vp.visual === 'note' ? 0.4 : 0.25); break;
+        case 'worm': bb(x, y, z, s * 2.5, T.glow, col, 0.35); break;
         default: break;
       }
     }
@@ -433,7 +501,27 @@ export class SpellFx {
     const t = r.partial, T = this.T;
     for (const vp of this.projs.values()) {
       const v = vp.visual;
+      if (vp.invisible) continue;
       if (v === 'cloud') { this.drawCloud(r, vp); continue; }
+      if (v === 'icon' || v === 'note') {
+        // the spell's own card art, as a sprite
+        const id = vp.spell.sprite ?? vp.spell.id;
+        let layer = this.icons.get(id);
+        if (layer === undefined) { layer = r.tex(`wands:sprite_${id}`); this.icons.set(id, layer); }
+        const [x, y, z] = this.lerp(vp, t);
+        const bob = v === 'note' ? Math.sin((vp.age + t) * 0.4) * 0.05 : 0;
+        r.billboard(x, y + bob, z, Math.max(0.35, vp.size * 2.2), layer, 0xffffff, r.light(Math.floor(x), Math.floor(y), Math.floor(z)));
+        continue;
+      }
+      if (v === 'worm') {
+        const [x, y, z] = this.lerp(vp, t), seg = vp.size * 16, tex = [T.flesh, T.flesh, T.flesh, T.flesh, T.flesh, T.flesh];
+        const pts = [...vp.hist, x, y, z];
+        for (let i = 0; i + 2 < pts.length; i += 3) {
+          const k = seg * (0.5 + 0.5 * (i / pts.length));
+          r.boxes([{ x0: 8 - k / 2, y0: 8 - k / 2, z0: 8 - k / 2, x1: 8 + k / 2, y1: 8 + k / 2, z1: 8 + k / 2, tex }], pts[i] - 0.5, pts[i + 1] - 0.5, pts[i + 2] - 0.5);
+        }
+        continue;
+      }
       if (v !== 'bomb' && v !== 'dynamite' && v !== 'holy' && v !== 'rock' && v !== 'hole') continue;
       const [x, y, z] = this.lerp(vp, t);
       const s = vp.size * 16;

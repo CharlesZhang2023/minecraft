@@ -1,7 +1,7 @@
 // Projectile flight, shared by the server (the real thing) and the clients (which fly their own copy of every
 // projectile from the moment it was cast, so spells look smooth however far away the host is; the server's word
 // on where each one ended always wins).
-import type { Proj, Path } from './spells';
+import type { Proj, Path, Steer, Orbit } from './spells';
 
 /** The part of a projectile that flies. */
 export interface Body {
@@ -20,12 +20,20 @@ export interface Body {
   seed: number;
   ghost: boolean;
   fuse: boolean;
+  /** Steering beyond the path (the ones both sides can work out are applied in `steer`). */
+  steer: Steer[];
 }
 
 export const bodyOf = (p: Proj, x: number, y: number, z: number, vx: number, vy: number, vz: number, seed: number): Body => ({
   x, y, z, vx, vy, vz, age: 0, life: p.life, bounces: p.bounces, gravity: p.gravity, drag: p.drag, bounceKeep: p.bounceKeep,
-  homing: p.homing, path: p.path, speed0: Math.hypot(vx, vy, vz), seed, ghost: p.ghost, fuse: p.fuse,
+  homing: p.homing, path: p.path, speed0: Math.hypot(vx, vy, vz), seed, ghost: p.ghost, fuse: p.fuse, steer: p.steer,
 });
+
+/** Where something circling a centre is at an age. */
+export function orbitAt(o: Orbit, age: number, cx: number, cy: number, cz: number): [number, number, number] {
+  const a = o.phase + age * o.w;
+  return [cx + Math.cos(a) * o.r, cy + (o.around === 'parent' ? Math.sin(a * 2) * 0.15 : 0), cz + Math.sin(a) * o.r];
+}
 
 /** A block a segment ran into: where, the face's normal, and the block. */
 export interface BlockHit { t: number; x: number; y: number; z: number; nx: number; ny: number; nz: number; bx: number; by: number; bz: number }
@@ -79,6 +87,15 @@ export function displacement(b: Body): [number, number, number] {
 /** Forces for one tick: gravity, drag, homing, the path's own steering. `target` is what homing steers to. */
 export function steer(b: Body, target: { x: number; y: number; z: number } | null) {
   b.vy -= b.gravity;
+  const st = b.steer;
+  if (st.length) {
+    const sp0 = Math.hypot(b.vx, b.vy, b.vz);
+    if (st.includes('horizontal')) b.vy = 0;
+    if (st.includes('flyDown') && b.age === 5) { b.vx = 0; b.vy = -sp0; b.vz = 0; }
+    if (st.includes('flyUp') && b.age === 5) { b.vx = 0; b.vy = sp0; b.vz = 0; }
+    if (st.includes('pingpong') && b.age > 0 && b.age % 12 === 0) { b.vx = -b.vx; b.vy = -b.vy; b.vz = -b.vz; }
+    if (st.includes('accelHoming') && sp0 < b.speed0 * 3) { b.vx *= 1.06; b.vy *= 1.06; b.vz *= 1.06; }
+  }
   if (b.drag !== 1) { b.vx *= b.drag; b.vy *= b.drag; b.vz *= b.drag; }
   const sp = Math.hypot(b.vx, b.vy, b.vz);
   if (b.path === 'accel' && sp < b.speed0 * 3) { b.vx *= 1.12; b.vy *= 1.12; b.vz *= 1.12; }
@@ -90,11 +107,14 @@ export function steer(b: Body, target: { x: number; y: number; z: number } | nul
     const s2 = Math.hypot(b.vx, b.vy, b.vz) || 1;
     b.vx *= sp / s2; b.vy *= sp / s2; b.vz *= sp / s2;
   }
-  if (target && b.homing > 0 && sp > 0) {
+  const anti = st.includes('antiHoming');
+  if (target && (b.homing > 0 || anti) && sp > 0) {
     let tx = target.x - b.x, ty = target.y - b.y, tz = target.z - b.z;
+    if (anti) { tx = -tx; ty = -ty; tz = -tz; }
     const tl = Math.hypot(tx, ty, tz) || 1;
     tx = (tx / tl) * sp; ty = (ty / tl) * sp; tz = (tz / tl) * sp;
-    b.vx += (tx - b.vx) * b.homing; b.vy += (ty - b.vy) * b.homing; b.vz += (tz - b.vz) * b.homing;
+    const k = anti ? 0.2 : b.homing;
+    b.vx += (tx - b.vx) * k; b.vy += (ty - b.vy) * k; b.vz += (tz - b.vz) * k;
     const s2 = Math.hypot(b.vx, b.vy, b.vz) || 1;
     b.vx *= sp / s2; b.vy *= sp / s2; b.vz *= sp / s2;
   }

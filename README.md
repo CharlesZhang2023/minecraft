@@ -125,9 +125,10 @@ Click the game to capture the mouse. Worlds save automatically to IndexedDB.
 - Example mods: Rubies (ore, tools, a mob), Computers (a scriptable terminal with redstone), Kinetics
   (rotational power with animated machines), Minimap, and Wands (below). See [mods/README.md](mods/README.md) to
   write your own.
-- **Wands** brings in Noita's wands and spells. A wand fires its spells like a deck of cards, so about a hundred
-  spells combine: projectiles, modifiers, multicasts and formations, triggers and timers, Alpha/Omega and Divide By,
-  materials, clouds and fields. Hold the use button (press and hold on phones) to cast. The editor (R, or the wand
+- **Wands** brings in Noita's wands and spells: 425 of them, nearly all of Noita's, with Noita's icons. A wand fires
+  its spells like a deck of cards, so they combine: projectiles, modifiers, multicasts and formations, triggers and
+  timers, larpas and orbits, requirements, Greek letters and Divide By, materials and puddles that stain creatures,
+  clouds, fields and black holes, curses, passives and music notes. Hold the use button (press and hold on phones) to cast. The editor (R, or the wand
   button on phones) is modelled on the Spell Lab mod: drag or tap spells, see what each cast fires, edit the stats in
   creative, and keep layouts in a wand box. A target dummy measures damage per second. Wands are crafted, spells
   come from arcane scrolls and monsters, and it all works in multiplayer.

@@ -601,7 +601,7 @@ export function editorScreen(mod: ModContext, d: EditorDeps) {
     }
 
     private drawFilters(ctx: Ctx, L: ReturnType<WandEditor['layout']>, mx: number, my: number) {
-      const reps: Record<SpellType, string> = { projectile: 'spark_bolt', static: 'explosion', modifier: 'damage_plus', multicast: 'double_spell', material: 'water', other: 'alpha' };
+      const reps: Record<SpellType, string> = { projectile: 'spark_bolt', static: 'explosion', modifier: 'damage_plus', multicast: 'double_spell', material: 'water', other: 'alpha', utility: 'long_distance_cast', passive: 'torch' };
       const kinds: (SpellType | 'all')[] = ['all', ...TYPE_ORDER];
       kinds.forEach((k, i) => {
         const x = L.filters.x, y = L.filters.y + i * C, on = this.filter === k;

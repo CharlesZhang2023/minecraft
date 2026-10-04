@@ -114,7 +114,7 @@ export function rollWand(tier: number, r: Rng = Math.random, withSpells = true):
   if (withSpells) {
     // a main projectile, sometimes with a modifier or two in front of it
     // attack spells (not utilities like teleporting or digging), one or two kinds, now and then a modifier
-    const projs = spellPool(tier, (x) => x.type === 'projectile' && !x.trigger && (x.uses ?? 99) > 3 && x.mana <= s.mana / 2 && ((x.proj?.dmg ?? 0) > 0 || (x.proj?.explR ?? 0) > 0) && !x.proj?.digHard);
+    const projs = spellPool(tier, (x) => x.type === 'projectile' && !x.trigger && (x.uses ?? 99) > 3 && x.mana <= s.mana / 2 && ((x.proj?.dmg ?? 0) > 0 || (x.proj?.explR ?? 0) > 0) && !x.proj?.digHard && !x.tick && !x.hit && !x.touch && !x.proj?.fuse && !x.proj?.selfHit);
     const mods = spellPool(tier, (x) => x.type === 'modifier' && x.mana <= s.mana / 4);
     const fallback = [SPELL_BY_ID.get('spark_bolt')!];
     const kinds = [pick(r, projs.length ? projs : fallback), pick(r, projs.length ? projs : fallback)];

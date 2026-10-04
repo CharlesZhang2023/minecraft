@@ -12,6 +12,7 @@ import { drawWandHud, type WandState } from './hud';
 import { editorScreen, type EditMsg, type EditorDeps } from './editor';
 import { registerArt } from './art';
 import { registerDummy, dummyRenderer } from './dummy';
+import { registerBlocks } from './blocks';
 
 interface Shared {
   cfg: { editKey: string; terrain: boolean; selfDamage: boolean; pvp: boolean; creativeInfinite: boolean; damageNumbers: boolean; hudStrip: boolean; effects: string };
@@ -106,12 +107,26 @@ export function main(mod: ModContext) {
   mod.recipes.shapeless(['paper', 'glowstone_dust', 'ender_pearl', 'lapis_lazuli'], greater);
   mod.recipes.shaped(['H', 'S'], { H: 'hay_block', S: 'stick' }, dummy);
 
+  registerBlocks(mod);
   const isDummy = registerDummy(mod, () => dummy.id);
   const fx = mod.channel<FxEvent[]>('fx');
   const edit = mod.channel<EditMsg>('edit');
 
   if (mod.realm === 'page') {
-    server = new SpellServer(mod, cfg, fx, (id) => spellItems.get(id)?.id, tierOf);
+    server = new SpellServer(mod, cfg, fx, (id) => spellItems.get(id)?.id, tierOf, isDummy);
+    // weakening curses on blows and on other explosions: the hit lands twice as hard
+    let doubling = false;
+    mod.on('entityDamage', ({ game, entity, amount, source }) => {
+      const sv = server!;
+      if (doubling || sv.inHurt) return;
+      const curse = source === 'explosion' ? 'curseExpl' : source === 'player' || source === 'mob' ? 'curseMelee' : null;
+      if (!curse || !sv.statuses.has(entity, curse, game.ticks)) return;
+      doubling = true;
+      const le = entity as unknown as { damage(n: number, s: string, a: unknown): boolean };
+      le.damage(amount * 2, source, null);
+      doubling = false;
+      return 'fail';
+    });
     mod.on('serverTick', (game) => server!.tick(game));
     mod.on('worldClose', () => server!.reset());
     edit.onServer((d, player, game) => {
@@ -157,7 +172,7 @@ export function client(mod: ModContext) {
   mod.on('worldRenderGlow', (r) => {
     if (!texReady) {
       texReady = true;
-      Object.assign(fx.T, { glow: r.tex('wands:glow'), core: r.tex('wands:core'), star: r.tex('wands:star'), ring: r.tex('wands:ring'), bomb: r.tex('wands:bomb'), dyn: r.tex('wands:dynamite'), holy: r.tex('wands:holy'), rock: r.tex('cobblestone'), void: r.tex('wands:void'), cloud: r.tex('wands:cloud'), storm: r.tex('wands:stormcloud') });
+      Object.assign(fx.T, { glow: r.tex('wands:glow'), core: r.tex('wands:core'), star: r.tex('wands:star'), ring: r.tex('wands:ring'), bomb: r.tex('wands:bomb'), dyn: r.tex('wands:dynamite'), holy: r.tex('wands:holy'), rock: r.tex('cobblestone'), void: r.tex('wands:void'), cloud: r.tex('wands:cloud'), storm: r.tex('wands:stormcloud'), flesh: r.tex('wands:flesh') });
     }
     fx.drawGlow(r);
   });

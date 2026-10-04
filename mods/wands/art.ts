@@ -1,7 +1,8 @@
 // Pixel art, all painted in code: a card for every spell (a frame in its type's colour around a little picture),
 // the wands, the light sprites spells are drawn with, the target dummy, and the sounds.
 import type { ModContext, Img } from '../sdk';
-import { SPELLS, TYPE_COLORS, type SpellDef, type Icon } from './spells';
+import { SPELLS, TYPE_COLORS, NOTE_PITCH, type SpellDef, type Icon } from './spells';
+import { PALETTE, ICONS } from './icons';
 
 type RGB = [number, number, number];
 const hex = (h: string): RGB => { const v = parseInt(h.replace('#', ''), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
@@ -150,10 +151,49 @@ function badge(p: Pix, kind: string, c: RGB) {
   else if (kind === 'expire') { p.line(11, 11, 15, 15, c); p.line(15, 11, 11, 15, c); }
 }
 
-/** A spell's card: a dark frame in its type's colour around its picture. */
+// ------------------------------------------------------------------ Noita's icons (icons.ts, packed by tools/make_icons.py)
+let palette: Uint8Array | null = null;
+const byName = new Map<string, string>();
+const b64 = (t: string) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+/** A spell's Noita icon as 256 RGBA pixels, or null if it has none. */
+function noitaIcon(s: SpellDef): Uint8Array | null {
+  const name = s.noita ?? s.name;
+  if (!name) return null;
+  if (!palette) { palette = b64(PALETTE); for (const k of Object.keys(ICONS)) byName.set(k.toLowerCase(), k); }
+  const key = byName.get(name.toLowerCase());
+  if (!key) return null;
+  const raw = b64(ICONS[key]), out = new Uint8Array(256 * 4);
+  let i = 0;
+  for (let k = 0; k + 1 < raw.length; k += 2) {
+    const t = raw[k] | (raw[k + 1] << 8);
+    if (t & 0x8000) { i += t & 0x7fff; continue; }
+    out.set(palette.subarray(t * 4, t * 4 + 4), i * 4);
+    i++;
+  }
+  return out;
+}
+
+/** A spell's card: a dark back in its type's colour, its Noita icon on it (or a picture painted here). */
 export function paintSpell(px: ModContext['mc']['pixels'], s: SpellDef): Img {
   const p = new Pix(px);
   const [frame, bg] = TYPE_COLORS[s.type].map(hex);
+  const icon = noitaIcon(s);
+  if (icon) {
+    // Noita's card back: the type's colour, darker inside; the icon fills the card
+    for (let y = 0; y < 16; y++)
+      for (let x = 0; x < 16; x++) {
+        const edge = x === 0 || y === 0 || x === 15 || y === 15;
+        p.set(x, y, edge ? mix(frame, K, 0.35) : mix(bg, K, (y / 16) * 0.3), edge ? 200 : 230);
+      }
+    for (let k = 0; k < 256; k++) {
+      const a = icon[k * 4 + 3];
+      if (!a) continue;
+      const x = k % 16, y = k >> 4, c: RGB = [icon[k * 4], icon[k * 4 + 1], icon[k * 4 + 2]];
+      if (a >= 250) p.set(x, y, c);
+      else p.set(x, y, mix(mix(bg, K, (y / 16) * 0.3), c, a / 255));
+    }
+    return p.img;
+  }
   for (let y = 0; y < 16; y++)
     for (let x = 0; x < 16; x++) {
       const edge = x === 0 || y === 0 || x === 15 || y === 15;
@@ -215,6 +255,17 @@ export function paintDummyItem(px: ModContext['mc']['pixels']): Img {
 export function registerArt(mod: ModContext, wandItemKeys: string[]) {
   const { pixels: px } = mod.mc;
   for (const s of SPELLS) if (!s.hidden) mod.client.itemSprite(`wands:${s.id}`, () => paintSpell(px, s));
+  // projectiles drawn as their spell's picture: the bare icon (no card behind it), as a texture
+  const sprites = new Set(SPELLS.filter((s) => s.proj?.visual === 'icon' || s.proj?.visual === 'note').map((s) => s.sprite ?? s.id));
+  for (const id of sprites) {
+    const s = SPELLS.find((x) => x.id === id);
+    if (!s) continue;
+    mod.client.texture(`wands:sprite_${id}`, () => {
+      const img = px.newImg(), icon = noitaIcon(s);
+      if (icon) for (let k = 0; k < 256; k++) if (icon[k * 4 + 3]) px.set(img, k % 16, k >> 4, [icon[k * 4], icon[k * 4 + 1], icon[k * 4 + 2]], icon[k * 4 + 3]);
+      return img;
+    });
+  }
   wandItemKeys.forEach((k, tier) => mod.client.itemSprite(`wands:${k}`, () => paintWand(px, tier), '#1a1020'));
   mod.client.itemSprite('wands:arcane_scroll', () => paintScroll(px, false), '#3a2a10');
   mod.client.itemSprite('wands:greater_arcane_scroll', () => paintScroll(px, true), '#3a1030');
@@ -265,6 +316,7 @@ export function registerArt(mod: ModContext, wandItemKeys: string[]) {
   }));
   mod.client.texture('wands:post', noisy('#6a4a28', '#8a6a3a'));
   mod.client.texture('wands:cloud', noisy('#e4e8f0', '#f8f8ff'));
+  mod.client.texture('wands:flesh', noisy('#b06a60', '#d08a78', (img) => { for (let x = 0; x < 16; x += 4) for (let y = 0; y < 16; y++) px.set(img, x, y, [140, 80, 70]); }));
   mod.client.texture('wands:stormcloud', noisy('#4a4e5a', '#5e6270'));
 
   // sounds
@@ -281,6 +333,17 @@ export function registerArt(mod: ModContext, wandItemKeys: string[]) {
     sy.mixInto(b, sy.env(sy.highpass(sy.noise(Math.floor(SR * 0.15), r), 2000), 0.001, 0.12, 2), 0.8);
     return sy.normalize(b, 0.9);
   });
+  // the instruments: a plucked kantele string, a breathy ocarina
+  for (const [id, hz] of NOTE_PITCH) {
+    const kantele = id.startsWith('kantele');
+    mod.client.sound(`wands:note_${id}`, (r) => {
+      const n = Math.floor(SR * (kantele ? 1.1 : 0.7));
+      const b = sy.env(sy.tone(n, hz, hz, kantele ? 'tri' : 'sine'), kantele ? 0.002 : 0.04, kantele ? 1.05 : 0.6, kantele ? 3 : 1.2);
+      sy.mixInto(b, sy.env(sy.tone(n, hz * 2, hz * 2, 'sine'), 0.002, kantele ? 0.6 : 0.4, 3), kantele ? 0.35 : 0.15);
+      if (!kantele) sy.mixInto(b, sy.env(sy.bandpass(sy.noise(n, r), hz, hz * 3), 0.05, 0.5, 1.5), 0.05);
+      return sy.normalize(b, 0.45);
+    });
+  }
   mod.client.sound('wands:scroll', (r) => sy.normalize(sy.env(sy.bandpass(sy.noise(Math.floor(SR * 0.35), r), 1500, 6000), 0.03, 0.3, 1.5), 0.3));
   mod.client.sound('wands:learn', () => {
     const b = sy.env(sy.tone(Math.floor(SR * 0.5), 660, 660, 'sine'), 0.005, 0.45, 2);

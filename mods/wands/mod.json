@@ -1,10 +1,14 @@
 {
   "id": "wands",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Wands",
-  "description": "Noita's wands and spells: build wands from spell cards (modifiers, multicasts, triggers), cast with the use button, edit them in a Spell Lab-style editor (R). Includes a target dummy.",
-  "authors": ["Minecraft Web Edition"],
+  "description": "Noita's wands and 425 of its spells, with Noita's icons: build wands from spell cards (modifiers, multicasts, triggers, requirements...), cast with the use button, edit them in a Spell Lab-style editor (R). Includes a target dummy.",
+  "authors": [
+    "Minecraft Web Edition"
+  ],
   "environment": "*",
   "icon": "item:wands:wand_master",
-  "depends": { "minecraft": ">=1.0.0" }
+  "depends": {
+    "minecraft": ">=1.0.0"
+  }
 }

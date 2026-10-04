@@ -5,7 +5,7 @@
 // the deck is empty, the wand recharges too. Spells the wand can't afford are skipped for the next card.
 //
 // Pure logic: the server fires real wands with it, the editor runs it on a copy to preview a wand's casts.
-import { SPELL_BY_ID, Shot, makeProj, type CastCtx, type Proj, type SpellDef } from './spells';
+import { SPELL_BY_ID, Shot, makeProj, cloneProj, type CastCtx, type Proj, type SpellDef } from './spells';
 import { wandSpells, type WandData } from './wand';
 
 /** A wand's state between casts: its deck, mana and timers (the server keeps one per wand, by uid). */
@@ -25,6 +25,8 @@ export interface Runtime {
   usesClock: number;
   /** The wand layout this deck was built from (rebuilt when the wand is edited). */
   layout: string;
+  /** Requirement - Every Other's switch. */
+  toggle?: boolean;
 }
 
 /** Ticks per use regained by a limited spell. */
@@ -91,6 +93,12 @@ export interface FireOpts {
   /** Uses left in a slot, and spending one. */
   usesLeft(slot: number): number;
   spendUse(slot: number): void;
+  /** What the caster brings to the cast: other wands' spells, health share, enemies near, projectiles out, gold. */
+  others?: SpellDef[];
+  health?: number;
+  enemies?: number;
+  flying?: number;
+  gold?: number;
 }
 
 class Cast implements CastCtx {
@@ -99,13 +107,45 @@ class Cast implements CastCtx {
   wrapped = false;
   refresh = false;
   noMana = false;
-  mana = 0;
+  spent = 0;
   private depth = 0;
+  /** The slot of the card being played (Spell Duplication looks before it). */
+  private cur = -1;
   readonly spells: SpellDef[];
+  readonly others: SpellDef[];
+  readonly health: number;
+  readonly enemies: number;
+  readonly flying: number;
+  readonly gold: number;
   constructor(private w: WandData, private rt: Runtime, private o: FireOpts) {
     this.spells = wandSpells(w);
+    this.others = o.others ?? [];
+    this.health = o.health ?? 1;
+    this.enemies = o.enemies ?? 0;
+    this.flying = o.flying ?? 0;
+    this.gold = o.gold ?? 0;
   }
   rand() { return this.o.rand(); }
+  get mana() { return this.o.infinite ? 1000 : this.rt.mana; }
+  set mana(v: number) { if (!this.o.infinite) this.rt.mana = Math.max(0, v); }
+  get before(): SpellDef[] { return this.w.spells.slice(0, Math.max(0, this.cur)).flatMap((id) => (id && SPELL_BY_ID.get(id) ? [SPELL_BY_ID.get(id)!] : [])); }
+  everyOther() { this.rt.toggle = !this.rt.toggle; return this.rt.toggle; }
+  peek(n: number): SpellDef[] {
+    const out: SpellDef[] = [];
+    for (const slot of [...this.rt.deck, ...(this.wrapped ? [] : this.rt.discard)]) {
+      if (out.length >= n) break;
+      const s = SPELL_BY_ID.get(this.w.spells[slot] ?? '');
+      if (s) out.push(s);
+    }
+    return out;
+  }
+  skip(): SpellDef | null {
+    const rt = this.rt;
+    if (!rt.deck.length) return null;
+    const slot = rt.deck.shift()!;
+    this.hand.push(slot);
+    return SPELL_BY_ID.get(this.w.spells[slot] ?? '') ?? null;
+  }
 
   /** The next card the wand can afford, or null when there's nothing left to draw this cast. */
   private next(): { slot: number; spell: SpellDef } | null {
@@ -126,7 +166,7 @@ class Cast implements CastCtx {
         if (spell.uses && this.o.usesLeft(slot) <= 0) continue;
         if (spell.mana > rt.mana) { this.noMana = true; continue; }
         rt.mana = Math.min(this.w.s.mana, rt.mana - spell.mana);
-        this.mana += spell.mana;
+        this.spent += spell.mana;
         if (spell.uses) this.o.spendUse(slot);
       }
       return { slot, spell };
@@ -138,6 +178,7 @@ class Cast implements CastCtx {
       const c = this.next();
       if (!c) return;
       this.cards.push(c.slot);
+      this.cur = c.slot;
       this.playSpell(c.spell, shot);
     }
   }
@@ -156,14 +197,18 @@ class Cast implements CastCtx {
     shot.recharge += s.reload ?? 0;
     switch (s.type) {
       case 'projectile': case 'static': case 'material': {
+        // cards with their own logic (random spells, notes) play it
+        if (s.play) { s.play(this, shot); break; }
         const p = makeProj(s);
         shot.projs.push(p);
-        if (s.trigger) { p.payload = new Shot(); this.draw(p.payload, 1); }
+        if (s.trigger) { p.payload = new Shot(); this.draw(p.payload, s.triggerDraw ?? 1); }
         break;
       }
       case 'modifier':
         if (s.mod) shot.mods.push(s.mod);
-        this.draw(shot, 1);
+        s.cast?.(this, shot);
+        if (s.play) s.play(this, shot);
+        else this.draw(shot, 1);
         break;
       case 'multicast': {
         const from = shot.projs.length;
@@ -176,8 +221,9 @@ class Cast implements CastCtx {
         });
         break;
       }
-      case 'other':
-        s.play?.(this, shot);
+      case 'other': case 'utility': case 'passive':
+        if (s.play) s.play(this, shot);
+        else this.draw(shot, 1);
         break;
     }
     this.depth--;
@@ -201,17 +247,19 @@ export function fire(w: WandData, rt: Runtime, o: FireOpts): CastResult | null {
   if (reloaded) {
     rt.deck = order(w, filledSlots(w), o.rand);
     rt.discard = [];
-    rt.reload = rt.reloadTotal = c.refresh ? 0 : Math.max(0, Math.round(root.recharge));
+    rt.reload = rt.reloadTotal = c.refresh ? 0 : Math.max(0, Math.round(root.rechargeSet ?? root.recharge));
   }
   if (!c.cards.some((k) => k >= 0) && !w.always.length) return { shot: root, cards: [], mana: 0, noMana: c.noMana, reloaded };
-  return { shot: root, cards: c.cards, mana: c.mana, noMana: c.noMana, reloaded };
+  return { shot: root, cards: c.cards, mana: c.spent, noMana: c.noMana, reloaded };
 }
 
 /** Every projectile of a cast with its modifiers applied (a payload's modifiers apply when it's released). */
 export function finalProjs(shot: Shot): Proj[] {
+  // copies: a payload can be released more than once (copies of a triggered projectile), and each gets the mods once
   return shot.projs.map((p) => {
-    for (const m of shot.mods) m(p);
-    return p;
+    const q = cloneProj(p);
+    for (const m of shot.mods) m(q);
+    return q;
   });
 }
 
