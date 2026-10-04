@@ -156,9 +156,24 @@ export interface Proj {
   group: number;
 }
 
-/** A cast state: the projectiles one press of the wand produces, and everything that adds up across them. */
+/** One card played into a cast block, for the debug cast tree. */
+export interface CastEntry {
+  id: string;
+  /** Nesting under multicasts and card-logic spells (for drawing the tree). */
+  level: number;
+  /** Indices into the block's projectiles this card made. */
+  projs?: number[];
+  /** A trigger's payload: its own cast block. */
+  payload?: Shot;
+  /** Played as a copy (Alpha, Divide By...), not drawn. */
+  copy?: boolean;
+}
+
+/** A cast block: the projectiles one press of the wand (or one payload) produces, and what adds up across them. */
 export class Shot {
   projs: Proj[] = [];
+  /** The cards played into this block, in order (the debug cast tree). */
+  log: CastEntry[] = [];
   mods: ((p: Proj) => void)[] = [];
   spread = 0;
   castDelay = 0;
@@ -313,6 +328,8 @@ export interface SpellDef {
   timer?: number;
   /** Cards a trigger carries (Double Trigger: 2). */
   triggerDraw?: number;
+  /** Projectiles one card adds to the cast (Triplicate Bolt: 3); all of them get the cast's modifiers. */
+  count?: number;
   /** Every tick the projectile lives (server). */
   tick?(l: Live, w: SpellWorld): void;
   /** When it ends (server). */

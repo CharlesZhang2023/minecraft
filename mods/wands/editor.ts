@@ -5,7 +5,8 @@
 import type { ModContext, UI, Ctx, ItemStack, Channel } from '../sdk';
 import { SPELLS, SPELL_BY_ID, TYPE_ORDER, TYPE_NAMES, TYPE_COLORS, type SpellDef, type SpellType } from './spells';
 import { wandOf, cloneWand, statLines, secs, STAT_LIMITS, MAX_ALWAYS, MAX_CAP, type WandData, type WandStats } from './wand';
-import { previewCycle, type CyclePreview } from './engine';
+import { previewCycle, explainCycle, type CyclePreview } from './engine';
+import { PRESETS } from './presets';
 
 export interface EditMsg { slot: number; spells: (string | null)[]; always?: string[]; s?: WandStats }
 export interface EditorDeps {
@@ -30,6 +31,8 @@ const same = (a: Loc | null, b: Loc | null) => !!a && !!b && a.k === b.k && (a.k
 
 const C = 18;
 const BOX_KEY = 'wands.box';
+/** Stats for printing a preset's tree when there's no wand open (it never runs out). */
+const STARTER_STATS: WandStats = { shuffle: false, multi: 1, delay: 3, reload: 10, mana: 1000, regen: 500, cap: 26, spread: 0, speed: 1 };
 const GROUP_COLS = ['#ffd04a', '#4ad0ff', '#ff6ad0', '#7aff6a', '#ff9a4a', '#b08aff'];
 
 export function editorScreen(mod: ModContext, d: EditorDeps) {
@@ -46,10 +49,13 @@ export function editorScreen(mod: ModContext, d: EditorDeps) {
     private filter: SpellType | 'all' = 'all';
     private scroll = 0;
     private sel: Loc | null = null;
-    private press: { loc: Loc | null; x: number; y: number; t0: number; moved: boolean; mode: 'pending' | 'drag' | 'scroll' | 'none'; s0: number } | null = null;
+    private press: { loc: Loc | null; x: number; y: number; t0: number; moved: boolean; mode: 'pending' | 'drag' | 'scroll' | 'none'; s0: number; box?: boolean } | null = null;
     private msg = '';
     private msgT = 0;
     private box = false;
+    /** The wand box's page: your saved layouts, or the ready-made presets (scrolling). */
+    private boxTab: 'saved' | 'presets' = 'saved';
+    private boxScroll = 0;
     private preview: CyclePreview | null = null;
     private search: InstanceType<typeof TextField> | null = null;
     private lastMx = 0;
@@ -292,7 +298,12 @@ export function editorScreen(mod: ModContext, d: EditorDeps) {
         if (mx >= 4 && ti >= 0 && ti < Math.min(ws.length, L.tabsMax)) { this.switchTo(ws[ti]); return true; }
         return true;
       }
-      if (this.box) { this.boxClick(mx, my); return true; }
+      if (this.box) {
+        // the presets page scrolls with a finger: a tap is a click once the finger lifts without moving
+        if (this.boxTab === 'presets' && my > this.boxRect().y + 14) { this.press = { loc: null, x: mx, y: my, t0: performance.now(), moved: false, mode: 'pending', s0: this.boxScroll, box: true }; return true; }
+        this.boxClick(mx, my);
+        return true;
+      }
       // filters
       if (inside(L.filters, mx, my)) {
         const i = Math.floor((my - L.filters.y) / C);
@@ -340,6 +351,11 @@ export function editorScreen(mod: ModContext, d: EditorDeps) {
       const p = this.press;
       if (!p) return;
       const dx = mx - p.x, dy = my - p.y;
+      if (p.box) {
+        if (Math.abs(dy) > 3) p.moved = true;
+        if (p.moved) this.boxScroll = Math.max(0, Math.min(this.boxMaxScroll(), p.s0 - Math.round(dy / 16)));
+        return;
+      }
       if (!p.moved && Math.hypot(dx, dy) > 3) {
         p.moved = true;
         if (p.mode === 'pending') {
@@ -360,6 +376,7 @@ export function editorScreen(mod: ModContext, d: EditorDeps) {
       const p = this.press;
       this.press = null;
       if (!p) return;
+      if (p.box) { if (!p.moved) this.boxClick(mx, my); return; }
       if (p.mode === 'drag' && p.loc) {
         const to = this.hit(mx, my);
         if (to && to.k !== 'pal') this.move(p.loc, to);
@@ -386,6 +403,7 @@ export function editorScreen(mod: ModContext, d: EditorDeps) {
     }
 
     override wheel(dy: number) {
+      if (this.box && this.boxTab === 'presets') { this.boxScroll = Math.max(0, Math.min(this.boxMaxScroll(), this.boxScroll + Math.sign(dy))); return; }
       const L = this.layout(), maxScroll = Math.max(0, Math.ceil(this.palette().length / L.cols) - L.prow);
       this.scroll = Math.max(0, Math.min(maxScroll, this.scroll + Math.sign(dy)));
     }
@@ -449,10 +467,30 @@ export function editorScreen(mod: ModContext, d: EditorDeps) {
       const L = this.layout();
       return { x: L.pal.x, y: L.pal.y, w: L.right.x + L.right.w - L.pal.x, h: L.pal.h };
     }
+    private boxRows() { return Math.max(1, Math.floor((this.boxRect().h - 16) / 16)); }
+    private boxMaxScroll() { return Math.max(0, PRESETS.length - this.boxRows()); }
+    /** The page tabs at the top right of the box. */
+    private boxTabs() { const r = this.boxRect(); return [{ id: 'saved' as const, x: r.x + r.w - 92, w: 40 }, { id: 'presets' as const, x: r.x + r.w - 50, w: 48 }]; }
     private boxClick(mx: number, my: number) {
-      const r = this.boxRect(), list = this.boxList();
+      const r = this.boxRect();
+      if (!inside(r, mx, my)) return;
+      if (my < r.y + 14) {
+        const t = this.boxTabs().find((t) => mx >= t.x && mx < t.x + t.w);
+        if (t) { this.boxTab = t.id; this.boxScroll = 0; this.game.audio.play('click', null, 0.5, 1); }
+        return;
+      }
       const row = Math.floor((my - r.y - 14) / 16);
-      if (!inside(r, mx, my) || row < 0 || row >= Math.min(8, Math.floor((r.h - 16) / 16))) return;
+      if (row < 0 || row >= Math.min(this.boxTab === 'saved' ? 8 : PRESETS.length, this.boxRows())) return;
+      if (this.boxTab === 'presets') {
+        const p = PRESETS[row + this.boxScroll];
+        const bx = r.x + r.w - 2 * 30 - 4;
+        if (!p || mx < bx) { if (p) this.say(p.note); return; }
+        if (mx < bx + 30) this.loadLayout(p.spells, true);
+        else this.printTree(p.name, p.spells);
+        this.game.audio.play('click', null, 0.5, 1);
+        return;
+      }
+      const list = this.boxList();
       const bx = r.x + r.w - 3 * 30 - 4;
       const which = mx < bx ? -1 : Math.floor((mx - bx) / 30);
       if (which === 0 && this.local) { list[row] = cloneWand(this.local); delete list[row]!.uid; delete list[row]!.uses; this.boxSave(list); this.say('Saved'); }
@@ -465,6 +503,29 @@ export function editorScreen(mod: ModContext, d: EditorDeps) {
         this.box = false;
       } else if (which === 2) { list[row] = null; this.boxSave(list); }
       this.game.audio.play('click', null, 0.5, 1);
+    }
+    /** Put a spell list in the wand. Presets in creative also get a wand that shows them plainly: no shuffle, one
+     * spell per cast, room for every spell. In survival the spells must be in your inventory. */
+    private loadLayout(spells: string[], preset: boolean) {
+      if (!this.local) return;
+      const prev = cloneWand(this.local);
+      if (preset && this.creative) {
+        this.local.s = { ...this.local.s, shuffle: false, multi: 1, cap: Math.max(this.local.s.cap, spells.length) };
+        this.local.always = [];
+      }
+      if (spells.length > this.local.s.cap) { this.say('This wand has too few slots'); return; }
+      this.local.spells = Array.from({ length: this.local.s.cap }, (_, i) => spells[i] ?? null);
+      this.commit(prev);
+      this.box = false;
+      this.say(preset ? 'Preset loaded: /wanddebug shows each cast' : 'Loaded');
+    }
+    /** The first casts of a layout, as trees, in the chat (close the editor to read them). */
+    private printTree(name: string, spells: string[]) {
+      const w: WandData = { tier: 5, rev: 0, always: [], inf: true, s: { ...(this.local?.s ?? STARTER_STATS), shuffle: false, multi: 1, cap: Math.max(spells.length, 1) }, spells: [...spells] };
+      const chat = (this.game as unknown as { ui: { chat: { add(m: string): void } } }).ui.chat;
+      chat.add(`§e${name}§7: ${spells.join(', ')}`);
+      explainCycle(w, 3).forEach((tree, n) => { chat.add(`§b-- cast ${n + 1}`); for (const l of tree) chat.add(`§7${l}`); console.log(`[wands] ${name} cast ${n + 1}\n${tree.join('\n')}`); });
+      this.say('Cast trees printed to chat');
     }
 
     // ------------------------------------------------------------------ every tick
@@ -547,10 +608,11 @@ export function editorScreen(mod: ModContext, d: EditorDeps) {
       }
       const dragging = this.press?.mode === 'drag' ? this.press.loc : null;
       const over = this.hit(mx, my);
-      if (this.box) this.drawBox(ctx, mx, my);
-      else this.drawPalette(ctx, L, mx, my, over, dragging);
+      if (!this.box) this.drawPalette(ctx, L, mx, my, over, dragging);
       this.drawFilters(ctx, L, mx, my);
-      this.drawStats(ctx, L, mx, my, w);
+      // the box covers the palette and the stats
+      if (this.box) this.drawBox(ctx, mx, my);
+      else this.drawStats(ctx, L, mx, my, w);
       this.drawWand(ctx, L, over, dragging, w);
       super.render(ctx, mx, my);
       // the spell being dragged follows the pointer
@@ -721,24 +783,51 @@ export function editorScreen(mod: ModContext, d: EditorDeps) {
     }
 
     private drawBox(ctx: Ctx, mx: number, my: number) {
-      const r = this.boxRect(), gui = this.gui, list = this.boxList();
+      const r = this.boxRect(), gui = this.gui;
       ctx.fillStyle = 'rgba(14,16,30,0.95)';
       ctx.fillRect(r.x, r.y, r.w, r.h);
-      gui.text(ctx, 'Wand box: save this wand\'s layout, load one into it', r.x + 4, r.y + 3, '#ffe080');
-      const rows = Math.min(8, Math.floor((r.h - 16) / 16));
+      gui.text(ctx, this.boxTab === 'saved' ? 'Wand box: save this wand\'s layout, load one into it' : 'Presets: load one, or print its cast tree to chat', r.x + 4, r.y + 3, '#ffe080');
+      for (const t of this.boxTabs()) gui.button(ctx, t.x, r.y + 1, t.w - 2, 12, t.id === 'saved' ? 'Saved' : 'Presets', this.boxTab === t.id || (mx >= t.x && mx < t.x + t.w && my >= r.y && my < r.y + 13), true);
+      const rows = this.boxRows();
       const icons = (this.game as unknown as { icons: { get(id: number): HTMLCanvasElement } }).icons;
-      for (let i = 0; i < rows; i++) {
+      const strip = (ids: string[], x: number, y: number, room: number) => {
+        ids.slice(0, Math.floor(room / 13)).forEach((id, k) => {
+          const item = d.spellItem(id);
+          if (item !== undefined) ctx.drawImage(icons.get(item), x + k * 13, y + 1.5, 12, 12);
+        });
+      };
+      if (this.boxTab === 'presets') {
+        const bx = r.x + r.w - 2 * 30 - 4;
+        for (let i = 0; i < rows; i++) {
+          const n = i + this.boxScroll, p = PRESETS[n];
+          if (!p) break;
+          const y = r.y + 14 + i * 16;
+          ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)';
+          ctx.fillRect(r.x + 2, y, r.w - 4, 15);
+          let label = `${n + 1} ${p.name}`;
+          const room = (bx - r.x) * 0.45;
+          while (gui.font.width(label) > room && label.length > 4) label = label.slice(0, -3) + '..';
+          const lw = gui.font.width(label);
+          gui.text(ctx, label, r.x + 5, y + 4, '#d0d0e0');
+          strip(p.spells, r.x + 10 + lw, y, bx - (r.x + 10 + lw) - 4);
+          ['Load', 'Tree'].forEach((t, k) => { const x = bx + k * 30; gui.button(ctx, x, y + 1, 28, 13, t, mx >= x && mx < x + 28 && my >= y && my < y + 15, true); });
+        }
+        if (this.boxMaxScroll() > 0) {
+          const h = rows * 16, th = Math.max(8, (h * rows) / PRESETS.length);
+          ctx.fillStyle = 'rgba(255,255,255,0.35)';
+          ctx.fillRect(r.x + r.w - 3, r.y + 14 + ((h - th) * this.boxScroll) / this.boxMaxScroll(), 2, th);
+        }
+        return;
+      }
+      const list = this.boxList();
+      for (let i = 0; i < Math.min(8, rows); i++) {
         const y = r.y + 14 + i * 16, saved = list[i];
         ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)';
         ctx.fillRect(r.x + 2, y, r.w - 4, 15);
         gui.text(ctx, String(i + 1), r.x + 5, y + 4, '#808090');
         const bx = r.x + r.w - 3 * 30 - 4;
         if (saved) {
-          const max = Math.floor((bx - r.x - 20) / 13);
-          saved.spells.filter(Boolean).slice(0, max).forEach((id, k) => {
-            const item = d.spellItem(id!);
-            if (item !== undefined) ctx.drawImage(icons.get(item), r.x + 16 + k * 13, y + 1.5, 12, 12);
-          });
+          strip(saved.spells.filter(Boolean) as string[], r.x + 16, y, bx - r.x - 20);
           if (!saved.spells.some(Boolean)) gui.text(ctx, '(empty wand)', r.x + 16, y + 4, '#707080');
         } else gui.text(ctx, '-', r.x + 16, y + 4, '#505060');
         ['Save', 'Load', 'Del'].forEach((t, k) => {

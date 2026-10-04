@@ -11,8 +11,6 @@ function withTrigger(base: SpellDef, kind: 'trigger' | 'timer' | 'expire', id: s
     trigger: kind === 'trigger' ? 'hit' : kind, timer: kind === 'timer' ? timer : undefined, ...extra,
   });
 }
-/** Hooks that make more of themselves on the first tick (Ball Lightning, Triplicate Bolt...). */
-const spread = (n: number, cone: number): Partial<Proj>['spawns'] => [{ on: 'tick', every: 1, max: 1, spell: 'self', n, dir: 'cone', cone }];
 
 // ---- sparks, arrows, bolts
 const SPARK: Partial<Proj> = { visual: 'spark', dmg: 3, crit: 0.05, speed: 1.4, life: 16, spread: -1, color: 0xd08cff, size: 0.12 };
@@ -58,7 +56,7 @@ const BUBBLE: Partial<Proj> = { visual: 'bubble', dmg: 2, speed: 0.45, life: 40,
 const bubble = proj('bubble_spark', 'Bubble Spark', 0, 5, 'A bouncy bubble that floats upwards.', I('#80d8ff', 'bubble'), BUBBLE, { delay: -2 });
 withTrigger(bubble, 'trigger', 'bubble_spark_trigger', 'Bubble Spark with Trigger', 16, 'A bubble that casts another spell when it pops.');
 proj('arrow', 'Arrow', 0, 15, 'Summons an arrow.', I('#d8b080', 'wood'), { visual: 'wood', dmg: 5, speed: 1.6, gravity: 0.05, life: 60, spread: -20, color: 0xd8b080, size: 0.12 }, { delay: 3 });
-proj('triplicate_bolt', 'Triplicate Bolt', 1, 25, 'Three bolts at once.', I('#80e0ff', 'bolt'), { visual: 'bolt', dmg: 4, speed: 1.3, life: 48, bounces: 1, spread: 14, color: 0x80e0ff, size: 0.12, spawns: spread(2, 14) }, { delay: 3 });
+proj('triplicate_bolt', 'Triplicate Bolt', 1, 25, 'Three bolts at once.', I('#80e0ff', 'bolt'), { visual: 'bolt', dmg: 4, speed: 1.3, life: 48, bounces: 1, spread: 14, color: 0x80e0ff, size: 0.12 }, { delay: 3, count: 3 });
 proj('chain_bolt', 'Chain Bolt', 3, 80, 'A mysterious bolt that jumps from enemy to enemy.', I('#a0ffff', 'lightning'), { visual: 'bolt', dmg: 7, speed: 1.5, life: 20, spread: 14, color: 0xa0ffff, size: 0.14, data: { jumps: 5 } }, {
   delay: 15,
   touch(l, e, w) {
@@ -179,9 +177,9 @@ const LIGHT: Partial<Proj> = { visual: 'beam', dmg: 5, bounces: 10, bounceKeep: 
 proj('concentrated_light', 'Concentrated Light', 1, 30, 'A beam of light that bounces off walls.', I('#ffff80', 'lance'), LIGHT, { delay: -7 });
 proj('intense_concentrated_light', 'Intense Concentrated Light', 3, 110, 'A powerful beam of light that bounces off walls.', I('#fff040', 'lance'), { ...LIGHT, dmg: 16, life: 10, size: 0.14, spread: 2.9 }, { delay: 30 });
 proj('plasma_beam', 'Plasma Beam', 2, 60, 'An instantaneous, dangerous beam of light.', I('#ff40ff', 'lance'), { visual: 'beam', dmg: 6, pierce: true, speed: 5, life: 5, color: 0xff40ff, size: 0.1 }, { delay: 2 });
-proj('pinpoint_of_light', 'Pinpoint of Light', 3, 65, 'An extremely concentrated point of light that explodes after a moment.', I('#ffffff', 'spark'), { visual: 'spark', dmg: 3, explR: 2.2, explDmg: 14, terrain: 1, speed: 2.4, drag: 0.8, life: 14, spread: 6, color: 0xffffe0, size: 0.1 }, { delay: 13 });
+proj('pinpoint_of_light', 'Pinpoint of Light', 3, 65, 'A slow, extremely concentrated point of light: it burns through what it passes, then explodes.', I('#ffffff', 'spark'), { visual: 'spark', dmg: 4, pierce: true, explR: 2.2, explDmg: 14, terrain: 1, speed: 0.45, life: 36, spread: 6, color: 0xffffe0, size: 0.12 }, { delay: 13 });
 proj('lightning_bolt', 'Lightning Bolt', 3, 70, 'A bolt of lightning that strikes with a thunderclap.', I('#d0e8ff', 'lightning'), { visual: 'lightning', dmg: 6, explR: 1.6, explDmg: 8, terrain: 1.5, elec: 6, speed: 3.5, life: 12, color: 0xd0e8ff, size: 0.15 }, { delay: 17 });
-proj('ball_lightning', 'Ball Lightning', 3, 70, 'Three short-ranged orbs of lightning.', I('#a0c0ff', 'orb'), { visual: 'orb', dmg: 3, elec: 5, speed: 0.8, life: 12, spread: 45, color: 0xa0c0ff, size: 0.2, spawns: spread(2, 40) }, { delay: 17 });
+proj('ball_lightning', 'Ball Lightning', 3, 70, 'Three short-ranged orbs of lightning.', I('#a0c0ff', 'orb'), { visual: 'orb', dmg: 3, elec: 5, speed: 0.8, life: 12, spread: 45, color: 0xa0c0ff, size: 0.2 }, { delay: 17, count: 3 });
 proj('thunder_charge', 'Thunder Charge', 4, 120, 'A projectile with immense stored electricity.', I('#80c0ff', 'zap'), { visual: 'orb', dmg: 6, speed: 0.8, life: 40, color: 0x80c0ff, size: 0.28 }, {
   delay: 40, uses: 3,
   hit(l, h, w) {
@@ -202,14 +200,14 @@ proj('iceball', 'Iceball', 3, 90, 'A ball of frozen fire: freezes what it hits a
     for (const e of w.near(h.x, h.y, h.z, 3, true)) w.effect(e, 'slowness', 80, 3);
   },
 });
-proj('freezing_gaze', 'Freezing Gaze', 2, 45, 'A heart-freezingly sinister aura: a fan of freezing rays.', I('#c0f0ff', 'snowflake'), { visual: 'ray', dmg: 2, freeze: true, speed: 2, life: 9, bounces: 3, color: 0xc0f0ff, size: 0.08, spawns: spread(5, 22) }, { delay: 7, uses: 20 });
+proj('freezing_gaze', 'Freezing Gaze', 2, 45, 'A heart-freezingly sinister aura: a fan of freezing rays.', I('#c0f0ff', 'snowflake'), { visual: 'ray', dmg: 2, freeze: true, speed: 2, life: 9, bounces: 3, spread: 22, color: 0xc0f0ff, size: 0.08 }, { delay: 7, uses: 20, count: 6 });
 proj('cursed_sphere', 'Cursed Sphere', 2, 40, 'Passes through walls and brings bad luck to anyone it hits.', I('#a040ff', 'orb'), { visual: 'orb', dmg: 6, ghost: true, speed: 0.6, life: 48, spread: 8.6, color: 0x8030c0, size: 0.22, inflict: [['cursed', 200]] }, { delay: 7 });
 proj('expanding_sphere', 'Expanding Sphere', 3, 70, 'A slow projectile whose damage grows the longer it flies.', I('#ff80ff', 'orb'), { visual: 'orb', dmg: 2, speed: 0.35, life: 72, spread: 8.6, color: 0xff80ff, size: 0.25 }, {
   delay: 10,
   tick(l) { l.p.dmg = Math.min(30, 2 + l.age * 0.4); },
 });
 proj('pollen', 'Pollen', 1, 10, 'A small, floating projectile that drifts toward nearby creatures.', I('#ffe060', 'spark'), { visual: 'spark', dmg: 2, homing: 0.08, speed: 0.3, life: 120, gravity: -0.002, bounces: 1, spread: 20, color: 0xffe060, size: 0.08 }, { delay: 1 });
-proj('infestation', 'Infestation', 1, 40, 'A bunch of magical sparks that fly every which way.', I('#c0ff80', 'spark'), { visual: 'spark', dmg: 2, path: 'chaos', speed: 0.6, life: 40, bounces: 20, spread: 180, color: 0xc0ff80, size: 0.08, spawns: [{ on: 'tick', every: 1, max: 1, spell: 'self', n: 4, dir: 'random' }] }, { delay: -1 });
+proj('infestation', 'Infestation', 1, 40, 'A bunch of magical sparks that fly every which way.', I('#c0ff80', 'spark'), { visual: 'spark', dmg: 2, path: 'chaos', speed: 0.6, life: 40, bounces: 20, spread: 180, color: 0xc0ff80, size: 0.08 }, { delay: -1, count: 5 });
 proj('spiral_shot', 'Spiral Shot', 2, 50, 'A mystical whirlwind of magic sparks.', I('#80ffff', 'spiral'), { visual: 'orb', dmg: 3, path: 'spiral', speed: 0.6, life: 40, color: 0x80ffff, size: 0.18, spawns: [{ on: 'tick', every: 3, spell: 'spiral_spark', n: 1, dir: 'perp' }] }, { delay: 7, uses: 15 });
 proj('spiral_spark', 'Spiral Spark', 5, 0, 'A spark of a whirlwind.', I('#80ffff'), { visual: 'spark', dmg: 2, speed: 0.5, life: 10, color: 0x80ffff, size: 0.08 }, { hidden: true });
 proj('dropper_bolt', 'Dropper Bolt', 2, 80, 'A bolt that drops a rain of sparks as it flies.', I('#ffd080', 'bolt'), { visual: 'bolt', dmg: 3, speed: 1, life: 60, bounces: 1, spread: 2.9, color: 0xffd080, size: 0.14, spawns: [{ on: 'tick', every: 3, spell: 'dropper_drop', dir: 'down' }] }, { delay: 13, uses: 35 });
@@ -237,9 +235,8 @@ proj('magic_missile', 'Magic Missile', 2, 70, 'A fiery, explosive missile.', I('
 proj('large_magic_missile', 'Large Magic Missile', 3, 90, 'A more powerful version of Magic Missile.', I('#ff7020', 'fireball'), { ...MISSILE, explR: 2.6, explDmg: 18, terrain: 6, size: 0.3 }, { delay: 30, uses: 8 });
 proj('giant_magic_missile', 'Giant Magic Missile', 4, 120, 'The most powerful version of Magic Missile.', I('#ff5000', 'fireball'), { ...MISSILE, explR: 3.5, explDmg: 28, terrain: 8, size: 0.4 }, { delay: 40, uses: 6 });
 proj('flock_of_ducks', 'Flock of Ducks', 3, 100, 'A chaotic flock of spicy ducks.', I('#ffe080', 'burst'), {
-  visual: 'icon', dmg: 4, explR: 0.9, explDmg: 4, path: 'chaos', speed: 0.6, life: 70, bounces: 5, color: 0xffe080, size: 0.3, spread: 3,
-  spawns: [{ on: 'tick', every: 1, max: 1, spell: 'self', n: 4, dir: 'cone', cone: 35 }],
-}, { delay: 20, reload: 7, uses: 20, noita: 'Flock Of Ducks' });
+  visual: 'icon', dmg: 4, explR: 0.9, explDmg: 4, path: 'chaos', speed: 0.6, life: 70, bounces: 5, color: 0xffe080, size: 0.3, spread: 35,
+}, { delay: 20, reload: 7, uses: 20, count: 5, noita: 'Flock Of Ducks' });
 proj('summon_fish', 'Summon Fish', 2, 90, 'FISH!', I('#80a0ff', 'drop'), { visual: 'icon', gravity: 0.05, speed: 0.7, life: 60, color: 0x80a0ff, size: 0.3 }, {
   delay: 27, uses: 20,
   hit(_l, h, w) { const [x, y, z] = landing(h); for (let k = 0; k < 3; k++) w.mob('squid', x + 0.5 + (w.rand() - 0.5), y + 0.2, z + 0.5 + (w.rand() - 0.5)); },
@@ -303,7 +300,17 @@ proj('eldritch_portal', 'Eldritch Portal', 4, 140, 'A slow portal: what it touch
     w.teleport(e, e.x + Math.cos(a) * d, e.y + 20, e.z + Math.sin(a) * d);
   },
 });
-proj('burst_of_air', 'Burst of Air', 0, 5, 'A gust that throws back whatever it meets.', I('#e0f0ff', 'push'), { visual: 'bubble', knock: 2.5, pierce: true, speed: 1.2, life: 14, spread: -2, color: 0xe8f4ff, size: 0.2 }, { delay: 1, noita: 'Burst Of Air' });
+proj('burst_of_air', 'Burst of Air', 0, 5, 'A gust that throws back whatever it meets: creatures, and other projectiles too.', I('#e0f0ff', 'push'), { visual: 'bubble', knock: 2.5, pierce: true, speed: 1.2, life: 14, spread: -2, color: 0xe8f4ff, size: 0.2 }, {
+  delay: 1, noita: 'Burst Of Air',
+  tick(l, w) {
+    const sp = Math.hypot(l.vx, l.vy, l.vz) || 1;
+    for (const o of w.projs(l.x, l.y, l.z, 1.6)) {
+      if (o.id === l.id || o.p.spell.id === 'burst_of_air' || o.p.orbit) continue;
+      o.vx += (l.vx / sp) * 0.5; o.vy += (l.vy / sp) * 0.5 + 0.05; o.vz += (l.vz / sp) * 0.5;
+      o.sync();
+    }
+  },
+});
 
 // ---- healing and harm
 proj('healing_bolt', 'Healing Bolt', 1, 15, 'Heals whatever it hits (not yourself).', I('#60ff80', 'heal'), { visual: 'heal', heal: 3, speed: 1.3, life: 30, spread: 2, color: 0x60ff80, size: 0.14 }, { delay: 1, uses: 20 });

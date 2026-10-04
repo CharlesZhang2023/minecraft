@@ -81,6 +81,7 @@ function projLine(p) {
 function special(s) {
   const out = [];
   if (s.trigger) out.push(s.trigger === 'timer' ? `**trigger: timer ${s.timer}t**` : `**trigger: ${s.trigger}**`);
+  if (s.count) out.push(`**${s.count} projectiles per card**`);
   if (s.triggerDraw) out.push(`carries ${s.triggerDraw} spells`);
   for (const k of ['tick', 'hit', 'touch', 'play', 'cast']) if (s[k]) out.push(`\`${k}\``);
   if (s.passive) out.push(`passive: ${s.passive}`);

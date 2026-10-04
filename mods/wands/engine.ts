@@ -5,7 +5,7 @@
 // the deck is empty, the wand recharges too. Spells the wand can't afford are skipped for the next card.
 //
 // Pure logic: the server fires real wands with it, the editor runs it on a copy to preview a wand's casts.
-import { SPELL_BY_ID, Shot, makeProj, cloneProj, type CastCtx, type Proj, type SpellDef } from './spells';
+import { SPELL_BY_ID, Shot, makeProj, cloneProj, type CastCtx, type CastEntry, type Proj, type SpellDef } from './spells';
 import { wandSpells, type WandData } from './wand';
 
 /** A wand's state between casts: its deck, mana and timers (the server keeps one per wand, by uid). */
@@ -84,6 +84,10 @@ export interface CastResult {
   noMana: boolean;
   /** The wand started recharging after this cast. */
   reloaded: boolean;
+  /** The deck went round once mid-cast. */
+  wrapped?: boolean;
+  /** Cards passed over unplayed (requirements). */
+  skipped?: string[];
 }
 
 export interface FireOpts {
@@ -109,6 +113,10 @@ class Cast implements CastCtx {
   noMana = false;
   spent = 0;
   private depth = 0;
+  /** Nesting for the cast tree, and whether cards are being played as copies. */
+  private level = 0;
+  private copying = 0;
+  skipped: string[] = [];
   /** The slot of the card being played (Spell Duplication looks before it). */
   private cur = -1;
   readonly spells: SpellDef[];
@@ -144,7 +152,9 @@ class Cast implements CastCtx {
     if (!rt.deck.length) return null;
     const slot = rt.deck.shift()!;
     this.hand.push(slot);
-    return SPELL_BY_ID.get(this.w.spells[slot] ?? '') ?? null;
+    const s = SPELL_BY_ID.get(this.w.spells[slot] ?? '') ?? null;
+    if (s) this.skipped.push(s.id);
+    return s;
   }
 
   /** The next card the wand can afford, or null when there's nothing left to draw this cast. */
@@ -187,7 +197,7 @@ class Cast implements CastCtx {
     if (c) this.cards.push(c.slot);
     return c?.spell ?? null;
   }
-  play(spell: SpellDef, shot: Shot) { this.playSpell(spell, shot); }
+  play(spell: SpellDef, shot: Shot) { this.copying++; this.playSpell(spell, shot); this.copying--; }
 
   playSpell(s: SpellDef, shot: Shot) {
     // copies of copies (Omega casting Alpha casting...) stop somewhere
@@ -195,13 +205,17 @@ class Cast implements CastCtx {
     this.depth++;
     shot.castDelay += s.delay ?? 0;
     shot.recharge += s.reload ?? 0;
+    const entry: CastEntry = { id: s.id, level: this.level, ...(this.copying ? { copy: true } : {}) };
+    shot.log.push(entry);
     switch (s.type) {
       case 'projectile': case 'static': case 'material': {
         // cards with their own logic (random spells, notes) play it
-        if (s.play) { s.play(this, shot); break; }
-        const p = makeProj(s);
-        shot.projs.push(p);
-        if (s.trigger) { p.payload = new Shot(); this.draw(p.payload, s.triggerDraw ?? 1); }
+        if (s.play) { this.level++; s.play(this, shot); this.level--; break; }
+        // one card can make several projectiles (Triplicate Bolt); they share one payload
+        const from = shot.projs.length, payload = s.trigger ? new Shot() : undefined;
+        for (let k = 0; k < (s.count ?? 1); k++) { const p = makeProj(s); p.payload = payload; shot.projs.push(p); }
+        entry.projs = Array.from({ length: shot.projs.length - from }, (_, k) => from + k);
+        if (payload) { entry.payload = payload; this.draw(payload, s.triggerDraw ?? 1); }
         break;
       }
       case 'modifier':
@@ -213,7 +227,9 @@ class Cast implements CastCtx {
       case 'multicast': {
         const from = shot.projs.length;
         if (s.scatter) shot.spread += s.scatter;
+        this.level++;
         this.draw(shot, s.draw ?? 2);
+        this.level--;
         if (s.formation) shot.projs.slice(from).forEach((p, i) => {
           const f = s.formation![i % s.formation!.length];
           p.yawOff += f[0];
@@ -222,8 +238,10 @@ class Cast implements CastCtx {
         break;
       }
       case 'other': case 'utility': case 'passive':
+        this.level++;
         if (s.play) s.play(this, shot);
         else this.draw(shot, 1);
+        this.level--;
         break;
     }
     this.depth--;
@@ -249,8 +267,8 @@ export function fire(w: WandData, rt: Runtime, o: FireOpts): CastResult | null {
     rt.discard = [];
     rt.reload = rt.reloadTotal = c.refresh ? 0 : Math.max(0, Math.round(root.rechargeSet ?? root.recharge));
   }
-  if (!c.cards.some((k) => k >= 0) && !w.always.length) return { shot: root, cards: [], mana: 0, noMana: c.noMana, reloaded };
-  return { shot: root, cards: c.cards, mana: c.spent, noMana: c.noMana, reloaded };
+  if (!c.cards.some((k) => k >= 0) && !w.always.length) return { shot: root, cards: [], mana: 0, noMana: c.noMana, reloaded, wrapped: c.wrapped, skipped: c.skipped };
+  return { shot: root, cards: c.cards, mana: c.spent, noMana: c.noMana, reloaded, wrapped: c.wrapped, skipped: c.skipped };
 }
 
 /** Every projectile of a cast with its modifiers applied (a payload's modifiers apply when it's released). */
@@ -299,4 +317,81 @@ export function previewCycle(w: WandData): CyclePreview {
     seconds += rt.delayTotal / 20;
   }
   return { casts, seconds, mana, damage, reload };
+}
+
+// ------------------------------------------------------------------ the debug cast tree
+const n2 = (v: number) => String(Math.round(v * 100) / 100);
+/** A projectile in a line: its numbers after the block's modifiers. */
+function projSummary(p: Proj): string {
+  const out = [`dmg ${n2(p.dmg * p.dmgMul)}`, `spd ${n2(p.speed)}`, `life ${p.life}`];
+  if (p.explR) out.push(`expl r${n2(p.explR)}/${n2(p.explDmg * p.dmgMul)}`);
+  if (p.crit) out.push(`crit ${Math.round(p.crit * 100)}%`);
+  if (p.homing) out.push(`homing ${n2(p.homing)}`);
+  if (p.pierce) out.push('pierce');
+  if (p.aura) out.push(`aura ${n2(p.aura)}`);
+  if (p.bounces) out.push(`bounces ${p.bounces >= 999 ? 'inf' : p.bounces}`);
+  if (p.spread) out.push(`spread ${n2(p.spread)}`);
+  if (p.gravity) out.push(`grav ${n2(p.gravity)}`);
+  if (p.path !== 'straight') out.push(p.path);
+  if (p.steer.length) out.push(p.steer.join('+'));
+  if (p.data.orbit !== undefined) out.push('orbiters');
+  if (p.spawns.length) out.push(`casts on ${p.spawns.map((r) => r.on).join('/')}`);
+  return out.join(', ');
+}
+const triggerName = (p: Proj) => (p.trigger === 'timer' ? `on timer ${p.timer}t` : p.trigger === 'expire' ? 'on expire' : 'on hit');
+/** Projectiles a block makes, payloads included. */
+export function countProjectiles(shot: Shot, depth = 0): number {
+  return depth > 8 ? 0 : shot.projs.reduce((n, p, i) => n + 1 + (p.payload && shot.projs.findIndex((q) => q.payload === p.payload) === i ? countProjectiles(p.payload, depth + 1) : 0), 0);
+}
+/** A cast block as tree lines (ASCII: the game's font has no box-drawing characters). */
+function blockLines(shot: Shot, prefix: string, depth: number): string[] {
+  if (depth > 6) return [`${prefix}...`];
+  const out: string[] = [];
+  const fin = finalProjs(shot);
+  const mods = shot.log.filter((e) => SPELL_BY_ID.get(e.id)?.type === 'modifier').map((e) => e.id);
+  shot.log.forEach((e, i) => {
+    const last = i === shot.log.length - 1, s = SPELL_BY_ID.get(e.id);
+    const pad = prefix + '  '.repeat(e.level), stem = last ? '`- ' : '+- ';
+    const kind = s?.type === 'modifier' ? `  [modifier: every projectile of this block]`
+      : s?.type === 'multicast' ? `  [draws ${s.draw ?? 2}]` : '';
+    out.push(`${pad}${stem}${e.id}${e.copy ? ' (copy)' : ''}${kind}`);
+    const cont = pad + (last ? '   ' : '|  ');
+    for (const k of e.projs ?? []) out.push(`${cont}  projectile[${k}]: ${projSummary(fin[k])}`);
+    if (e.payload) {
+      const p = fin[e.projs?.[0] ?? 0];
+      out.push(`${cont}  ${p ? triggerName(p) : 'payload'}: ${countProjectiles(e.payload)} projectile(s), a block of its own`);
+      out.push(...blockLines(e.payload, cont + '    ', depth + 1));
+    }
+  });
+  if (mods.length && depth === 0) out.push(`${prefix}modifiers in this block: ${mods.join(', ')}`);
+  return out;
+}
+/** The whole cast: what was drawn, what it made, what it cost, and where the deck stands. */
+export function castTree(w: WandData, r: CastResult, deckBefore: number[], deckAfter: number[], delay: number, reload: number | null): string[] {
+  const slot = (d: number[]) => (d.length ? `slot ${d[0] + 1}` : 'empty');
+  const drawn = r.cards.filter((k) => k >= 0);
+  const lines = [
+    `Cast: ${drawn.length} card(s) drawn (slots ${drawn.map((k) => k + 1).join(',') || '-'}), ${r.shot.projs.length} projectile(s) now, ${countProjectiles(r.shot)} with payloads`,
+    `  mana ${n2(r.mana)}, cast delay ${delay}t, recharge ${reload === null ? 'not yet' : `${reload}t`}${r.wrapped ? ', deck wrapped' : ''}${r.skipped?.length ? `, skipped ${r.skipped.join(',')}` : ''}`,
+    `  deck: next ${slot(deckBefore)} -> ${slot(deckAfter)} (of ${w.spells.filter(Boolean).length} spells)`,
+  ];
+  return [...lines, ...blockLines(r.shot, '', 0)];
+}
+
+/** The casts of a wand from a fresh start, as trees: the same wand always gives the same trees (no shuffle luck). */
+export function explainCycle(w: WandData, casts = 3): string[][] {
+  let seed = 1234567;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rt = newRuntime(w, 0, rand);
+  const uses = (w.uses ?? []).map((u) => u ?? 99);
+  const o: FireOpts = { rand, infinite: true, usesLeft: (i) => uses[i] ?? 99, spendUse: () => {} };
+  const out: string[][] = [];
+  for (let n = 0; n < casts; n++) {
+    const before = [...rt.deck];
+    const r = fire(w, rt, o);
+    if (!r) break;
+    out.push(castTree(w, r, before, [...rt.deck], rt.delayTotal, r.reloaded ? rt.reloadTotal : null));
+    rt.delay = rt.reload = 0;
+  }
+  return out;
 }

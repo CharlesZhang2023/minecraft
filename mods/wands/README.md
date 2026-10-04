@@ -35,6 +35,7 @@ file disagree, the code wins. Fix the file when you notice.
 | `editor.ts` | page (client) | The Spell Lab-style wand editor screen (mouse and touch). |
 | `dummy.ts` | page | The target dummy mob (`wands:dummy`) and its renderer. |
 | `art.ts` | page (client) | Spell cards (Noita's icon on a card back in the type's colour; painted glyphs `G` for spells without one), icon sprites for projectiles, wand and scroll sprites, glow textures, sounds (including the kantele and ocarina notes). |
+| `presets.ts` | page (client) | The wand box's ready-made wands: interpreter test cases after a list of Noita wands (plain spell lists). |
 | `spell-list.mjs` | Node | Writes SPELLS.md. Not bundled. |
 | `tools/make_icons.py` | Python | Rebuilds `icons.ts` from the Noita wiki's saved Spells page. Not bundled. |
 
@@ -46,7 +47,9 @@ A wand's spells are a **deck of cards**, in slot order (shuffled if the wand shu
 1. The cast starts with the wand's own cast delay, recharge time and spread. **Always-cast** spells play first, for
    free.
 2. The wand **draws** `Spells/Cast` (`multi`) cards. What a card does when drawn depends on its type:
-   - **Projectile, static, material:** adds a projectile to the cast. If the spell has a **trigger**, it draws
+   - **Projectile, static, material:** adds its projectiles to the cast: one, or `count` (Triplicate Bolt makes 3,
+     Ball Lightning 3, Flock of Ducks 5), all of them modified by the block's modifiers. If the spell has a
+     **trigger**, it draws
      `triggerDraw` (normally 1) more cards into a new cast it carries (its **payload**). The payload is released
      when the trigger fires: `hit` when it hits something, `timer` after N ticks of flight, `expire` when it ends
      for any reason. Cards of these types with a `play` (Random Projectile, the notes) run it instead.
@@ -72,6 +75,12 @@ A wand's spells are a **deck of cards**, in slot order (shuffled if the wand shu
 6. Projectiles are released from the wand tip toward the point the player aims at (48-block ray), or from the
    nearest enemy (Teleporting Cast), the aim point (Teleport / clouds), a few blocks ahead flying back (Inner Spell),
    or further ahead (Long-Distance / Warp Cast). Holding the use button keeps casting whenever the wand is ready.
+
+**Cast blocks.** A cast is a block (`Shot`): every projectile drawn into it, through multicasts or a modifier's
+extra draw, gets every modifier in it, wherever in the block the modifier was drawn. A trigger's payload is a block
+of its own, with its own modifiers: `spark_bolt_trigger, short_range_homing, ball_lightning` gives a spark bolt that
+doesn't home, and three homing ball lightnings where it hits. Utility spells change where the block is released
+(Long-Distance Cast) rather than the projectiles' numbers.
 
 **Requirements** (`if_*` cards) test a condition: low health, five or more enemies within 16 blocks, ten or more of
 your projectiles out, or every other cast. If it holds, the next card is drawn and an Otherwise branch right after it
@@ -264,6 +273,21 @@ Input:
 
 Every change is sent to the server as the whole new layout (`edit` channel). The screen keeps its own copy until
 the server confirms the revision.
+
+## Seeing what a wand does
+
+- **`/wanddebug [on|off]`** (anyone): every cast you make prints its tree in your chat and the console: cards drawn
+  (slots), projectiles now and with payloads, mana, cast delay, recharge (when it starts), deck wrapping, the next
+  slot before and after, then the cards in the block with each projectile's final numbers, and each trigger's payload
+  as its own block underneath. `SpellServer.trees` keeps the last 50 (tests).
+- **The wand box's Presets page** (the box button in the editor, then Presets) holds 22 ready-made wands: test cases
+  for the casting rules (multicast, modifier scope, multi-projectile cards, triggers and timers with nested blocks,
+  ping-pong drills and chainsaws, teleports, homing piercing lights, homing payloads, orbits, summoned rocks...).
+  **Load** puts one in the wand you're editing (in creative the wand also gets no shuffle, one spell per cast and room
+  for every spell; in survival you must carry the spells), **Tree** prints its first three casts to the chat without
+  firing (`explainCycle` in `engine.ts`: the same wand always gives the same trees). Tap a preset's name to read what
+  it shows.
+- `shots/wands11.mjs` casts all 22 and checks them; it's the regression test for the interpreter.
 
 ## Network messages
 

@@ -7,7 +7,7 @@ import {
   SPELL_BY_ID, SPELL_INDEX, ORBITS, SERVER_STEER, Shot, makeProj, cloneProj,
   type Proj, type SpellWorld, type Live, type HitInfo, type SpellDef, type SpawnRule, type Status, type Orbit,
 } from './spells';
-import { fire, finalProjs, newRuntime, catchUp, ready, type Runtime } from './engine';
+import { fire, finalProjs, newRuntime, catchUp, ready, castTree, type Runtime } from './engine';
 import { bodyOf, rayBlocks, displacement, steer, bounce, rayEnd, orbitAt, type Body } from './motion';
 import { wandOf, withWand, rollWand, fixUses, cloneWand, sanitize, wandSpells, type WandData } from './wand';
 import { Statuses, STATUS_COLOR } from './status';
@@ -88,6 +88,9 @@ export class SpellServer {
   /** Inside our own damage call (the damage event shouldn't double it again). */
   inHurt = false;
   private now = 0;
+  /** Players who asked for each cast's tree (/wanddebug), and the last trees (tests, the console). */
+  readonly debug = new WeakSet<Player>();
+  readonly trees: string[][] = [];
 
   constructor(private mod: ModContext, private cfg: ServerCfg, private fx: Channel<FxEvent[]>, private spellItem: (spell: string) => number | undefined, private tierOf: (item: number) => number | undefined, private isDummy: (e: unknown) => boolean = () => false) {}
 
@@ -144,6 +147,7 @@ export class SpellServer {
     let uses = w.uses ? [...w.uses] : null;
     const others = player.inventory.main.flatMap((st, i) => { const ow = i !== slot ? wandOf(st) : null; return ow ? wandSpells(ow) : []; });
     const le = player as unknown as { health: number; maxHealth: number };
+    const deckBefore = [...rt.deck];
     const res = fire(w, rt, {
       rand: this.rng, infinite: inf,
       usesLeft: (i) => uses?.[i] ?? 0,
@@ -164,6 +168,13 @@ export class SpellServer {
       }
       if (res && !rt.delay) rt.delay = rt.delayTotal = 4;
       return;
+    }
+    if (this.debug.has(player)) {
+      const tree = castTree(w, res, deckBefore, [...rt.deck], rt.delayTotal, res.reloaded ? rt.reloadTotal : null);
+      this.trees.push(tree);
+      if (this.trees.length > 50) this.trees.shift();
+      for (const l of tree) game.ui.chat.add(`§7${l}`);
+      console.log(`[wands] cast\n${tree.join('\n')}`);
     }
     const eye = { x: player.x, y: player.y + player.eyeHeight(), z: player.z };
     const look = this.aimOf(game, player);
@@ -709,11 +720,14 @@ export class SpellServer {
     let best: Entity | null = null, bd = range * range;
     const sp = Math.hypot(f.vx, f.vy, f.vz) || 1;
     for (const e of this.foes(game, f.caster, f.x, f.y, f.z, range)) {
-      if (!this.canHit(f, e)) continue;
+      // a creature it just hit is still worth steering at (piercing homers circle back for more)
+      const at = f.hits.get(e.id);
+      if (at !== undefined && !f.p.pierce) continue;
+      if (!this.canHit(f, e) && at === undefined) continue;
       const tx = e.x - f.x, ty = e.y + e.height / 2 - f.y, tz = e.z - f.z;
       const d = tx * tx + ty * ty + tz * tz;
-      // in front of it, more or less
-      if (d < bd && (tx * f.vx + ty * f.vy + tz * f.vz) / sp > -2) { bd = d; best = e; }
+      // in front of it, more or less (piercing ones turn back for another pass, so anything near will do)
+      if (d < bd && (f.p.pierce || (tx * f.vx + ty * f.vy + tz * f.vz) / sp > -2)) { bd = d; best = e; }
     }
     return best ? { x: best.x, y: best.y + best.height / 2, z: best.z } : null;
   }

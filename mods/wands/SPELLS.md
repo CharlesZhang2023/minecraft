@@ -14,139 +14,139 @@
 
 | id | Name | Tier | Mana | Timing | Uses | Projectile | Special | Def | Description |
 |---|---|---|---|---|---|---|---|---|---|
-| `spark_bolt` | Spark Bolt | 0 | 5 | delay +1 | - | dmg 3, crit 5%, speed 1.4, life 16, range ~22, spread -1, visual `spark`, colour #d08cff | - | projectiles.ts:19 | A weak but enchanting sparkling projectile. |
-| `spark_bolt_trigger` | Spark Bolt with Trigger | 1 | 10 | delay +1 | - | dmg 3, crit 5%, speed 1.4, life 16, range ~22, spread -1, visual `spark`, colour #d08cff | **trigger: hit** | projectiles.ts:20 | A spark bolt that casts another spell when it hits something. |
-| `spark_bolt_timer` | Spark Bolt with Timer | 1 | 10 | delay +1 | - | dmg 3, crit 5%, speed 1.4, life 16, range ~22, spread -1, visual `spark`, colour #d08cff | **trigger: timer 6t** | projectiles.ts:21 | A spark bolt that casts another spell after a moment. |
-| `spark_bolt_double` | Spark Bolt with Double Trigger | 2 | 15 | delay +1 | - | dmg 3, crit 5%, speed 1.4, life 16, range ~22, spread -1, visual `spark`, colour #e0a0ff | **trigger: hit**, carries 2 spells | projectiles.ts:22 | A spark bolt that casts two more spells when it hits something. |
-| `magic_arrow` | Magic Arrow | 0 | 20 | delay +1 | - | dmg 6, crit 5%, speed 1.25, life 30, range ~38, spread +2, visual `arrow`, colour #7af4ff | - | projectiles.ts:25 | A handy magical arrow. |
-| `magic_arrow_trigger` | Magic Arrow with Trigger | 1 | 35 | delay +1 | - | dmg 6, crit 5%, speed 1.25, life 30, range ~38, spread +2, visual `arrow`, colour #7af4ff | **trigger: hit** | projectiles.ts:26 | A magic arrow that casts another spell when it hits something. |
-| `magic_arrow_timer` | Magic Arrow with Timer | 1 | 35 | delay +1 | - | dmg 6, crit 5%, speed 1.25, life 30, range ~38, spread +2, visual `arrow`, colour #7af4ff | **trigger: timer 6t** | projectiles.ts:27 | A magic arrow that casts another spell after a moment. |
-| `magic_bolt` | Magic Bolt | 1 | 30 | delay +2 | - | dmg 8, crit 5%, speed 1.7, life 26, range ~44, spread +5, visual `bolt`, colour #ffc040 | - | projectiles.ts:30 | A powerful magical bolt. |
-| `magic_bolt_trigger` | Magic Bolt with Trigger | 2 | 40 | delay +2 | - | dmg 8, crit 5%, speed 1.7, life 26, range ~44, spread +5, visual `bolt`, colour #ffc040 | **trigger: hit** | projectiles.ts:31 | A magic bolt that casts another spell when it hits something. |
-| `magic_bolt_timer` | Magic Bolt with Timer | 2 | 40 | delay +2 | - | dmg 8, crit 5%, speed 1.7, life 26, range ~44, spread +5, visual `bolt`, colour #ffc040 | **trigger: timer 6t** | projectiles.ts:32 | A magic bolt that casts another spell after a moment. |
-| `bouncing_burst` | Bouncing Burst | 0 | 5 | delay -1 | - | dmg 2, speed 0.9, life 50, range ~45, spread -1, gravity 0.03, bounces 10, visual `burst`, colour #fff060 | - | projectiles.ts:35 | A very bouncy projectile. |
-| `bouncing_burst_trigger` | Bouncing Burst with Trigger | 2 | 10 | delay -1 | - | dmg 2, speed 0.9, life 50, range ~45, spread -1, gravity 0.03, bounces 10, visual `burst`, colour #fff060 | **trigger: expire** | projectiles.ts:36 | A bouncy projectile that casts another spell when it ends. |
-| `energy_orb` | Energy Orb | 1 | 30 | delay +2 | - | dmg 4, explodes r1.2 dmg 4, speed 0.45, life 70, range ~32, spread +3.6, visual `orb`, colour #ff60d0 | - | projectiles.ts:39 | A slow but powerful orb of energy. |
-| `energy_orb_trigger` | Energy Orb with Trigger | 2 | 50 | delay +8 | - | dmg 4, explodes r1.2 dmg 4, speed 0.45, life 70, range ~32, spread +3.6, visual `orb`, colour #ff60d0 | **trigger: hit** | projectiles.ts:40 | An energy orb that casts another spell when it hits something. |
-| `energy_orb_timer` | Energy Orb with Timer | 2 | 50 | delay +2 | - | dmg 4, explodes r1.2 dmg 4, speed 0.45, life 70, range ~32, spread +3.6, visual `orb`, colour #ff60d0 | **trigger: timer 30t** | projectiles.ts:41 | An energy orb that casts another spell after a while. |
-| `energy_sphere` | Energy Sphere | 1 | 20 | delay +3 | - | dmg 5, speed 1.5, life 60, range ~90, gravity 0.04, bounces 5, visual `orb`, colour #60c0ff | - | projectiles.ts:44 | A fast, arcing projectile. |
-| `energy_sphere_timer` | Energy Sphere with Timer | 2 | 50 | delay +3 | - | dmg 5, speed 1.5, life 60, range ~90, gravity 0.04, bounces 5, visual `orb`, colour #60c0ff | **trigger: timer 25t** | projectiles.ts:45 | A fast, arcing projectile that casts another spell after a while. |
-| `spitter` | Spitter Bolt | 0 | 5 | - | - | dmg 2, speed 1, life 10, range ~10, spread +6, gravity 0.02, visual `spit`, colour #a0ff60 | - | projectiles.ts:48 | A short-lived, weak and wobbly bolt. |
-| `spitter_timer` | Spitter Bolt with Timer | 1 | 10 | - | - | dmg 2, speed 1, life 10, range ~10, spread +6, gravity 0.02, visual `spit`, colour #a0ff60 | **trigger: timer 8t** | projectiles.ts:49 | A spitter bolt that casts another spell when it fades. |
-| `large_spitter` | Large Spitter Bolt | 1 | 25 | delay -1 | - | dmg 4, speed 1, life 12, range ~12, spread +7.5, gravity 0.02, visual `spit`, colour #80ff40 | - | projectiles.ts:51 | A more powerful version of Spitter Bolt. |
-| `large_spitter_timer` | Large Spitter Bolt with Timer | 2 | 30 | delay -1 | - | dmg 4, speed 1, life 12, range ~12, spread +7.5, gravity 0.02, visual `spit`, colour #80ff40 | **trigger: timer 10t** | projectiles.ts:52 | A large spitter bolt that casts another spell when it fades. |
-| `giant_spitter` | Giant Spitter Bolt | 2 | 40 | delay -1 | - | dmg 7, speed 1, life 14, range ~14, spread +9, gravity 0.02, visual `spit`, colour #60ff20 | - | projectiles.ts:54 | The most powerful version of Spitter Bolt. |
-| `giant_spitter_timer` | Giant Spitter Bolt with Timer | 3 | 45 | delay -1 | - | dmg 7, speed 1, life 14, range ~14, spread +9, gravity 0.02, visual `spit`, colour #60ff20 | **trigger: timer 12t** | projectiles.ts:55 | A giant spitter bolt that casts another spell when it fades. |
-| `bubble_spark` | Bubble Spark | 0 | 5 | delay -2 | - | dmg 2, speed 0.45, life 40, range ~18, spread +22.9, gravity -0.008, bounces 3, visual `bubble`, colour #80d8ff | - | projectiles.ts:58 | A bouncy bubble that floats upwards. |
-| `bubble_spark_trigger` | Bubble Spark with Trigger | 1 | 16 | delay -2 | - | dmg 2, speed 0.45, life 40, range ~18, spread +22.9, gravity -0.008, bounces 3, visual `bubble`, colour #80d8ff | **trigger: hit** | projectiles.ts:59 | A bubble that casts another spell when it pops. |
-| `arrow` | Arrow | 0 | 15 | delay +3 | - | dmg 5, speed 1.6, life 60, range ~96, spread -20, gravity 0.05, visual `wood`, colour #d8b080 | - | projectiles.ts:60 | Summons an arrow. |
-| `triplicate_bolt` | Triplicate Bolt | 1 | 25 | delay +3 | - | dmg 4, speed 1.3, life 48, range ~62, spread +14, bounces 1, casts on tick: 2x copy of itself cone 14deg every 1t (max 1), visual `bolt`, colour #80e0ff | - | projectiles.ts:61 | Three bolts at once. |
-| `chain_bolt` | Chain Bolt | 3 | 80 | delay +15 | - | dmg 7, speed 1.5, life 20, range ~30, spread +14, data jumps=5, visual `bolt`, colour #a0ffff | `touch` | projectiles.ts:62 | A mysterious bolt that jumps from enemy to enemy. |
+| `spark_bolt` | Spark Bolt | 0 | 5 | delay +1 | - | dmg 3, crit 5%, speed 1.4, life 16, range ~22, spread -1, visual `spark`, colour #d08cff | - | projectiles.ts:17 | A weak but enchanting sparkling projectile. |
+| `spark_bolt_trigger` | Spark Bolt with Trigger | 1 | 10 | delay +1 | - | dmg 3, crit 5%, speed 1.4, life 16, range ~22, spread -1, visual `spark`, colour #d08cff | **trigger: hit** | projectiles.ts:18 | A spark bolt that casts another spell when it hits something. |
+| `spark_bolt_timer` | Spark Bolt with Timer | 1 | 10 | delay +1 | - | dmg 3, crit 5%, speed 1.4, life 16, range ~22, spread -1, visual `spark`, colour #d08cff | **trigger: timer 6t** | projectiles.ts:19 | A spark bolt that casts another spell after a moment. |
+| `spark_bolt_double` | Spark Bolt with Double Trigger | 2 | 15 | delay +1 | - | dmg 3, crit 5%, speed 1.4, life 16, range ~22, spread -1, visual `spark`, colour #e0a0ff | **trigger: hit**, carries 2 spells | projectiles.ts:20 | A spark bolt that casts two more spells when it hits something. |
+| `magic_arrow` | Magic Arrow | 0 | 20 | delay +1 | - | dmg 6, crit 5%, speed 1.25, life 30, range ~38, spread +2, visual `arrow`, colour #7af4ff | - | projectiles.ts:23 | A handy magical arrow. |
+| `magic_arrow_trigger` | Magic Arrow with Trigger | 1 | 35 | delay +1 | - | dmg 6, crit 5%, speed 1.25, life 30, range ~38, spread +2, visual `arrow`, colour #7af4ff | **trigger: hit** | projectiles.ts:24 | A magic arrow that casts another spell when it hits something. |
+| `magic_arrow_timer` | Magic Arrow with Timer | 1 | 35 | delay +1 | - | dmg 6, crit 5%, speed 1.25, life 30, range ~38, spread +2, visual `arrow`, colour #7af4ff | **trigger: timer 6t** | projectiles.ts:25 | A magic arrow that casts another spell after a moment. |
+| `magic_bolt` | Magic Bolt | 1 | 30 | delay +2 | - | dmg 8, crit 5%, speed 1.7, life 26, range ~44, spread +5, visual `bolt`, colour #ffc040 | - | projectiles.ts:28 | A powerful magical bolt. |
+| `magic_bolt_trigger` | Magic Bolt with Trigger | 2 | 40 | delay +2 | - | dmg 8, crit 5%, speed 1.7, life 26, range ~44, spread +5, visual `bolt`, colour #ffc040 | **trigger: hit** | projectiles.ts:29 | A magic bolt that casts another spell when it hits something. |
+| `magic_bolt_timer` | Magic Bolt with Timer | 2 | 40 | delay +2 | - | dmg 8, crit 5%, speed 1.7, life 26, range ~44, spread +5, visual `bolt`, colour #ffc040 | **trigger: timer 6t** | projectiles.ts:30 | A magic bolt that casts another spell after a moment. |
+| `bouncing_burst` | Bouncing Burst | 0 | 5 | delay -1 | - | dmg 2, speed 0.9, life 50, range ~45, spread -1, gravity 0.03, bounces 10, visual `burst`, colour #fff060 | - | projectiles.ts:33 | A very bouncy projectile. |
+| `bouncing_burst_trigger` | Bouncing Burst with Trigger | 2 | 10 | delay -1 | - | dmg 2, speed 0.9, life 50, range ~45, spread -1, gravity 0.03, bounces 10, visual `burst`, colour #fff060 | **trigger: expire** | projectiles.ts:34 | A bouncy projectile that casts another spell when it ends. |
+| `energy_orb` | Energy Orb | 1 | 30 | delay +2 | - | dmg 4, explodes r1.2 dmg 4, speed 0.45, life 70, range ~32, spread +3.6, visual `orb`, colour #ff60d0 | - | projectiles.ts:37 | A slow but powerful orb of energy. |
+| `energy_orb_trigger` | Energy Orb with Trigger | 2 | 50 | delay +8 | - | dmg 4, explodes r1.2 dmg 4, speed 0.45, life 70, range ~32, spread +3.6, visual `orb`, colour #ff60d0 | **trigger: hit** | projectiles.ts:38 | An energy orb that casts another spell when it hits something. |
+| `energy_orb_timer` | Energy Orb with Timer | 2 | 50 | delay +2 | - | dmg 4, explodes r1.2 dmg 4, speed 0.45, life 70, range ~32, spread +3.6, visual `orb`, colour #ff60d0 | **trigger: timer 30t** | projectiles.ts:39 | An energy orb that casts another spell after a while. |
+| `energy_sphere` | Energy Sphere | 1 | 20 | delay +3 | - | dmg 5, speed 1.5, life 60, range ~90, gravity 0.04, bounces 5, visual `orb`, colour #60c0ff | - | projectiles.ts:42 | A fast, arcing projectile. |
+| `energy_sphere_timer` | Energy Sphere with Timer | 2 | 50 | delay +3 | - | dmg 5, speed 1.5, life 60, range ~90, gravity 0.04, bounces 5, visual `orb`, colour #60c0ff | **trigger: timer 25t** | projectiles.ts:43 | A fast, arcing projectile that casts another spell after a while. |
+| `spitter` | Spitter Bolt | 0 | 5 | - | - | dmg 2, speed 1, life 10, range ~10, spread +6, gravity 0.02, visual `spit`, colour #a0ff60 | - | projectiles.ts:46 | A short-lived, weak and wobbly bolt. |
+| `spitter_timer` | Spitter Bolt with Timer | 1 | 10 | - | - | dmg 2, speed 1, life 10, range ~10, spread +6, gravity 0.02, visual `spit`, colour #a0ff60 | **trigger: timer 8t** | projectiles.ts:47 | A spitter bolt that casts another spell when it fades. |
+| `large_spitter` | Large Spitter Bolt | 1 | 25 | delay -1 | - | dmg 4, speed 1, life 12, range ~12, spread +7.5, gravity 0.02, visual `spit`, colour #80ff40 | - | projectiles.ts:49 | A more powerful version of Spitter Bolt. |
+| `large_spitter_timer` | Large Spitter Bolt with Timer | 2 | 30 | delay -1 | - | dmg 4, speed 1, life 12, range ~12, spread +7.5, gravity 0.02, visual `spit`, colour #80ff40 | **trigger: timer 10t** | projectiles.ts:50 | A large spitter bolt that casts another spell when it fades. |
+| `giant_spitter` | Giant Spitter Bolt | 2 | 40 | delay -1 | - | dmg 7, speed 1, life 14, range ~14, spread +9, gravity 0.02, visual `spit`, colour #60ff20 | - | projectiles.ts:52 | The most powerful version of Spitter Bolt. |
+| `giant_spitter_timer` | Giant Spitter Bolt with Timer | 3 | 45 | delay -1 | - | dmg 7, speed 1, life 14, range ~14, spread +9, gravity 0.02, visual `spit`, colour #60ff20 | **trigger: timer 12t** | projectiles.ts:53 | A giant spitter bolt that casts another spell when it fades. |
+| `bubble_spark` | Bubble Spark | 0 | 5 | delay -2 | - | dmg 2, speed 0.45, life 40, range ~18, spread +22.9, gravity -0.008, bounces 3, visual `bubble`, colour #80d8ff | - | projectiles.ts:56 | A bouncy bubble that floats upwards. |
+| `bubble_spark_trigger` | Bubble Spark with Trigger | 1 | 16 | delay -2 | - | dmg 2, speed 0.45, life 40, range ~18, spread +22.9, gravity -0.008, bounces 3, visual `bubble`, colour #80d8ff | **trigger: hit** | projectiles.ts:57 | A bubble that casts another spell when it pops. |
+| `arrow` | Arrow | 0 | 15 | delay +3 | - | dmg 5, speed 1.6, life 60, range ~96, spread -20, gravity 0.05, visual `wood`, colour #d8b080 | - | projectiles.ts:58 | Summons an arrow. |
+| `triplicate_bolt` | Triplicate Bolt | 1 | 25 | delay +3 | - | dmg 4, speed 1.3, life 48, range ~62, spread +14, bounces 1, visual `bolt`, colour #80e0ff | **3 projectiles per card** | projectiles.ts:59 | Three bolts at once. |
+| `chain_bolt` | Chain Bolt | 3 | 80 | delay +15 | - | dmg 7, speed 1.5, life 20, range ~30, spread +14, data jumps=5, visual `bolt`, colour #a0ffff | `touch` | projectiles.ts:60 | A mysterious bolt that jumps from enemy to enemy. |
 | `fireball` | Fireball | 2 | 70 | delay +17 | 15 | explodes r2.2 dmg 9 terrain 6, speed 0.8, life 60, range ~48, spread +4, gravity 0.015, sets alight, visual `fire`, colour #ff7a1a | - | modifiers.ts:117 | A powerful exploding spell that sets things alight. |
-| `firebolt` | Firebolt | 1 | 50 | delay +10 | 25 | dmg 3, explodes r1.3 dmg 5 terrain 2, speed 1.1, life 40, range ~44, spread +2.9, gravity 0.035, bounces 3, sets alight, visual `fire`, colour #ff4a00 | - | projectiles.ts:79 | A bouncy, burning bolt of fire. |
-| `firebolt_trigger` | Firebolt with Trigger | 2 | 50 | delay +10 | 25 | dmg 3, explodes r1.3 dmg 5 terrain 2, speed 1.1, life 40, range ~44, spread +2.9, gravity 0.035, bounces 3, sets alight, visual `fire`, colour #ff4a00 | **trigger: hit** | projectiles.ts:80 | A bouncy, explosive bolt that casts another spell when it hits something. |
-| `large_firebolt` | Large Firebolt | 2 | 90 | delay +17 | 20 | dmg 5, explodes r2 dmg 9 terrain 4, speed 1.1, life 40, range ~44, spread +2.9, gravity 0.035, bounces 4, sets alight, visual `fire`, colour #ff4a00 | - | projectiles.ts:81 | A more powerful version of Firebolt. |
-| `giant_firebolt` | Giant Firebolt | 3 | 90 | delay +27 | 20 | dmg 8, explodes r2.8 dmg 14 terrain 6, speed 0.95, life 40, range ~38, spread +2.9, gravity 0.035, bounces 5, sets alight, visual `fire`, colour #ff4a00 | - | projectiles.ts:82 | The most powerful version of Firebolt. |
-| `odd_firebolt` | Odd Firebolt | 2 | 50 | delay +10 | 25 | dmg 3, explodes r1.3 dmg 5 terrain 2, speed 1.1, life 40, range ~44, spread +2.9, gravity 0.035, bounces 4, sets alight, path chaos, visual `fire`, colour #ff5090 | - | projectiles.ts:83 | A somewhat peculiar bouncy, explosive bolt. |
-| `firebomb` | Firebomb | 0 | 10 | - | - | explodes r1.3 dmg 5 terrain 2, speed 0.7, life 28, range ~20, spread +2.9, gravity 0.05, bounces (keeps 0.5), fuse: ends only when its life runs out, sets alight, visual `bomb`, colour #ff8020 | - | projectiles.ts:84 | A small bomb of fire. |
-| `flamethrower` | Flamethrower | 1 | 20 | - | 60 | dmg 2, speed 0.75, life 11, range ~8, spread +4, gravity -0.01, drag 0.95, sets alight, visual `fire`, colour #ff9030 | - | projectiles.ts:85 | A short-ranged burst of flames. |
-| `meteor` | Meteor | 4 | 150 | delay +40 | 10 | explodes r4 dmg 30 terrain 10, speed 1.4, life 80, range ~112, gravity 0.06, sets alight, falls from the sky onto the aim point, visual `fire`, colour #ff7a1a | - | projectiles.ts:86 | Calls a burning rock down from the sky on what you look at. |
-| `fireworks` | Fireworks! | 2 | 70 | delay +20 | 25 | explodes r1 dmg 4 terrain 1, speed 0.6, life 16, range ~10, path accel, casts on end: 18x `firework_spark` random, visual `fire`, colour #ff60a0 | - | projectiles.ts:87 | A fiery projectile that bursts into a shower of colour. |
-| `firework_spark` | Firework Spark | 5 | 0 | - | - | dmg 3, speed 0.55, life 18, range ~10, gravity 0.02, drag 0.95, sets alight, visual `spark`, colour #ffffff | hidden (helper, no item) | projectiles.ts:91 | A spark of a firework. |
-| `fireball_small` | Small Fireball | 5 | 0 | - | - | explodes r1.1 dmg 4 terrain 1, speed 0.9, life 24, range ~22, sets alight, visual `fire`, colour #ff8040 | hidden (helper, no item) | projectiles.ts:92 | A thrown fireball. |
+| `firebolt` | Firebolt | 1 | 50 | delay +10 | 25 | dmg 3, explodes r1.3 dmg 5 terrain 2, speed 1.1, life 40, range ~44, spread +2.9, gravity 0.035, bounces 3, sets alight, visual `fire`, colour #ff4a00 | - | projectiles.ts:77 | A bouncy, burning bolt of fire. |
+| `firebolt_trigger` | Firebolt with Trigger | 2 | 50 | delay +10 | 25 | dmg 3, explodes r1.3 dmg 5 terrain 2, speed 1.1, life 40, range ~44, spread +2.9, gravity 0.035, bounces 3, sets alight, visual `fire`, colour #ff4a00 | **trigger: hit** | projectiles.ts:78 | A bouncy, explosive bolt that casts another spell when it hits something. |
+| `large_firebolt` | Large Firebolt | 2 | 90 | delay +17 | 20 | dmg 5, explodes r2 dmg 9 terrain 4, speed 1.1, life 40, range ~44, spread +2.9, gravity 0.035, bounces 4, sets alight, visual `fire`, colour #ff4a00 | - | projectiles.ts:79 | A more powerful version of Firebolt. |
+| `giant_firebolt` | Giant Firebolt | 3 | 90 | delay +27 | 20 | dmg 8, explodes r2.8 dmg 14 terrain 6, speed 0.95, life 40, range ~38, spread +2.9, gravity 0.035, bounces 5, sets alight, visual `fire`, colour #ff4a00 | - | projectiles.ts:80 | The most powerful version of Firebolt. |
+| `odd_firebolt` | Odd Firebolt | 2 | 50 | delay +10 | 25 | dmg 3, explodes r1.3 dmg 5 terrain 2, speed 1.1, life 40, range ~44, spread +2.9, gravity 0.035, bounces 4, sets alight, path chaos, visual `fire`, colour #ff5090 | - | projectiles.ts:81 | A somewhat peculiar bouncy, explosive bolt. |
+| `firebomb` | Firebomb | 0 | 10 | - | - | explodes r1.3 dmg 5 terrain 2, speed 0.7, life 28, range ~20, spread +2.9, gravity 0.05, bounces (keeps 0.5), fuse: ends only when its life runs out, sets alight, visual `bomb`, colour #ff8020 | - | projectiles.ts:82 | A small bomb of fire. |
+| `flamethrower` | Flamethrower | 1 | 20 | - | 60 | dmg 2, speed 0.75, life 11, range ~8, spread +4, gravity -0.01, drag 0.95, sets alight, visual `fire`, colour #ff9030 | - | projectiles.ts:83 | A short-ranged burst of flames. |
+| `meteor` | Meteor | 4 | 150 | delay +40 | 10 | explodes r4 dmg 30 terrain 10, speed 1.4, life 80, range ~112, gravity 0.06, sets alight, falls from the sky onto the aim point, visual `fire`, colour #ff7a1a | - | projectiles.ts:84 | Calls a burning rock down from the sky on what you look at. |
+| `fireworks` | Fireworks! | 2 | 70 | delay +20 | 25 | explodes r1 dmg 4 terrain 1, speed 0.6, life 16, range ~10, path accel, casts on end: 18x `firework_spark` random, visual `fire`, colour #ff60a0 | - | projectiles.ts:85 | A fiery projectile that bursts into a shower of colour. |
+| `firework_spark` | Firework Spark | 5 | 0 | - | - | dmg 3, speed 0.55, life 18, range ~10, gravity 0.02, drag 0.95, sets alight, visual `spark`, colour #ffffff | hidden (helper, no item) | projectiles.ts:89 | A spark of a firework. |
+| `fireball_small` | Small Fireball | 5 | 0 | - | - | explodes r1.1 dmg 4 terrain 1, speed 0.9, life 24, range ~22, sets alight, visual `fire`, colour #ff8040 | hidden (helper, no item) | projectiles.ts:90 | A thrown fireball. |
 | `bomb` | Bomb | 1 | 25 | delay +33 | 3 | explodes r3.5 dmg 20 terrain 8, speed 0.65, life 60, range ~39, gravity 0.05, drag 0.99, bounces (keeps 0.55), fuse: ends only when its life runs out, visual `bomb`, colour #ff9020 | - | modifiers.ts:117 | A bomb that bounces and rolls for three seconds, then explodes. |
-| `dynamite` | Dynamite | 2 | 50 | delay +17 | 16 | explodes r2.5 dmg 14 terrain 6, speed 0.8, life 30, range ~24, spread +6, gravity 0.05, bounces (keeps 0.4), fuse: ends only when its life runs out, visual `dynamite`, colour #ffa040 | - | projectiles.ts:96 | A stick of dynamite with a short fuse. |
+| `dynamite` | Dynamite | 2 | 50 | delay +17 | 16 | explodes r2.5 dmg 14 terrain 6, speed 0.8, life 30, range ~24, spread +6, gravity 0.05, bounces (keeps 0.4), fuse: ends only when its life runs out, visual `dynamite`, colour #ffa040 | - | projectiles.ts:94 | A stick of dynamite with a short fuse. |
 | `glitter_bomb` | Glitter Bomb | 2 | 70 | delay +17 | 16 | explodes r1.6 dmg 6 terrain 2, speed 0.7, life 24, range ~17, spread +12, gravity 0.05, bounces (keeps 0.5), fuse: ends only when its life runs out, casts on end: 14x `glitter_spark` random, visual `bomb`, colour #ff80ff | - | modifiers.ts:117 | A bomb that explodes into volatile fragments. |
-| `glitter_spark` | Glitter | 5 | 0 | - | - | dmg 2, explodes r0.8 dmg 3, speed 0.6, life 22, range ~13, gravity 0.015, bounces 2, visual `spark`, colour #ffffff | hidden (helper, no item) | projectiles.ts:101 | A volatile fragment. |
-| `holy_bomb` | Holy Bomb | 5 | 300 | delay +13, recharge +27 | 2 | explodes r7 dmg 60 terrain 50, speed 0.5, life 68, range ~34, gravity 0.05, bounces (keeps 0.5), fuse: ends only when its life runs out, visual `holy`, colour #ffe080 | - | projectiles.ts:102 | An extremely destructive bomb. Run. |
-| `giga_holy_bomb` | Giga Holy Bomb | 5 | 600 | delay +40, recharge +53 | 2 | explodes r9.5 dmg 110 terrain 80, speed 0.45, life 100, range ~45, gravity 0.05, bounces (keeps 0.5), fuse: ends only when its life runs out, visual `holy`, colour #ffd040 | - | projectiles.ts:103 | Bigger and therefore holier. |
-| `nuke` | Nuke | 5 | 200 | delay +7, recharge +200 | 1 | explodes r8 dmg 75 terrain 70, speed 0.6, life 140, range ~84, gravity 0.025, sets alight, visual `icon`, colour #c0ff40 | - | projectiles.ts:104 | Take cover! |
-| `giga_nuke` | Giga Nuke | 5 | 500 | delay +17, recharge +267 | 1 | explodes r11 dmg 140 terrain 120, speed 0.4, life 140, range ~56, gravity 0.02, sets alight, visual `icon`, colour #ffff40 | - | projectiles.ts:105 | What do you expect? |
-| `bomb_cart` | Bomb Cart | 3 | 75 | delay +20 | 6 | explodes r3 dmg 18 terrain 8, speed 0.45, life 120, range ~54, gravity 0.06, bounces (keeps 0.85), fuse: ends only when its life runs out, steer horizontal, visual `icon`, colour #a0a0a0 | - | projectiles.ts:106 | A self-propelled mine cart loaded with explosives. |
-| `propane_tank` | Propane Tank | 3 | 75 | delay +33 | 10 | explodes r4 dmg 30 terrain 10, speed 0.55, life 400, range ~220, gravity 0.05, bounces (keeps 0.35), fuse: ends only when its life runs out, dormant: set off by explosions, sets alight, visual `icon`, colour #9090ff | `tick` | projectiles.ts:109 | A propane tank: it goes off when something explodes near it, or when it catches fire. |
-| `unstable_crystal` | Unstable Crystal | 2 | 20 | delay +10 | 15 | explodes r3.2 dmg 22 terrain 8, speed 0.6, life 600, range ~360, gravity 0.05, fuse: ends only when its life runs out, visual `icon`, colour #ff80c0 | `tick` | projectiles.ts:117 | A crystal that explodes when someone comes near. |
-| `unstable_crystal_trigger` | Unstable Crystal with Trigger | 3 | 20 | delay +10 | 15 | explodes r3.2 dmg 22 terrain 8, speed 0.6, life 600, range ~360, gravity 0.05, fuse: ends only when its life runs out, visual `icon`, colour #ff80c0 | **trigger: expire**, `tick` | projectiles.ts:118 | A crystal that explodes and casts another spell when someone comes near. |
-| `dormant_crystal` | Dormant Crystal | 2 | 20 | delay +10 | 20 | explodes r3.2 dmg 22 terrain 8, speed 0.6, life 1200, range ~720, gravity 0.05, bounces 4, fuse: ends only when its life runs out, dormant: set off by explosions, visual `icon`, colour #c080ff | - | projectiles.ts:120 | A crystal that explodes when caught in an explosion. |
-| `dormant_crystal_trigger` | Dormant Crystal with Trigger | 3 | 20 | delay +10 | 20 | explodes r3.2 dmg 22 terrain 8, speed 0.6, life 1200, range ~720, gravity 0.05, bounces 4, fuse: ends only when its life runs out, dormant: set off by explosions, visual `icon`, colour #c080ff | **trigger: expire** | projectiles.ts:121 | A crystal that explodes and casts another spell when caught in an explosion. |
-| `prickly_spore_pod` | Prickly Spore Pod | 2 | 20 | delay +13 | - | explodes r1 dmg 3, speed 0.7, life 40, range ~28, gravity 0.05, fuse: ends only when its life runs out, casts on end: 10x `spore_spike` hemi, visual `icon`, colour #80a040 | - | projectiles.ts:122 | A spore pod that sticks to a surface, grows, and bursts into spikes. |
-| `spore_spike` | Spore Spike | 5 | 0 | - | - | dmg 4, speed 1.3, life 10, range ~13, gravity 0.02, visual `ray`, colour #c0e080 | hidden (helper, no item) | projectiles.ts:126 | A spike. |
+| `glitter_spark` | Glitter | 5 | 0 | - | - | dmg 2, explodes r0.8 dmg 3, speed 0.6, life 22, range ~13, gravity 0.015, bounces 2, visual `spark`, colour #ffffff | hidden (helper, no item) | projectiles.ts:99 | A volatile fragment. |
+| `holy_bomb` | Holy Bomb | 5 | 300 | delay +13, recharge +27 | 2 | explodes r7 dmg 60 terrain 50, speed 0.5, life 68, range ~34, gravity 0.05, bounces (keeps 0.5), fuse: ends only when its life runs out, visual `holy`, colour #ffe080 | - | projectiles.ts:100 | An extremely destructive bomb. Run. |
+| `giga_holy_bomb` | Giga Holy Bomb | 5 | 600 | delay +40, recharge +53 | 2 | explodes r9.5 dmg 110 terrain 80, speed 0.45, life 100, range ~45, gravity 0.05, bounces (keeps 0.5), fuse: ends only when its life runs out, visual `holy`, colour #ffd040 | - | projectiles.ts:101 | Bigger and therefore holier. |
+| `nuke` | Nuke | 5 | 200 | delay +7, recharge +200 | 1 | explodes r8 dmg 75 terrain 70, speed 0.6, life 140, range ~84, gravity 0.025, sets alight, visual `icon`, colour #c0ff40 | - | projectiles.ts:102 | Take cover! |
+| `giga_nuke` | Giga Nuke | 5 | 500 | delay +17, recharge +267 | 1 | explodes r11 dmg 140 terrain 120, speed 0.4, life 140, range ~56, gravity 0.02, sets alight, visual `icon`, colour #ffff40 | - | projectiles.ts:103 | What do you expect? |
+| `bomb_cart` | Bomb Cart | 3 | 75 | delay +20 | 6 | explodes r3 dmg 18 terrain 8, speed 0.45, life 120, range ~54, gravity 0.06, bounces (keeps 0.85), fuse: ends only when its life runs out, steer horizontal, visual `icon`, colour #a0a0a0 | - | projectiles.ts:104 | A self-propelled mine cart loaded with explosives. |
+| `propane_tank` | Propane Tank | 3 | 75 | delay +33 | 10 | explodes r4 dmg 30 terrain 10, speed 0.55, life 400, range ~220, gravity 0.05, bounces (keeps 0.35), fuse: ends only when its life runs out, dormant: set off by explosions, sets alight, visual `icon`, colour #9090ff | `tick` | projectiles.ts:107 | A propane tank: it goes off when something explodes near it, or when it catches fire. |
+| `unstable_crystal` | Unstable Crystal | 2 | 20 | delay +10 | 15 | explodes r3.2 dmg 22 terrain 8, speed 0.6, life 600, range ~360, gravity 0.05, fuse: ends only when its life runs out, visual `icon`, colour #ff80c0 | `tick` | projectiles.ts:115 | A crystal that explodes when someone comes near. |
+| `unstable_crystal_trigger` | Unstable Crystal with Trigger | 3 | 20 | delay +10 | 15 | explodes r3.2 dmg 22 terrain 8, speed 0.6, life 600, range ~360, gravity 0.05, fuse: ends only when its life runs out, visual `icon`, colour #ff80c0 | **trigger: expire**, `tick` | projectiles.ts:116 | A crystal that explodes and casts another spell when someone comes near. |
+| `dormant_crystal` | Dormant Crystal | 2 | 20 | delay +10 | 20 | explodes r3.2 dmg 22 terrain 8, speed 0.6, life 1200, range ~720, gravity 0.05, bounces 4, fuse: ends only when its life runs out, dormant: set off by explosions, visual `icon`, colour #c080ff | - | projectiles.ts:118 | A crystal that explodes when caught in an explosion. |
+| `dormant_crystal_trigger` | Dormant Crystal with Trigger | 3 | 20 | delay +10 | 20 | explodes r3.2 dmg 22 terrain 8, speed 0.6, life 1200, range ~720, gravity 0.05, bounces 4, fuse: ends only when its life runs out, dormant: set off by explosions, visual `icon`, colour #c080ff | **trigger: expire** | projectiles.ts:119 | A crystal that explodes and casts another spell when caught in an explosion. |
+| `prickly_spore_pod` | Prickly Spore Pod | 2 | 20 | delay +13 | - | explodes r1 dmg 3, speed 0.7, life 40, range ~28, gravity 0.05, fuse: ends only when its life runs out, casts on end: 10x `spore_spike` hemi, visual `icon`, colour #80a040 | - | projectiles.ts:120 | A spore pod that sticks to a surface, grows, and bursts into spikes. |
+| `spore_spike` | Spore Spike | 5 | 0 | - | - | dmg 4, speed 1.3, life 10, range ~13, gravity 0.02, visual `ray`, colour #c0e080 | hidden (helper, no item) | projectiles.ts:124 | A spike. |
 | `black_hole` | Black Hole | 4 | 180 | delay +27 | 3 | speed 0.18, life 70, range ~13, pierces, ghost (passes blocks), visual `hole`, colour #9040ff | `tick` | modifiers.ts:117 | A slow orb of void that eats through anything in its way. |
-| `black_hole_death` | Black Hole with Death Trigger | 5 | 200 | delay +30 | 3 | speed 0.18, life 70, range ~13, pierces, ghost (passes blocks), visual `hole`, colour #9040ff | **trigger: expire**, `tick` | projectiles.ts:139 | A black hole that casts another spell as it collapses. |
-| `white_hole` | White Hole | 4 | 180 | delay +27 | 3 | speed 0.18, life 70, range ~13, pierces, ghost (passes blocks), visual `whitehole`, colour #fff8e0 | `tick` | projectiles.ts:146 | An orb of positive energy that pushes everything away and breaks what it touches. |
-| `digging_bolt` | Digging Bolt | 0 | 0 | recharge -3 | - | dmg 1, digs 3 blocks (hardness <= 2), speed 1, life 8, range ~8, visual `dig`, colour #d8c090 | - | projectiles.ts:158 | Digs through soft ground: dirt, sand, gravel, stone. |
-| `digging_blast` | Digging Blast | 1 | 0 | recharge -3 | - | dmg 1, digs ball r1.3 (hardness <= 2.5), speed 1.1, life 4, range ~4, visual `dig`, colour #c89060 | - | projectiles.ts:159 | Blasts a small hole into soft ground. |
-| `chainsaw` | Chainsaw | 1 | 1 | delay -20, recharge -3 | - | dmg 3, digs 1 blocks (hardness <= 1.6), speed 0.9, life 2, range ~2, spread +6, visual `saw`, colour #ffffff | - | projectiles.ts:160 | Cuts and digs at very close range. Makes the wand fire as fast as it can. |
-| `luminous_drill` | Luminous Drill | 2 | 10 | delay -12, recharge -3 | - | dmg 4, digs 6 blocks (hardness <= 3.5), speed 2.2, life 3, range ~7, pierces, visual `drill`, colour #9ff8ff | - | projectiles.ts:162 | A bright, piercing drill of light: ores and stone alike. |
-| `luminous_drill_timer` | Luminous Drill with Timer | 3 | 30 | delay -12, recharge -3 | - | dmg 4, digs 6 blocks (hardness <= 3.5), speed 2.2, life 3, range ~7, pierces, visual `drill`, colour #9ff8ff | **trigger: timer 2t** | projectiles.ts:163 | A luminous drill that casts another spell after a moment. |
-| `plasma_cutter` | Plasma Cutter | 3 | 40 | recharge +3 | - | dmg 3, digs 24 blocks (hardness <= 3.5), speed 4, life 4, range ~16, pierces, visual `beam`, colour #ff60ff | - | projectiles.ts:164 | A plasma beam made for cutting through the ground. |
-| `glowing_lance` | Glowing Lance | 2 | 30 | delay +7 | - | dmg 10, digs 6 blocks (hardness <= 1), speed 2.2, life 25, range ~55, spread -20, pierces, visual `lance`, colour #ffffa0 | - | projectiles.ts:165 | A long spear of light that cuts through soft ground and everything it hits. |
-| `holy_lance` | Holy Lance | 4 | 120 | delay +10 | - | dmg 18, explodes r1.5 dmg 6 terrain 2, digs 8 blocks (hardness <= 1.5), speed 2.6, life 40, range ~104, spread -10, bounces 3, pierces, visual `lance`, colour #ffe040 | - | projectiles.ts:166 | A fast, piercing lance that glows with power. |
-| `omega_sawblade` | Summon Omega Sawblade | 4 | 70 | delay +13 | - | dmg 14, digs 30 blocks (hardness <= 2.5), speed 0.9, life 120, range ~108, spread +6.4, bounces 10, pierces, visual `icon`, colour #d0d0d0 | - | projectiles.ts:167 | That's a lot of sawblade. |
-| `disc` | Disc Projectile | 1 | 20 | delay +3 | - | dmg 5, speed 1.2, life 80, range ~96, spread +2, bounces 2, pierces, visual `icon`, colour #c0c0c0 | - | projectiles.ts:168 | A sharp disc that bounces and cuts through creatures. |
-| `giga_disc` | Giga Disc Projectile | 3 | 38 | delay +7 | - | dmg 10, speed 0.9, life 120, range ~108, spread +3.4, bounces 2, pierces, path sine, visual `icon`, colour #e0e0e0 | - | projectiles.ts:169 | A large, serrated disc with a curious flight pattern. |
-| `worm_launcher` | Worm Launcher | 4 | 150 | delay +27, recharge +13 | 10 | dmg 8, speed 0.6, life 100, range ~60, spread +20, pierces, ghost (passes blocks), path sine, visual `worm`, colour #c08070 | `tick` | projectiles.ts:170 | A giant worm that burrows through everything for a moment. |
-| `concentrated_light` | Concentrated Light | 1 | 30 | delay -7 | - | dmg 5, speed 4, life 6, range ~24, bounces 10, visual `beam`, colour #ffff80 | - | projectiles.ts:179 | A beam of light that bounces off walls. |
-| `intense_concentrated_light` | Intense Concentrated Light | 3 | 110 | delay +30 | - | dmg 16, speed 4, life 10, range ~40, spread +2.9, bounces 10, visual `beam`, colour #ffff80 | - | projectiles.ts:180 | A powerful beam of light that bounces off walls. |
-| `plasma_beam` | Plasma Beam | 2 | 60 | delay +2 | - | dmg 6, speed 5, life 5, range ~25, pierces, visual `beam`, colour #ff40ff | - | projectiles.ts:181 | An instantaneous, dangerous beam of light. |
-| `pinpoint_of_light` | Pinpoint of Light | 3 | 65 | delay +13 | - | dmg 3, explodes r2.2 dmg 14 terrain 1, speed 2.4, life 14, range ~34, spread +6, drag 0.8, visual `spark`, colour #ffffe0 | - | projectiles.ts:182 | An extremely concentrated point of light that explodes after a moment. |
+| `black_hole_death` | Black Hole with Death Trigger | 5 | 200 | delay +30 | 3 | speed 0.18, life 70, range ~13, pierces, ghost (passes blocks), visual `hole`, colour #9040ff | **trigger: expire**, `tick` | projectiles.ts:137 | A black hole that casts another spell as it collapses. |
+| `white_hole` | White Hole | 4 | 180 | delay +27 | 3 | speed 0.18, life 70, range ~13, pierces, ghost (passes blocks), visual `whitehole`, colour #fff8e0 | `tick` | projectiles.ts:144 | An orb of positive energy that pushes everything away and breaks what it touches. |
+| `digging_bolt` | Digging Bolt | 0 | 0 | recharge -3 | - | dmg 1, digs 3 blocks (hardness <= 2), speed 1, life 8, range ~8, visual `dig`, colour #d8c090 | - | projectiles.ts:156 | Digs through soft ground: dirt, sand, gravel, stone. |
+| `digging_blast` | Digging Blast | 1 | 0 | recharge -3 | - | dmg 1, digs ball r1.3 (hardness <= 2.5), speed 1.1, life 4, range ~4, visual `dig`, colour #c89060 | - | projectiles.ts:157 | Blasts a small hole into soft ground. |
+| `chainsaw` | Chainsaw | 1 | 1 | delay -20, recharge -3 | - | dmg 3, digs 1 blocks (hardness <= 1.6), speed 0.9, life 2, range ~2, spread +6, visual `saw`, colour #ffffff | - | projectiles.ts:158 | Cuts and digs at very close range. Makes the wand fire as fast as it can. |
+| `luminous_drill` | Luminous Drill | 2 | 10 | delay -12, recharge -3 | - | dmg 4, digs 6 blocks (hardness <= 3.5), speed 2.2, life 3, range ~7, pierces, visual `drill`, colour #9ff8ff | - | projectiles.ts:160 | A bright, piercing drill of light: ores and stone alike. |
+| `luminous_drill_timer` | Luminous Drill with Timer | 3 | 30 | delay -12, recharge -3 | - | dmg 4, digs 6 blocks (hardness <= 3.5), speed 2.2, life 3, range ~7, pierces, visual `drill`, colour #9ff8ff | **trigger: timer 2t** | projectiles.ts:161 | A luminous drill that casts another spell after a moment. |
+| `plasma_cutter` | Plasma Cutter | 3 | 40 | recharge +3 | - | dmg 3, digs 24 blocks (hardness <= 3.5), speed 4, life 4, range ~16, pierces, visual `beam`, colour #ff60ff | - | projectiles.ts:162 | A plasma beam made for cutting through the ground. |
+| `glowing_lance` | Glowing Lance | 2 | 30 | delay +7 | - | dmg 10, digs 6 blocks (hardness <= 1), speed 2.2, life 25, range ~55, spread -20, pierces, visual `lance`, colour #ffffa0 | - | projectiles.ts:163 | A long spear of light that cuts through soft ground and everything it hits. |
+| `holy_lance` | Holy Lance | 4 | 120 | delay +10 | - | dmg 18, explodes r1.5 dmg 6 terrain 2, digs 8 blocks (hardness <= 1.5), speed 2.6, life 40, range ~104, spread -10, bounces 3, pierces, visual `lance`, colour #ffe040 | - | projectiles.ts:164 | A fast, piercing lance that glows with power. |
+| `omega_sawblade` | Summon Omega Sawblade | 4 | 70 | delay +13 | - | dmg 14, digs 30 blocks (hardness <= 2.5), speed 0.9, life 120, range ~108, spread +6.4, bounces 10, pierces, visual `icon`, colour #d0d0d0 | - | projectiles.ts:165 | That's a lot of sawblade. |
+| `disc` | Disc Projectile | 1 | 20 | delay +3 | - | dmg 5, speed 1.2, life 80, range ~96, spread +2, bounces 2, pierces, visual `icon`, colour #c0c0c0 | - | projectiles.ts:166 | A sharp disc that bounces and cuts through creatures. |
+| `giga_disc` | Giga Disc Projectile | 3 | 38 | delay +7 | - | dmg 10, speed 0.9, life 120, range ~108, spread +3.4, bounces 2, pierces, path sine, visual `icon`, colour #e0e0e0 | - | projectiles.ts:167 | A large, serrated disc with a curious flight pattern. |
+| `worm_launcher` | Worm Launcher | 4 | 150 | delay +27, recharge +13 | 10 | dmg 8, speed 0.6, life 100, range ~60, spread +20, pierces, ghost (passes blocks), path sine, visual `worm`, colour #c08070 | `tick` | projectiles.ts:168 | A giant worm that burrows through everything for a moment. |
+| `concentrated_light` | Concentrated Light | 1 | 30 | delay -7 | - | dmg 5, speed 4, life 6, range ~24, bounces 10, visual `beam`, colour #ffff80 | - | projectiles.ts:177 | A beam of light that bounces off walls. |
+| `intense_concentrated_light` | Intense Concentrated Light | 3 | 110 | delay +30 | - | dmg 16, speed 4, life 10, range ~40, spread +2.9, bounces 10, visual `beam`, colour #ffff80 | - | projectiles.ts:178 | A powerful beam of light that bounces off walls. |
+| `plasma_beam` | Plasma Beam | 2 | 60 | delay +2 | - | dmg 6, speed 5, life 5, range ~25, pierces, visual `beam`, colour #ff40ff | - | projectiles.ts:179 | An instantaneous, dangerous beam of light. |
+| `pinpoint_of_light` | Pinpoint of Light | 3 | 65 | delay +13 | - | dmg 4, explodes r2.2 dmg 14 terrain 1, speed 0.45, life 36, range ~16, spread +6, pierces, visual `spark`, colour #ffffe0 | - | projectiles.ts:180 | A slow, extremely concentrated point of light: it burns through what it passes, then explodes. |
 | `lightning_bolt` | Lightning Bolt | 3 | 70 | delay +17 | - | dmg 6, explodes r1.6 dmg 8 terrain 1.5, shock 6, speed 3.5, life 12, range ~42, visual `lightning`, colour #d0e8ff | - | modifiers.ts:117 | A bolt of lightning that strikes with a thunderclap. |
-| `ball_lightning` | Ball Lightning | 3 | 70 | delay +17 | - | dmg 3, shock 5, speed 0.8, life 12, range ~10, spread +45, casts on tick: 2x copy of itself cone 40deg every 1t (max 1), visual `orb`, colour #a0c0ff | - | projectiles.ts:184 | Three short-ranged orbs of lightning. |
+| `ball_lightning` | Ball Lightning | 3 | 70 | delay +17 | - | dmg 3, shock 5, speed 0.8, life 12, range ~10, spread +45, visual `orb`, colour #a0c0ff | **3 projectiles per card** | projectiles.ts:182 | Three short-ranged orbs of lightning. |
 | `thunder_charge` | Thunder Charge | 4 | 120 | delay +40 | 3 | dmg 6, speed 0.8, life 40, range ~32, visual `orb`, colour #80c0ff | `hit` | modifiers.ts:117 | A projectile with immense stored electricity. |
 | `iceball` | Iceball | 3 | 90 | delay +27 | 15 | dmg 6, explodes r1.8 dmg 8 terrain 2, speed 0.9, life 60, range ~54, spread +8, gravity 0.02, freezes, visual `orb`, colour #a0e0ff | `hit` | modifiers.ts:117 | A ball of frozen fire: freezes what it hits and the water around. |
-| `freezing_gaze` | Freezing Gaze | 2 | 45 | delay +7 | 20 | dmg 2, speed 2, life 9, range ~18, bounces 3, freezes, casts on tick: 5x copy of itself cone 22deg every 1t (max 1), visual `ray`, colour #c0f0ff | - | projectiles.ts:205 | A heart-freezingly sinister aura: a fan of freezing rays. |
-| `cursed_sphere` | Cursed Sphere | 2 | 40 | delay +7 | - | dmg 6, speed 0.6, life 48, range ~29, spread +8.6, ghost (passes blocks), inflicts cursed 200t, visual `orb`, colour #8030c0 | - | projectiles.ts:206 | Passes through walls and brings bad luck to anyone it hits. |
-| `expanding_sphere` | Expanding Sphere | 3 | 70 | delay +10 | - | dmg 2, speed 0.35, life 72, range ~25, spread +8.6, visual `orb`, colour #ff80ff | `tick` | projectiles.ts:207 | A slow projectile whose damage grows the longer it flies. |
-| `pollen` | Pollen | 1 | 10 | delay +1 | - | dmg 2, speed 0.3, life 120, range ~36, spread +20, gravity -0.002, bounces 1, homing 0.08, visual `spark`, colour #ffe060 | - | projectiles.ts:211 | A small, floating projectile that drifts toward nearby creatures. |
-| `infestation` | Infestation | 1 | 40 | delay -1 | - | dmg 2, speed 0.6, life 40, range ~24, spread +180, bounces 20, path chaos, casts on tick: 4x copy of itself random every 1t (max 1), visual `spark`, colour #c0ff80 | - | projectiles.ts:212 | A bunch of magical sparks that fly every which way. |
-| `spiral_shot` | Spiral Shot | 2 | 50 | delay +7 | 15 | dmg 3, speed 0.6, life 40, range ~24, path spiral, casts on tick: 1x `spiral_spark` perp every 3t, visual `orb`, colour #80ffff | - | projectiles.ts:213 | A mystical whirlwind of magic sparks. |
-| `spiral_spark` | Spiral Spark | 5 | 0 | - | - | dmg 2, speed 0.5, life 10, range ~5, visual `spark`, colour #80ffff | hidden (helper, no item) | projectiles.ts:214 | A spark of a whirlwind. |
-| `dropper_bolt` | Dropper Bolt | 2 | 80 | delay +13 | 35 | dmg 3, speed 1, life 60, range ~60, spread +2.9, bounces 1, casts on tick: 1x `dropper_drop` down every 3t, visual `bolt`, colour #ffd080 | - | projectiles.ts:215 | A bolt that drops a rain of sparks as it flies. |
-| `dropper_drop` | Dropper Spark | 5 | 0 | - | - | dmg 3, speed 0.3, life 24, range ~7, gravity 0.06, visual `spark`, colour #ffd080 | hidden (helper, no item) | projectiles.ts:216 | A falling spark. |
-| `summon_rock` | Rock | 2 | 100 | delay +10 | 3 | dmg 8, speed 0.7, life 80, range ~56, gravity 0.06, visual `rock`, colour #9a9a9a | `hit` | projectiles.ts:219 | Conjures a heavy rock. Where it lands, it stays. |
-| `rock_spirit` | Summon Rock Spirit | 3 | 120 | delay +27 | 10 | dmg 6, speed 0.5, life 240, range ~120, gravity 0.05, bounces (keeps 0.8), fuse: ends only when its life runs out, pierces, homing 0.1, visual `rock`, colour #909090 | - | projectiles.ts:225 | A boulder that rolls after your enemies on its own. |
-| `tentacle` | Summon Tentacle | 2 | 20 | delay +13 | - | dmg 3, speed 1.8, life 5, range ~9, visual `tentacle`, colour #50e090 | `hit` | projectiles.ts:226 | Calls a terrifying appendage from another dimension: it pulls what it grabs to you. |
-| `tentacle_timer` | Summon Tentacle with Timer | 3 | 20 | delay +13 | - | dmg 3, speed 1.8, life 5, range ~9, visual `tentacle`, colour #50e090 | **trigger: timer 3t**, `hit` | projectiles.ts:230 | A tentacle that casts another spell after a moment. |
-| `missile` | Summon Missile | 3 | 60 | recharge +10 | 20 | explodes r2 dmg 10 terrain 3, speed 0.4, life 60, range ~24, sets alight, homing 0.15, path accel, visual `fire`, colour #ffa060 | - | projectiles.ts:234 | A missile!!! |
-| `magic_missile` | Magic Missile | 2 | 70 | delay +20 | 10 | explodes r1.8 dmg 10 terrain 4, speed 0.5, life 100, range ~50, sets alight, homing 0.06, path accel, visual `fire`, colour #ff9040 | - | projectiles.ts:236 | A fiery, explosive missile. |
-| `large_magic_missile` | Large Magic Missile | 3 | 90 | delay +30 | 8 | explodes r2.6 dmg 18 terrain 6, speed 0.5, life 100, range ~50, sets alight, homing 0.06, path accel, visual `fire`, colour #ff9040 | - | projectiles.ts:237 | A more powerful version of Magic Missile. |
-| `giant_magic_missile` | Giant Magic Missile | 4 | 120 | delay +40 | 6 | explodes r3.5 dmg 28 terrain 8, speed 0.5, life 100, range ~50, sets alight, homing 0.06, path accel, visual `fire`, colour #ff9040 | - | projectiles.ts:238 | The most powerful version of Magic Missile. |
-| `flock_of_ducks` | Flock of Ducks | 3 | 100 | delay +20, recharge +7 | 20 | dmg 4, explodes r0.9 dmg 4, speed 0.6, life 70, range ~42, spread +3, bounces 5, path chaos, casts on tick: 4x copy of itself cone 35deg every 1t (max 1), visual `icon`, colour #ffe080 | - | projectiles.ts:239 | A chaotic flock of spicy ducks. |
-| `summon_fish` | Summon Fish | 2 | 90 | delay +27 | 20 | speed 0.7, life 60, range ~42, gravity 0.05, visual `icon`, colour #80a0ff | `hit` | projectiles.ts:243 | FISH! |
-| `summon_deercoy` | Summon Deercoy | 3 | 120 | delay +27 | 10 | speed 0.6, life 30, range ~18, gravity 0.05, visual `icon`, colour #c09060 | `hit` | projectiles.ts:247 | A seemingly innocent deer. It explodes when hurt, or after a while. |
-| `summon_egg` | Summon Egg | 3 | 100 | - | 2 | speed 0.7, life 60, range ~42, gravity 0.05, visual `icon`, colour #f0f0e0 | `hit` | projectiles.ts:253 | An egg that hatches into some creature or other. |
-| `summon_hollow_egg` | Summon Hollow Egg | 1 | 30 | delay -4 | - | speed 0.7, life 60, range ~42, gravity 0.05, visual `icon`, colour #f0f0e0 | **trigger: hit** | projectiles.ts:257 | An empty egg: when it breaks, it casts the spell after it. |
-| `explosive_box` | Summon Explosive Box | 2 | 40 | - | 15 | speed 0.6, life 60, range ~36, gravity 0.05, visual `icon`, colour #c04020 | `hit` | projectiles.ts:258 | A box of explosives: where it lands, TNT. |
-| `large_explosive_box` | Summon Large Explosive Box | 3 | 40 | - | 15 | speed 0.55, life 60, range ~33, gravity 0.05, visual `icon`, colour #c04020 | `hit` | projectiles.ts:262 | A big box of explosives: where it lands, a heap of TNT. |
+| `freezing_gaze` | Freezing Gaze | 2 | 45 | delay +7 | 20 | dmg 2, speed 2, life 9, range ~18, spread +22, bounces 3, freezes, visual `ray`, colour #c0f0ff | **6 projectiles per card** | projectiles.ts:203 | A heart-freezingly sinister aura: a fan of freezing rays. |
+| `cursed_sphere` | Cursed Sphere | 2 | 40 | delay +7 | - | dmg 6, speed 0.6, life 48, range ~29, spread +8.6, ghost (passes blocks), inflicts cursed 200t, visual `orb`, colour #8030c0 | - | projectiles.ts:204 | Passes through walls and brings bad luck to anyone it hits. |
+| `expanding_sphere` | Expanding Sphere | 3 | 70 | delay +10 | - | dmg 2, speed 0.35, life 72, range ~25, spread +8.6, visual `orb`, colour #ff80ff | `tick` | projectiles.ts:205 | A slow projectile whose damage grows the longer it flies. |
+| `pollen` | Pollen | 1 | 10 | delay +1 | - | dmg 2, speed 0.3, life 120, range ~36, spread +20, gravity -0.002, bounces 1, homing 0.08, visual `spark`, colour #ffe060 | - | projectiles.ts:209 | A small, floating projectile that drifts toward nearby creatures. |
+| `infestation` | Infestation | 1 | 40 | delay -1 | - | dmg 2, speed 0.6, life 40, range ~24, spread +180, bounces 20, path chaos, visual `spark`, colour #c0ff80 | **5 projectiles per card** | projectiles.ts:210 | A bunch of magical sparks that fly every which way. |
+| `spiral_shot` | Spiral Shot | 2 | 50 | delay +7 | 15 | dmg 3, speed 0.6, life 40, range ~24, path spiral, casts on tick: 1x `spiral_spark` perp every 3t, visual `orb`, colour #80ffff | - | projectiles.ts:211 | A mystical whirlwind of magic sparks. |
+| `spiral_spark` | Spiral Spark | 5 | 0 | - | - | dmg 2, speed 0.5, life 10, range ~5, visual `spark`, colour #80ffff | hidden (helper, no item) | projectiles.ts:212 | A spark of a whirlwind. |
+| `dropper_bolt` | Dropper Bolt | 2 | 80 | delay +13 | 35 | dmg 3, speed 1, life 60, range ~60, spread +2.9, bounces 1, casts on tick: 1x `dropper_drop` down every 3t, visual `bolt`, colour #ffd080 | - | projectiles.ts:213 | A bolt that drops a rain of sparks as it flies. |
+| `dropper_drop` | Dropper Spark | 5 | 0 | - | - | dmg 3, speed 0.3, life 24, range ~7, gravity 0.06, visual `spark`, colour #ffd080 | hidden (helper, no item) | projectiles.ts:214 | A falling spark. |
+| `summon_rock` | Rock | 2 | 100 | delay +10 | 3 | dmg 8, speed 0.7, life 80, range ~56, gravity 0.06, visual `rock`, colour #9a9a9a | `hit` | projectiles.ts:217 | Conjures a heavy rock. Where it lands, it stays. |
+| `rock_spirit` | Summon Rock Spirit | 3 | 120 | delay +27 | 10 | dmg 6, speed 0.5, life 240, range ~120, gravity 0.05, bounces (keeps 0.8), fuse: ends only when its life runs out, pierces, homing 0.1, visual `rock`, colour #909090 | - | projectiles.ts:223 | A boulder that rolls after your enemies on its own. |
+| `tentacle` | Summon Tentacle | 2 | 20 | delay +13 | - | dmg 3, speed 1.8, life 5, range ~9, visual `tentacle`, colour #50e090 | `hit` | projectiles.ts:224 | Calls a terrifying appendage from another dimension: it pulls what it grabs to you. |
+| `tentacle_timer` | Summon Tentacle with Timer | 3 | 20 | delay +13 | - | dmg 3, speed 1.8, life 5, range ~9, visual `tentacle`, colour #50e090 | **trigger: timer 3t**, `hit` | projectiles.ts:228 | A tentacle that casts another spell after a moment. |
+| `missile` | Summon Missile | 3 | 60 | recharge +10 | 20 | explodes r2 dmg 10 terrain 3, speed 0.4, life 60, range ~24, sets alight, homing 0.15, path accel, visual `fire`, colour #ffa060 | - | projectiles.ts:232 | A missile!!! |
+| `magic_missile` | Magic Missile | 2 | 70 | delay +20 | 10 | explodes r1.8 dmg 10 terrain 4, speed 0.5, life 100, range ~50, sets alight, homing 0.06, path accel, visual `fire`, colour #ff9040 | - | projectiles.ts:234 | A fiery, explosive missile. |
+| `large_magic_missile` | Large Magic Missile | 3 | 90 | delay +30 | 8 | explodes r2.6 dmg 18 terrain 6, speed 0.5, life 100, range ~50, sets alight, homing 0.06, path accel, visual `fire`, colour #ff9040 | - | projectiles.ts:235 | A more powerful version of Magic Missile. |
+| `giant_magic_missile` | Giant Magic Missile | 4 | 120 | delay +40 | 6 | explodes r3.5 dmg 28 terrain 8, speed 0.5, life 100, range ~50, sets alight, homing 0.06, path accel, visual `fire`, colour #ff9040 | - | projectiles.ts:236 | The most powerful version of Magic Missile. |
+| `flock_of_ducks` | Flock of Ducks | 3 | 100 | delay +20, recharge +7 | 20 | dmg 4, explodes r0.9 dmg 4, speed 0.6, life 70, range ~42, spread +35, bounces 5, path chaos, visual `icon`, colour #ffe080 | **5 projectiles per card** | projectiles.ts:237 | A chaotic flock of spicy ducks. |
+| `summon_fish` | Summon Fish | 2 | 90 | delay +27 | 20 | speed 0.7, life 60, range ~42, gravity 0.05, visual `icon`, colour #80a0ff | `hit` | projectiles.ts:240 | FISH! |
+| `summon_deercoy` | Summon Deercoy | 3 | 120 | delay +27 | 10 | speed 0.6, life 30, range ~18, gravity 0.05, visual `icon`, colour #c09060 | `hit` | projectiles.ts:244 | A seemingly innocent deer. It explodes when hurt, or after a while. |
+| `summon_egg` | Summon Egg | 3 | 100 | - | 2 | speed 0.7, life 60, range ~42, gravity 0.05, visual `icon`, colour #f0f0e0 | `hit` | projectiles.ts:250 | An egg that hatches into some creature or other. |
+| `summon_hollow_egg` | Summon Hollow Egg | 1 | 30 | delay -4 | - | speed 0.7, life 60, range ~42, gravity 0.05, visual `icon`, colour #f0f0e0 | **trigger: hit** | projectiles.ts:254 | An empty egg: when it breaks, it casts the spell after it. |
+| `explosive_box` | Summon Explosive Box | 2 | 40 | - | 15 | speed 0.6, life 60, range ~36, gravity 0.05, visual `icon`, colour #c04020 | `hit` | projectiles.ts:255 | A box of explosives: where it lands, TNT. |
+| `large_explosive_box` | Summon Large Explosive Box | 3 | 40 | - | 15 | speed 0.55, life 60, range ~33, gravity 0.05, visual `icon`, colour #c04020 | `hit` | projectiles.ts:259 | A big box of explosives: where it lands, a heap of TNT. |
 | `death_cross` | Death Cross | 3 | 80 | delay +13 | - | dmg 4, speed 0.4, life 18, range ~7, casts on end: 4x `death_ray` ring, visual `cross`, colour #ff3050 | - | modifiers.ts:117 | A cross that bursts into four deadly rays. |
-| `death_ray` | Death Ray | 5 | 0 | - | - | dmg 8, speed 2.5, life 6, range ~15, pierces, visual `ray`, colour #ff3050 | hidden (helper, no item) | projectiles.ts:269 | A ray of the Death Cross. |
-| `giga_death_cross` | Giga Death Cross | 4 | 150 | delay +23 | 8 | dmg 6, explodes r2 dmg 10 terrain 3, speed 0.35, life 20, range ~7, casts on end: 4x `giga_death_ray` ring, visual `cross`, colour #ff1030 | - | projectiles.ts:270 | A giant, deadly cross that explodes after a short time. |
-| `giga_death_ray` | Giga Death Ray | 5 | 0 | - | - | dmg 14, speed 2.5, life 9, range ~23, pierces, visual `ray`, colour #ff1030 | hidden (helper, no item) | projectiles.ts:271 | A ray of the Giga Death Cross. |
-| `plasma_cross` | Plasma Beam Cross | 4 | 80 | delay +5 | - | dmg 4, speed 0.4, life 12, range ~5, casts on end: 4x `plasma_ray` ring, visual `cross`, colour #ff60ff | - | projectiles.ts:272 | Four plasma beams in a cross. They can hurt you too. |
-| `plasma_ray` | Plasma Ray | 5 | 0 | - | - | dmg 10, speed 4, life 5, range ~20, pierces, can hurt its caster, visual `beam`, colour #ff60ff | hidden (helper, no item) | projectiles.ts:273 | A ray of the plasma cross. |
-| `teleport_bolt` | Teleport Bolt | 1 | 40 | delay +1 | - | speed 2, life 16, range ~32, spread -2, visual `tp`, colour #8080ff | `hit` | projectiles.ts:276 | Teleports you to where it lands. |
-| `small_teleport_bolt` | Small Teleport Bolt | 0 | 20 | - | - | speed 2, life 4, range ~8, spread -2, visual `tp`, colour #a0a0ff | `hit` | projectiles.ts:277 | Teleports you a short way. |
-| `homebringer` | Homebringer Teleport Bolt | 1 | 20 | - | - | speed 2, life 16, range ~32, spread -2, visual `tp`, colour #80ffa0 | `touch` | projectiles.ts:283 | Brings the creature it hits to you. |
-| `swapper` | Swapper | 1 | 5 | delay +1 | - | dmg 1, speed 2, life 16, range ~32, spread -2, visual `tp`, colour #ffa0ff | `touch` | projectiles.ts:287 | Swaps places with the creature it hits. |
-| `return` | Return | 2 | 40 | delay +1 | - | speed 0, life 80, pierces, ghost (passes blocks), visual `portal`, colour #c0a0ff | `hit` | projectiles.ts:291 | After a while, you're returned to where you cast this spell. |
-| `hookbolt` | Hookbolt | 1 | 30 | delay +4 | - | dmg 2, speed 1.8, life 24, range ~43, visual `arrow`, colour #d0d0d0 | `hit` | projectiles.ts:295 | Pulls you to where it hits. |
-| `eldritch_portal` | Eldritch Portal | 4 | 140 | delay +10 | 5 | speed 0.3, life 160, range ~48, pierces, visual `portal`, colour #8040c0 | `touch` | projectiles.ts:299 | A slow portal: what it touches is sent away to somewhere far off. |
-| `burst_of_air` | Burst of Air | 0 | 5 | delay +1 | - | speed 1.2, life 14, range ~17, spread -2, pierces, visual `bubble`, colour #e8f4ff | - | projectiles.ts:306 | A gust that throws back whatever it meets. |
-| `healing_bolt` | Healing Bolt | 1 | 15 | delay +1 | 20 | heals 3, speed 1.3, life 30, range ~39, spread +2, visual `heal`, colour #60ff80 | - | projectiles.ts:309 | Heals whatever it hits (not yourself). |
-| `deadly_heal` | Deadly Heal | 2 | 20 | delay +3 | 20 | dmg 5, life steal 1, speed 1.3, life 30, range ~39, visual `heal`, colour #ff4060 | - | projectiles.ts:310 | Drains the life of what it hits into you. |
-| `blood_mist` | Blood Mist | 2 | 40 | delay +3 | 10 | speed 0.25, life 140, range ~35, drag 0.97, pierces, visual `mist`, colour #c02020 | `tick` | projectiles.ts:319 | A cloud of blood mist. |
-| `mist_of_spirits` | Mist of Spirits | 2 | 40 | delay +3 | - | speed 0.25, life 140, range ~35, drag 0.97, pierces, visual `mist`, colour #d0c080 | `tick` | projectiles.ts:320 | A cloud of potent alcohol. |
-| `slime_mist` | Slime Mist | 2 | 40 | delay +3 | - | speed 0.25, life 140, range ~35, drag 0.97, pierces, visual `mist`, colour #60c040 | `tick` | projectiles.ts:321 | A cloud of slimy mist. |
-| `toxic_mist` | Toxic Mist | 2 | 40 | delay +3 | - | speed 0.25, life 140, range ~35, drag 0.97, pierces, visual `mist`, colour #90ff40 | `tick` | projectiles.ts:322 | A cloud of toxic mist. |
+| `death_ray` | Death Ray | 5 | 0 | - | - | dmg 8, speed 2.5, life 6, range ~15, pierces, visual `ray`, colour #ff3050 | hidden (helper, no item) | projectiles.ts:266 | A ray of the Death Cross. |
+| `giga_death_cross` | Giga Death Cross | 4 | 150 | delay +23 | 8 | dmg 6, explodes r2 dmg 10 terrain 3, speed 0.35, life 20, range ~7, casts on end: 4x `giga_death_ray` ring, visual `cross`, colour #ff1030 | - | projectiles.ts:267 | A giant, deadly cross that explodes after a short time. |
+| `giga_death_ray` | Giga Death Ray | 5 | 0 | - | - | dmg 14, speed 2.5, life 9, range ~23, pierces, visual `ray`, colour #ff1030 | hidden (helper, no item) | projectiles.ts:268 | A ray of the Giga Death Cross. |
+| `plasma_cross` | Plasma Beam Cross | 4 | 80 | delay +5 | - | dmg 4, speed 0.4, life 12, range ~5, casts on end: 4x `plasma_ray` ring, visual `cross`, colour #ff60ff | - | projectiles.ts:269 | Four plasma beams in a cross. They can hurt you too. |
+| `plasma_ray` | Plasma Ray | 5 | 0 | - | - | dmg 10, speed 4, life 5, range ~20, pierces, can hurt its caster, visual `beam`, colour #ff60ff | hidden (helper, no item) | projectiles.ts:270 | A ray of the plasma cross. |
+| `teleport_bolt` | Teleport Bolt | 1 | 40 | delay +1 | - | speed 2, life 16, range ~32, spread -2, visual `tp`, colour #8080ff | `hit` | projectiles.ts:273 | Teleports you to where it lands. |
+| `small_teleport_bolt` | Small Teleport Bolt | 0 | 20 | - | - | speed 2, life 4, range ~8, spread -2, visual `tp`, colour #a0a0ff | `hit` | projectiles.ts:274 | Teleports you a short way. |
+| `homebringer` | Homebringer Teleport Bolt | 1 | 20 | - | - | speed 2, life 16, range ~32, spread -2, visual `tp`, colour #80ffa0 | `touch` | projectiles.ts:280 | Brings the creature it hits to you. |
+| `swapper` | Swapper | 1 | 5 | delay +1 | - | dmg 1, speed 2, life 16, range ~32, spread -2, visual `tp`, colour #ffa0ff | `touch` | projectiles.ts:284 | Swaps places with the creature it hits. |
+| `return` | Return | 2 | 40 | delay +1 | - | speed 0, life 80, pierces, ghost (passes blocks), visual `portal`, colour #c0a0ff | `hit` | projectiles.ts:288 | After a while, you're returned to where you cast this spell. |
+| `hookbolt` | Hookbolt | 1 | 30 | delay +4 | - | dmg 2, speed 1.8, life 24, range ~43, visual `arrow`, colour #d0d0d0 | `hit` | projectiles.ts:292 | Pulls you to where it hits. |
+| `eldritch_portal` | Eldritch Portal | 4 | 140 | delay +10 | 5 | speed 0.3, life 160, range ~48, pierces, visual `portal`, colour #8040c0 | `touch` | projectiles.ts:296 | A slow portal: what it touches is sent away to somewhere far off. |
+| `burst_of_air` | Burst of Air | 0 | 5 | delay +1 | - | speed 1.2, life 14, range ~17, spread -2, pierces, visual `bubble`, colour #e8f4ff | `tick` | projectiles.ts:303 | A gust that throws back whatever it meets: creatures, and other projectiles too. |
+| `healing_bolt` | Healing Bolt | 1 | 15 | delay +1 | 20 | heals 3, speed 1.3, life 30, range ~39, spread +2, visual `heal`, colour #60ff80 | - | projectiles.ts:316 | Heals whatever it hits (not yourself). |
+| `deadly_heal` | Deadly Heal | 2 | 20 | delay +3 | 20 | dmg 5, life steal 1, speed 1.3, life 30, range ~39, visual `heal`, colour #ff4060 | - | projectiles.ts:317 | Drains the life of what it hits into you. |
+| `blood_mist` | Blood Mist | 2 | 40 | delay +3 | 10 | speed 0.25, life 140, range ~35, drag 0.97, pierces, visual `mist`, colour #c02020 | `tick` | projectiles.ts:326 | A cloud of blood mist. |
+| `mist_of_spirits` | Mist of Spirits | 2 | 40 | delay +3 | - | speed 0.25, life 140, range ~35, drag 0.97, pierces, visual `mist`, colour #d0c080 | `tick` | projectiles.ts:327 | A cloud of potent alcohol. |
+| `slime_mist` | Slime Mist | 2 | 40 | delay +3 | - | speed 0.25, life 140, range ~35, drag 0.97, pierces, visual `mist`, colour #60c040 | `tick` | projectiles.ts:328 | A cloud of slimy mist. |
+| `toxic_mist` | Toxic Mist | 2 | 40 | delay +3 | - | speed 0.25, life 140, range ~35, drag 0.97, pierces, visual `mist`, colour #90ff40 | `tick` | projectiles.ts:329 | A cloud of toxic mist. |
 | `acid_ball` | Acid Ball | 2 | 20 | delay +3 | 20 | dmg 5, speed 0.8, life 60, range ~48, gravity 0.04, inflicts toxic 100t, visual `liquid`, colour #a0ff40 | `hit` | modifiers.ts:117 | A terrifying acidic projectile: it eats into what it hits. |
-| `slimeball` | Slimeball | 1 | 20 | delay +3 | - | dmg 3, speed 1.1, life 60, range ~66, spread +4, gravity 0.04, bounces 3, inflicts slimy 240t, inflicts toxic 60t, visual `liquid`, colour #60e040 | `hit` | projectiles.ts:332 | A dripping ball of poisonous slime. |
-| `glue_ball` | Glue Ball | 1 | 25 | delay +10 | - | dmg 1, speed 0.9, life 40, range ~36, spread +5, gravity 0.05, bounces 2, inflicts slimy 160t, visual `liquid`, colour #f0f0d0 | `hit` | projectiles.ts:336 | A sticky ball: it leaves cobwebs where it lands. |
-| `path_of_dark_flame` | Path of Dark Flame | 3 | 90 | delay +7 | 60 | dmg 3, speed 0.7, life 40, range ~28, casts on tick: 1x `dark_flame` every 2t speed x0, visual `fire`, colour #8030ff | - | projectiles.ts:340 | A trail of dark, deadly flames. |
-| `dark_flame` | Dark Flame | 5 | 0 | - | - | hurts within 1, speed 0, life 40, pierces, ghost (passes blocks), visual `fire`, colour #8030ff | hidden (helper, no item) | projectiles.ts:341 | A dark flame. |
-| `earthquake` | Earthquake | 4 | 240 | - | 3 | speed 0.7, life 40, range ~28, gravity 0.05, casts on end: 1x `earthquake_field` speed x0, visual `rock`, colour #806040 | - | projectiles.ts:342 | Shakes the ground: blocks fall and everything standing is thrown about. |
-| `earthquake_field` | Quake | 5 | 0 | - | - | speed 0, life 50, pierces, ghost (passes blocks), visual `none`, colour #806040 | `tick`, hidden (helper, no item) | projectiles.ts:343 | The ground shaking. |
-| `magic_guard` | Magic Guard | 2 | 40 | delay +7 | - | speed 0, life 1, ghost (passes blocks), visual `none`, colour #ffffff | `tick` | projectiles.ts:355 | Four guarding lights circle you for a while. |
-| `big_magic_guard` | Big Magic Guard | 3 | 60 | delay +10 | - | speed 0, life 1, ghost (passes blocks), visual `none`, colour #ffffff | `tick` | projectiles.ts:356 | Eight guarding lights circle you for a while. |
-| `guard_light` | Guarding Light | 5 | 0 | - | - | dmg 3, speed 0, life 100, pierces, ghost (passes blocks), visual `orb`, colour #a0e0ff | hidden (helper, no item) | projectiles.ts:364 | A guarding light. |
+| `slimeball` | Slimeball | 1 | 20 | delay +3 | - | dmg 3, speed 1.1, life 60, range ~66, spread +4, gravity 0.04, bounces 3, inflicts slimy 240t, inflicts toxic 60t, visual `liquid`, colour #60e040 | `hit` | projectiles.ts:339 | A dripping ball of poisonous slime. |
+| `glue_ball` | Glue Ball | 1 | 25 | delay +10 | - | dmg 1, speed 0.9, life 40, range ~36, spread +5, gravity 0.05, bounces 2, inflicts slimy 160t, visual `liquid`, colour #f0f0d0 | `hit` | projectiles.ts:343 | A sticky ball: it leaves cobwebs where it lands. |
+| `path_of_dark_flame` | Path of Dark Flame | 3 | 90 | delay +7 | 60 | dmg 3, speed 0.7, life 40, range ~28, casts on tick: 1x `dark_flame` every 2t speed x0, visual `fire`, colour #8030ff | - | projectiles.ts:347 | A trail of dark, deadly flames. |
+| `dark_flame` | Dark Flame | 5 | 0 | - | - | hurts within 1, speed 0, life 40, pierces, ghost (passes blocks), visual `fire`, colour #8030ff | hidden (helper, no item) | projectiles.ts:348 | A dark flame. |
+| `earthquake` | Earthquake | 4 | 240 | - | 3 | speed 0.7, life 40, range ~28, gravity 0.05, casts on end: 1x `earthquake_field` speed x0, visual `rock`, colour #806040 | - | projectiles.ts:349 | Shakes the ground: blocks fall and everything standing is thrown about. |
+| `earthquake_field` | Quake | 5 | 0 | - | - | speed 0, life 50, pierces, ghost (passes blocks), visual `none`, colour #806040 | `tick`, hidden (helper, no item) | projectiles.ts:350 | The ground shaking. |
+| `magic_guard` | Magic Guard | 2 | 40 | delay +7 | - | speed 0, life 1, ghost (passes blocks), visual `none`, colour #ffffff | `tick` | projectiles.ts:362 | Four guarding lights circle you for a while. |
+| `big_magic_guard` | Big Magic Guard | 3 | 60 | delay +10 | - | speed 0, life 1, ghost (passes blocks), visual `none`, colour #ffffff | `tick` | projectiles.ts:363 | Eight guarding lights circle you for a while. |
+| `guard_light` | Guarding Light | 5 | 0 | - | - | dmg 3, speed 0, life 100, pierces, ghost (passes blocks), visual `orb`, colour #a0e0ff | hidden (helper, no item) | projectiles.ts:371 | A guarding light. |
 | `barrier_node` | Barrier | 5 | 0 | - | - | hurts within 0.45, speed 0, life 100, pierces, ghost (passes blocks), can hurt its caster, visual `spark`, colour #80ff80 | hidden (helper, no item) | statics.ts:72 | Part of a barrier. |
 | `fly` | Fly | 5 | 0 | - | - | dmg 2, speed 0.4, life 300, range ~120, bounces 99, pierces, homing 0.25, path chaos, visual `spark`, colour #404040 | hidden (helper, no item) | statics.ts:166 | A fly. |
 | `firebug` | Fire Bug | 5 | 0 | - | - | dmg 2, speed 0.4, life 340, range ~136, bounces 99, pierces, sets alight, homing 0.25, path chaos, visual `fire`, colour #ff8020 | hidden (helper, no item) | statics.ts:167 | A fire bug. |
@@ -528,26 +528,26 @@ touch(l, e, w) {
   w.fx('arc', e.x, e.y + e.height / 2, e.z, [next.x, next.y + next.height / 2, next.z, 0xa0ffff]);
 }
 ```
-Defined at `catalog/projectiles.ts:62`: `proj('chain_bolt', 'Chain Bolt', 3, 80, 'A mysterious bolt that jumps from enemy to enemy.', I('#a0ffff', 'lightning'), { visual: 'bolt', dmg: 7, speed: 1.5, life: 20, spread: 14, color: 0xa0ffff, size: 0.14, data: { jumps: 5 } }, {`
+Defined at `catalog/projectiles.ts:60`: `proj('chain_bolt', 'Chain Bolt', 3, 80, 'A mysterious bolt that jumps from enemy to enemy.', I('#a0ffff', 'lightning'), { visual: 'bolt', dmg: 7, speed: 1.5, life: 20, spread: 14, color: 0xa0ffff, size: 0.14, data: { jumps: 5 } }, {`
 
 **`propane_tank`** (Propane Tank)
 
 ```ts
 tick(l, w) { if (l.age % 4 === 0 && ['fire', 'lava'].includes(w.id(Math.floor(l.x), Math.floor(l.y), Math.floor(l.z)))) l.kill(); }
 ```
-Defined at `catalog/projectiles.ts:109`: `proj('propane_tank', 'Propane Tank', 3, 75, 'A propane tank: it goes off when something explodes near it, or when it catches fire.', I('#9090ff', 'dynamite'), {`
+Defined at `catalog/projectiles.ts:107`: `proj('propane_tank', 'Propane Tank', 3, 75, 'A propane tank: it goes off when something explodes near it, or when it catches fire.', I('#9090ff', 'dynamite'), {`
 
 **`unstable_crystal`** (Unstable Crystal)
 
 ```ts
 tick: (l, w) => { if (l.age > 10 && l.age % 2 === 0 && w.near(l.x, l.y, l.z, 2, l.age < 40).length) l.kill(); }
 ```
-Defined at `catalog/projectiles.ts:117`: `proj('unstable_crystal', 'Unstable Crystal', 2, 20, 'A crystal that explodes when someone comes near.', I('#ff80c0', 'holy'), CRYSTAL, { delay: 10, uses: 15, tick: unstable });`
+Defined at `catalog/projectiles.ts:115`: `proj('unstable_crystal', 'Unstable Crystal', 2, 20, 'A crystal that explodes when someone comes near.', I('#ff80c0', 'holy'), CRYSTAL, { delay: 10, uses: 15, tick: unstable });`
 
 **`unstable_crystal_trigger`** (Unstable Crystal with Trigger)
 
 Same code as `unstable_crystal`.
-Defined at `catalog/projectiles.ts:118`: `proj('unstable_crystal_trigger', 'Unstable Crystal with Trigger', 3, 20, 'A crystal that explodes and casts another spell when someone comes near.', I('#ff80c0', 'holy', 'expire'), CRYSTAL, { delay: 10, uses: 15, tick: unstable, trigger: 'expire', noita: 'Unstable Crystal With Trigger' });`
+Defined at `catalog/projectiles.ts:116`: `proj('unstable_crystal_trigger', 'Unstable Crystal with Trigger', 3, 20, 'A crystal that explodes and casts another spell when someone comes near.', I('#ff80c0', 'holy', 'expire'), CRYSTAL, { delay: 10, uses: 15, tick: unstable, trigger: 'expire', noita: 'Unstable Crystal With Trigger' });`
 
 **`black_hole`** (Black Hole)
 
@@ -570,7 +570,7 @@ tick(l, w) {
   for (const e of w.near(l.x, l.y, l.z, 6, true)) w.pull(e, l.x, l.y, l.z, 0.06);
 }
 ```
-Defined at `catalog/projectiles.ts:139`: `proj('black_hole_death', 'Black Hole with Death Trigger', 5, 200, 'A black hole that casts another spell as it collapses.', I('#7020c0', 'hole', 'expire'), { visual: 'hole', speed: 0.18, life: 70, ghost: true, pierce: true, color: 0x9040ff, size: 0.45 }, {`
+Defined at `catalog/projectiles.ts:137`: `proj('black_hole_death', 'Black Hole with Death Trigger', 5, 200, 'A black hole that casts another spell as it collapses.', I('#7020c0', 'hole', 'expire'), { visual: 'hole', speed: 0.18, life: 70, ghost: true, pierce: true, color: 0x9040ff, size: 0.45 }, {`
 
 **`white_hole`** (White Hole)
 
@@ -583,14 +583,14 @@ tick(l, w) {
   }
 }
 ```
-Defined at `catalog/projectiles.ts:146`: `proj('white_hole', 'White Hole', 4, 180, 'An orb of positive energy that pushes everything away and breaks what it touches.', I('#ffffff', 'hole'), { visual: 'whitehole', speed: 0.18, life: 70, ghost: true, pierce: true, color: 0xfff8e0, size: 0.45 }, {`
+Defined at `catalog/projectiles.ts:144`: `proj('white_hole', 'White Hole', 4, 180, 'An orb of positive energy that pushes everything away and breaks what it touches.', I('#ffffff', 'hole'), { visual: 'whitehole', speed: 0.18, life: 70, ghost: true, pierce: true, color: 0xfff8e0, size: 0.45 }, {`
 
 **`worm_launcher`** (Worm Launcher)
 
 ```ts
 tick(l, w) { if (l.age % 2 === 0) w.dig(l.x, l.y, l.z, 1.3, 3); }
 ```
-Defined at `catalog/projectiles.ts:170`: `proj('worm_launcher', 'Worm Launcher', 4, 150, 'A giant worm that burrows through everything for a moment.', I('#c08070', 'tentacle'), {`
+Defined at `catalog/projectiles.ts:168`: `proj('worm_launcher', 'Worm Launcher', 4, 150, 'A giant worm that burrows through everything for a moment.', I('#c08070', 'tentacle'), {`
 
 **`thunder_charge`** (Thunder Charge)
 
@@ -623,7 +623,7 @@ Defined at `catalog/modifiers.ts:117`: `const CHAOS = ['fireball', 'lightning_bo
 ```ts
 tick(l) { l.p.dmg = Math.min(30, 2 + l.age * 0.4); }
 ```
-Defined at `catalog/projectiles.ts:207`: `proj('expanding_sphere', 'Expanding Sphere', 3, 70, 'A slow projectile whose damage grows the longer it flies.', I('#ff80ff', 'orb'), { visual: 'orb', dmg: 2, speed: 0.35, life: 72, spread: 8.6, color: 0xff80ff, size: 0.25 }, {`
+Defined at `catalog/projectiles.ts:205`: `proj('expanding_sphere', 'Expanding Sphere', 3, 70, 'A slow projectile whose damage grows the longer it flies.', I('#ff80ff', 'orb'), { visual: 'orb', dmg: 2, speed: 0.35, life: 72, spread: 8.6, color: 0xff80ff, size: 0.25 }, {`
 
 **`summon_rock`** (Rock)
 
@@ -632,54 +632,54 @@ hit(_l, h, w) {
   if (h.reason === 'block') { const [x, y, z] = landing(h); if (!w.solid(x, y, z)) w.place(x, y, z, 'cobblestone'); }
 }
 ```
-Defined at `catalog/projectiles.ts:219`: `proj('summon_rock', 'Rock', 2, 100, 'Conjures a heavy rock. Where it lands, it stays.', I('#8a8a8a', 'rock'), { visual: 'rock', dmg: 8, gravity: 0.06, speed: 0.7, life: 80, color: 0x9a9a9a, size: 0.4 }, {`
+Defined at `catalog/projectiles.ts:217`: `proj('summon_rock', 'Rock', 2, 100, 'Conjures a heavy rock. Where it lands, it stays.', I('#8a8a8a', 'rock'), { visual: 'rock', dmg: 8, gravity: 0.06, speed: 0.7, life: 80, color: 0x9a9a9a, size: 0.4 }, {`
 
 **`tentacle`** (Summon Tentacle)
 
 ```ts
 hit(l, h, w) { if (h.entity && l.caster) w.pull(h.entity, l.caster.x, l.caster.y + 1, l.caster.z, 0.9); }
 ```
-Defined at `catalog/projectiles.ts:226`: `proj('tentacle', 'Summon Tentacle', 2, 20, 'Calls a terrifying appendage from another dimension: it pulls what it grabs to you.', I('#50e090', 'tentacle'), { visual: 'tentacle', dmg: 3, speed: 1.8, life: 5, color: 0x50e090, size: 0.12 }, {`
+Defined at `catalog/projectiles.ts:224`: `proj('tentacle', 'Summon Tentacle', 2, 20, 'Calls a terrifying appendage from another dimension: it pulls what it grabs to you.', I('#50e090', 'tentacle'), { visual: 'tentacle', dmg: 3, speed: 1.8, life: 5, color: 0x50e090, size: 0.12 }, {`
 
 **`tentacle_timer`** (Summon Tentacle with Timer)
 
 Same code as `tentacle`.
-Defined at `catalog/projectiles.ts:230`: `proj('tentacle_timer', 'Summon Tentacle with Timer', 3, 20, 'A tentacle that casts another spell after a moment.', I('#50e090', 'tentacle', 'timer'), { visual: 'tentacle', dmg: 3, speed: 1.8, life: 5, color: 0x50e090, size: 0.12 }, {`
+Defined at `catalog/projectiles.ts:228`: `proj('tentacle_timer', 'Summon Tentacle with Timer', 3, 20, 'A tentacle that casts another spell after a moment.', I('#50e090', 'tentacle', 'timer'), { visual: 'tentacle', dmg: 3, speed: 1.8, life: 5, color: 0x50e090, size: 0.12 }, {`
 
 **`summon_fish`** (Summon Fish)
 
 ```ts
 hit(_l, h, w) { const [x, y, z] = landing(h); for (let k = 0; k < 3; k++) w.mob('squid', x + 0.5 + (w.rand() - 0.5), y + 0.2, z + 0.5 + (w.rand() - 0.5)); }
 ```
-Defined at `catalog/projectiles.ts:243`: `proj('summon_fish', 'Summon Fish', 2, 90, 'FISH!', I('#80a0ff', 'drop'), { visual: 'icon', gravity: 0.05, speed: 0.7, life: 60, color: 0x80a0ff, size: 0.3 }, {`
+Defined at `catalog/projectiles.ts:240`: `proj('summon_fish', 'Summon Fish', 2, 90, 'FISH!', I('#80a0ff', 'drop'), { visual: 'icon', gravity: 0.05, speed: 0.7, life: 60, color: 0x80a0ff, size: 0.3 }, {`
 
 **`summon_deercoy`** (Summon Deercoy)
 
 ```ts
 hit(_l, h, w) { const [x, y, z] = landing(h); const e = w.mob('cow', x + 0.5, y + 0.1, z + 0.5); if (e) w.rig(e, 3, 20, 200); }
 ```
-Defined at `catalog/projectiles.ts:247`: `proj('summon_deercoy', 'Summon Deercoy', 3, 120, 'A seemingly innocent deer. It explodes when hurt, or after a while.', I('#c09060', 'heal'), { visual: 'icon', gravity: 0.05, speed: 0.6, life: 30, color: 0xc09060, size: 0.3 }, {`
+Defined at `catalog/projectiles.ts:244`: `proj('summon_deercoy', 'Summon Deercoy', 3, 120, 'A seemingly innocent deer. It explodes when hurt, or after a while.', I('#c09060', 'heal'), { visual: 'icon', gravity: 0.05, speed: 0.6, life: 30, color: 0xc09060, size: 0.3 }, {`
 
 **`summon_egg`** (Summon Egg)
 
 ```ts
 hit(_l, h, w) { const [x, y, z] = landing(h); w.mob(EGG_MOBS[Math.floor(w.rand() * EGG_MOBS.length)], x + 0.5, y + 0.1, z + 0.5); w.sound('dig.stone', x, y, z, 0.6, 1.6); }
 ```
-Defined at `catalog/projectiles.ts:253`: `proj('summon_egg', 'Summon Egg', 3, 100, 'An egg that hatches into some creature or other.', I('#f0f0e0', 'orb'), EGG, {`
+Defined at `catalog/projectiles.ts:250`: `proj('summon_egg', 'Summon Egg', 3, 100, 'An egg that hatches into some creature or other.', I('#f0f0e0', 'orb'), EGG, {`
 
 **`explosive_box`** (Summon Explosive Box)
 
 ```ts
 hit(_l, h, w) { const [x, y, z] = landing(h); if (!w.solid(x, y, z)) w.place(x, y, z, 'tnt'); }
 ```
-Defined at `catalog/projectiles.ts:258`: `proj('explosive_box', 'Summon Explosive Box', 2, 40, 'A box of explosives: where it lands, TNT.', I('#c04020', 'dynamite'), { visual: 'icon', gravity: 0.05, speed: 0.6, life: 60, color: 0xc04020, size: 0.3 }, {`
+Defined at `catalog/projectiles.ts:255`: `proj('explosive_box', 'Summon Explosive Box', 2, 40, 'A box of explosives: where it lands, TNT.', I('#c04020', 'dynamite'), { visual: 'icon', gravity: 0.05, speed: 0.6, life: 60, color: 0xc04020, size: 0.3 }, {`
 
 **`large_explosive_box`** (Summon Large Explosive Box)
 
 ```ts
 hit(_l, h, w) { const [x, y, z] = landing(h); for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) if (!w.solid(x + dx, y, z + dz)) w.place(x + dx, y, z + dz, 'tnt'); }
 ```
-Defined at `catalog/projectiles.ts:262`: `proj('large_explosive_box', 'Summon Large Explosive Box', 3, 40, 'A big box of explosives: where it lands, a heap of TNT.', I('#c04020', 'dynamite'), { visual: 'icon', gravity: 0.05, speed: 0.55, life: 60, color: 0xc04020, size: 0.4 }, {`
+Defined at `catalog/projectiles.ts:259`: `proj('large_explosive_box', 'Summon Large Explosive Box', 3, 40, 'A big box of explosives: where it lands, a heap of TNT.', I('#c04020', 'dynamite'), { visual: 'icon', gravity: 0.05, speed: 0.55, life: 60, color: 0xc04020, size: 0.4 }, {`
 
 **`teleport_bolt`** (Teleport Bolt)
 
@@ -690,40 +690,40 @@ hit: function teleportHit(l, h, w) {
   w.teleportCaster(h.x - Math.sign(l.vx) * k * (h.nx !== 0 ? 1 : 0) + h.nx * k, h.y + h.ny * k, h.z - Math.sign(l.vz) * k * (h.nz !== 0 ? 1 : 0) + h.nz * k);
 }
 ```
-Defined at `catalog/projectiles.ts:276`: `proj('teleport_bolt', 'Teleport Bolt', 1, 40, 'Teleports you to where it lands.', I('#8080ff', 'tp'), { visual: 'tp', speed: 2, life: 16, spread: -2, color: 0x8080ff, size: 0.16 }, { delay: 1, hit: teleportHit });`
+Defined at `catalog/projectiles.ts:273`: `proj('teleport_bolt', 'Teleport Bolt', 1, 40, 'Teleports you to where it lands.', I('#8080ff', 'tp'), { visual: 'tp', speed: 2, life: 16, spread: -2, color: 0x8080ff, size: 0.16 }, { delay: 1, hit: teleportHit });`
 
 **`small_teleport_bolt`** (Small Teleport Bolt)
 
 Same code as `teleport_bolt`.
-Defined at `catalog/projectiles.ts:277`: `proj('small_teleport_bolt', 'Small Teleport Bolt', 0, 20, 'Teleports you a short way.', I('#a0a0ff', 'tp'), { visual: 'tp', speed: 2, life: 4, spread: -2, color: 0xa0a0ff, size: 0.12 }, { hit: teleportHit });`
+Defined at `catalog/projectiles.ts:274`: `proj('small_teleport_bolt', 'Small Teleport Bolt', 0, 20, 'Teleports you a short way.', I('#a0a0ff', 'tp'), { visual: 'tp', speed: 2, life: 4, spread: -2, color: 0xa0a0ff, size: 0.12 }, { hit: teleportHit });`
 
 **`homebringer`** (Homebringer Teleport Bolt)
 
 ```ts
 touch(l, e, w) { const c = l.caster; if (c) w.teleport(e, c.x + Math.sin(-c.yaw * Math.PI / 180) * 1.5, c.y, c.z + Math.cos(-c.yaw * Math.PI / 180) * 1.5); }
 ```
-Defined at `catalog/projectiles.ts:283`: `proj('homebringer', 'Homebringer Teleport Bolt', 1, 20, 'Brings the creature it hits to you.', I('#80ffa0', 'tp'), { visual: 'tp', speed: 2, life: 16, spread: -2, color: 0x80ffa0, size: 0.14 }, {`
+Defined at `catalog/projectiles.ts:280`: `proj('homebringer', 'Homebringer Teleport Bolt', 1, 20, 'Brings the creature it hits to you.', I('#80ffa0', 'tp'), { visual: 'tp', speed: 2, life: 16, spread: -2, color: 0x80ffa0, size: 0.14 }, {`
 
 **`swapper`** (Swapper)
 
 ```ts
 touch(l, e, w) { const c = l.caster; if (!c) return; const [x, y, z] = [c.x, c.y, c.z]; w.teleportCaster(e.x, e.y, e.z); w.teleport(e, x, y, z); }
 ```
-Defined at `catalog/projectiles.ts:287`: `proj('swapper', 'Swapper', 1, 5, 'Swaps places with the creature it hits.', I('#ffa0ff', 'tp'), { visual: 'tp', dmg: 1, speed: 2, life: 16, spread: -2, color: 0xffa0ff, size: 0.14 }, {`
+Defined at `catalog/projectiles.ts:284`: `proj('swapper', 'Swapper', 1, 5, 'Swaps places with the creature it hits.', I('#ffa0ff', 'tp'), { visual: 'tp', dmg: 1, speed: 2, life: 16, spread: -2, color: 0xffa0ff, size: 0.14 }, {`
 
 **`return`** (Return)
 
 ```ts
 hit(l, _h, w) { w.teleportCaster(l.ox, l.oy - 1.2, l.oz); }
 ```
-Defined at `catalog/projectiles.ts:291`: `proj('return', 'Return', 2, 40, 'After a while, you\'re returned to where you cast this spell.', I('#c0a0ff', 'tp'), { visual: 'portal', speed: 0, ghost: true, pierce: true, life: 80, color: 0xc0a0ff, size: 0.3 }, {`
+Defined at `catalog/projectiles.ts:288`: `proj('return', 'Return', 2, 40, 'After a while, you\'re returned to where you cast this spell.', I('#c0a0ff', 'tp'), { visual: 'portal', speed: 0, ghost: true, pierce: true, life: 80, color: 0xc0a0ff, size: 0.3 }, {`
 
 **`hookbolt`** (Hookbolt)
 
 ```ts
 hit(l, h, w) { if (l.caster && h.reason !== 'expire') w.pull(l.caster, h.x, h.y + 1, h.z, Math.min(2.2, Math.hypot(h.x - l.caster.x, h.z - l.caster.z) * 0.18 + 0.4)); }
 ```
-Defined at `catalog/projectiles.ts:295`: `proj('hookbolt', 'Hookbolt', 1, 30, 'Pulls you to where it hits.', I('#d0d0d0', 'arrow'), { visual: 'arrow', dmg: 2, speed: 1.8, life: 24, color: 0xd0d0d0, size: 0.1 }, {`
+Defined at `catalog/projectiles.ts:292`: `proj('hookbolt', 'Hookbolt', 1, 30, 'Pulls you to where it hits.', I('#d0d0d0', 'arrow'), { visual: 'arrow', dmg: 2, speed: 1.8, life: 24, color: 0xd0d0d0, size: 0.1 }, {`
 
 **`eldritch_portal`** (Eldritch Portal)
 
@@ -733,7 +733,21 @@ touch(_l, e, w) {
   w.teleport(e, e.x + Math.cos(a) * d, e.y + 20, e.z + Math.sin(a) * d);
 }
 ```
-Defined at `catalog/projectiles.ts:299`: `proj('eldritch_portal', 'Eldritch Portal', 4, 140, 'A slow portal: what it touches is sent away to somewhere far off.', I('#8040c0', 'hole'), { visual: 'portal', pierce: true, speed: 0.3, life: 160, color: 0x8040c0, size: 0.6 }, {`
+Defined at `catalog/projectiles.ts:296`: `proj('eldritch_portal', 'Eldritch Portal', 4, 140, 'A slow portal: what it touches is sent away to somewhere far off.', I('#8040c0', 'hole'), { visual: 'portal', pierce: true, speed: 0.3, life: 160, color: 0x8040c0, size: 0.6 }, {`
+
+**`burst_of_air`** (Burst of Air)
+
+```ts
+tick(l, w) {
+  const sp = Math.hypot(l.vx, l.vy, l.vz) || 1;
+  for (const o of w.projs(l.x, l.y, l.z, 1.6)) {
+    if (o.id === l.id || o.p.spell.id === 'burst_of_air' || o.p.orbit) continue;
+    o.vx += (l.vx / sp) * 0.5; o.vy += (l.vy / sp) * 0.5 + 0.05; o.vz += (l.vz / sp) * 0.5;
+    o.sync();
+  }
+}
+```
+Defined at `catalog/projectiles.ts:303`: `proj('burst_of_air', 'Burst of Air', 0, 5, 'A gust that throws back whatever it meets: creatures, and other projectiles too.', I('#e0f0ff', 'push'), { visual: 'bubble', knock: 2.5, pierce: true, speed: 1.2, life: 14, spread: -2, color: 0xe8f4ff, size: 0.2 }, {`
 
 **`blood_mist`** (Blood Mist)
 
@@ -743,22 +757,22 @@ tick(l, w) {
   for (const e of w.near(l.x, l.y, l.z, 1.8)) { w.status(e, status, 200); if (status === 'toxic') w.effect(e, 'poison', 60, 0); }
 }
 ```
-Defined at `catalog/projectiles.ts:319`: `mist('blood_mist', 'Blood Mist', 'A cloud of blood mist.', '#c02020', 'bloody', 'Blood Mist', 10);`
+Defined at `catalog/projectiles.ts:326`: `mist('blood_mist', 'Blood Mist', 'A cloud of blood mist.', '#c02020', 'bloody', 'Blood Mist', 10);`
 
 **`mist_of_spirits`** (Mist of Spirits)
 
 Same code as `blood_mist`.
-Defined at `catalog/projectiles.ts:320`: `mist('mist_of_spirits', 'Mist of Spirits', 'A cloud of potent alcohol.', '#d0c080', 'drunk', 'Mist Of Spirits');`
+Defined at `catalog/projectiles.ts:327`: `mist('mist_of_spirits', 'Mist of Spirits', 'A cloud of potent alcohol.', '#d0c080', 'drunk', 'Mist Of Spirits');`
 
 **`slime_mist`** (Slime Mist)
 
 Same code as `blood_mist`.
-Defined at `catalog/projectiles.ts:321`: `mist('slime_mist', 'Slime Mist', 'A cloud of slimy mist.', '#60c040', 'slimy', 'Slime Mist');`
+Defined at `catalog/projectiles.ts:328`: `mist('slime_mist', 'Slime Mist', 'A cloud of slimy mist.', '#60c040', 'slimy', 'Slime Mist');`
 
 **`toxic_mist`** (Toxic Mist)
 
 Same code as `blood_mist`.
-Defined at `catalog/projectiles.ts:322`: `mist('toxic_mist', 'Toxic Mist', 'A cloud of toxic mist.', '#90ff40', 'toxic', 'Toxic Mist');`
+Defined at `catalog/projectiles.ts:329`: `mist('toxic_mist', 'Toxic Mist', 'A cloud of toxic mist.', '#90ff40', 'toxic', 'Toxic Mist');`
 
 **`acid_ball`** (Acid Ball)
 
@@ -777,14 +791,14 @@ Defined at `catalog/modifiers.ts:117`: `const CHAOS = ['fireball', 'lightning_bo
 ```ts
 hit(_l, h, w) { const [x, y, z] = landing(h); if (!w.solid(x, y, z) && w.solid(x, y - 1, z)) w.place(x, y, z, 'wands:slime'); }
 ```
-Defined at `catalog/projectiles.ts:332`: `proj('slimeball', 'Slimeball', 1, 20, 'A dripping ball of poisonous slime.', I('#60e040', 'drop'), { visual: 'liquid', dmg: 3, gravity: 0.04, speed: 1.1, life: 60, bounces: 3, bounceKeep: 0.6, spread: 4, color: 0x60e040, size: 0.2, inflict: [['slimy', 240], ['toxic', 60]] }, {`
+Defined at `catalog/projectiles.ts:339`: `proj('slimeball', 'Slimeball', 1, 20, 'A dripping ball of poisonous slime.', I('#60e040', 'drop'), { visual: 'liquid', dmg: 3, gravity: 0.04, speed: 1.1, life: 60, bounces: 3, bounceKeep: 0.6, spread: 4, color: 0x60e040, size: 0.2, inflict: [['slimy', 240], ['toxic', 60]] }, {`
 
 **`glue_ball`** (Glue Ball)
 
 ```ts
 hit(_l, h, w) { const [x, y, z] = landing(h); if (!w.solid(x, y, z)) w.place(x, y, z, 'cobweb'); }
 ```
-Defined at `catalog/projectiles.ts:336`: `proj('glue_ball', 'Glue Ball', 1, 25, 'A sticky ball: it leaves cobwebs where it lands.', I('#f0f0d0', 'drop'), { visual: 'liquid', dmg: 1, gravity: 0.05, speed: 0.9, life: 40, bounces: 2, bounceKeep: 0.5, spread: 5, color: 0xf0f0d0, size: 0.18, inflict: [['slimy', 160]] }, {`
+Defined at `catalog/projectiles.ts:343`: `proj('glue_ball', 'Glue Ball', 1, 25, 'A sticky ball: it leaves cobwebs where it lands.', I('#f0f0d0', 'drop'), { visual: 'liquid', dmg: 1, gravity: 0.05, speed: 0.9, life: 40, bounces: 2, bounceKeep: 0.5, spread: 5, color: 0xf0f0d0, size: 0.18, inflict: [['slimy', 160]] }, {`
 
 **`earthquake_field`** (Quake)
 
@@ -799,7 +813,7 @@ tick(l, w) {
   w.fx('quake', l.x, l.y, l.z);
 }
 ```
-Defined at `catalog/projectiles.ts:343`: `proj('earthquake_field', 'Quake', 5, 0, 'The ground shaking.', I('#806040'), { visual: 'none', speed: 0, ghost: true, pierce: true, life: 50, color: 0x806040, size: 0.2 }, {`
+Defined at `catalog/projectiles.ts:350`: `proj('earthquake_field', 'Quake', 5, 0, 'The ground shaking.', I('#806040'), { visual: 'none', speed: 0, ghost: true, pierce: true, life: 50, color: 0x806040, size: 0.2 }, {`
 
 **`magic_guard`** (Magic Guard)
 
@@ -810,12 +824,12 @@ tick: (l, w) => {
   l.remove();
 }
 ```
-Defined at `catalog/projectiles.ts:355`: `proj('magic_guard', 'Magic Guard', 2, 40, 'Four guarding lights circle you for a while.', I('#a0e0ff', 'orb'), { visual: 'none', speed: 0, ghost: true, life: 1 }, { delay: 7, tick: guard(4) });`
+Defined at `catalog/projectiles.ts:362`: `proj('magic_guard', 'Magic Guard', 2, 40, 'Four guarding lights circle you for a while.', I('#a0e0ff', 'orb'), { visual: 'none', speed: 0, ghost: true, life: 1 }, { delay: 7, tick: guard(4) });`
 
 **`big_magic_guard`** (Big Magic Guard)
 
 Same code as `magic_guard`.
-Defined at `catalog/projectiles.ts:356`: `proj('big_magic_guard', 'Big Magic Guard', 3, 60, 'Eight guarding lights circle you for a while.', I('#a0e0ff', 'orb'), { visual: 'none', speed: 0, ghost: true, life: 1 }, { delay: 10, tick: guard(8) });`
+Defined at `catalog/projectiles.ts:363`: `proj('big_magic_guard', 'Big Magic Guard', 3, 60, 'Eight guarding lights circle you for a while.', I('#a0e0ff', 'orb'), { visual: 'none', speed: 0, ghost: true, life: 1 }, { delay: 10, tick: guard(8) });`
 
 **`explosion_thunder`** (Explosion of Thunder)
 

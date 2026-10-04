@@ -114,6 +114,15 @@ export function main(mod: ModContext) {
 
   if (mod.realm === 'page') {
     server = new SpellServer(mod, cfg, fx, (id) => spellItems.get(id)?.id, tierOf, isDummy);
+    // each cast's spell tree in your chat: what was drawn, what it made, what it cost
+    mod.commands.register({
+      name: 'wanddebug', usage: '/wanddebug [on|off]', description: 'print each wand cast as a spell tree', permission: 'all',
+      run({ player, args }) {
+        const sv = server!, on = args[0] === 'on' ? true : args[0] === 'off' ? false : !sv.debug.has(player);
+        if (on) sv.debug.add(player); else sv.debug.delete(player);
+        return on ? 'Wand debug on: every cast prints its spell tree' : 'Wand debug off';
+      },
+    });
     // weakening curses on blows and on other explosions: the hit lands twice as hard
     let doubling = false;
     mod.on('entityDamage', ({ game, entity, amount, source }) => {
