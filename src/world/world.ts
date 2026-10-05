@@ -5,6 +5,8 @@ import { Storage, SavedChunk, SavedBase, rleEncode, rleDecode } from '../game/st
 import WorkerCtor from './worker.ts?worker&inline';
 import { chunkHash } from '../net/protocol';
 import { session } from '../mod/hooks';
+import type { SubLevel } from '../sublevel/ship';
+import { isShipyardChunk } from '../sublevel/shipyard';
 
 export const chunkKey = (cx: number, cz: number) => (cx + 0x8000) * 0x10000 + (cz + 0x8000);
 export const keyStr = (cx: number, cz: number) => cx + ',' + cz;
@@ -85,6 +87,8 @@ export class World {
   get readOnly() { return this.role !== 'server'; }
   /** Server: where players are, so chunks load around all of them (set every tick). */
   centers: LoadCenter[] = [];
+  /** The sub-levels (moving block structures) in this world: the server's own, or a client's copies. */
+  ships: SubLevel[] = [];
 
   constructor(public seed: number, public worldId: string, public dimension: Dimension = 'overworld', public role: WorldRole = 'server') {
     const n = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
@@ -352,7 +356,11 @@ export class World {
       const near = this.nearest(c.cx, c.cz, cs);
       let d = near.d;
       if (!c.ready) {
-        if (!c.loading && (this.role !== 'client' || c.localGen)) genCands.push([d, c]);
+        if (!c.loading && (this.role !== 'client' || c.localGen)) {
+          // the shipyard is empty space: nothing to generate (saved plots still load from disk)
+          if (isShipyardChunk(c.cx) && !this.savedKeys.has(keyStr(c.cx, c.cz))) { this.voidChunk(c); continue; }
+          genCands.push([d, c]);
+        }
         continue;
       }
       if (!c.dirty || c.meshing) continue;
@@ -384,6 +392,25 @@ export class World {
         slot.w.postMessage({ type: 'gen', id: ++this.jobId, seed: this.seed, cx: c.cx, cz: c.cz, dim: this.dimension });
       } else break;
     }
+  }
+
+  /** A shipyard chunk: made empty right away, as the generator would make it (so the hash checks agree). */
+  private voidChunk(c: Chunk) {
+    c.loading = true;
+    this.generated(c, new Uint16Array(16 * 16 * CHUNK_H), new Uint8Array(256));
+  }
+
+  /** Server: a shipyard chunk ready now (a new plot's), unless it's on disk (then false: wait for it to load). */
+  ensureVoid(cx: number, cz: number): boolean {
+    const k = chunkKey(cx, cz);
+    let c = this.chunks.get(k);
+    if (c?.ready) return true;
+    if (this.savedKeys.has(keyStr(cx, cz))) return false;
+    if (!c) { c = new Chunk(cx, cz); this.chunks.set(k, c); }
+    c.lastSeen = this.frame;
+    if (c.loading) return false;
+    this.voidChunk(c);
+    return true;
   }
 
   neighborsReady(c: Chunk) {
@@ -478,22 +505,7 @@ export class World {
         c.needsBase = false;
         return;
       }
-      if (!c.loading) return; // the server sent the real thing while we were generating
-      const blocks = d.blocks as Uint16Array;
-      if (c.expectHash !== null && chunkHash(blocks) !== c.expectHash) {
-        c.loading = false;
-        c.localGen = false;
-        c.pending = null;
-        this.onGenMismatch(c.cx, c.cz);
-        return;
-      }
-      // the server's changes on top of the generated terrain
-      const ch = c.genChanges;
-      if (ch) for (let k = 0; k < ch.i.length; k++) blocks[ch.i[k]] = ch.v[k];
-      const tiles = c.genTiles ?? undefined;
-      c.genChanges = c.genTiles = null;
-      this.acceptChunk(c, blocks, d.biomes as Uint8Array, 'gen', tiles, d.spawns as { type: string; x: number; y: number; z: number }[]);
-      c.modified = !!(d.spawns as unknown[] | undefined)?.length; // remember that inhabitants were spawned
+      this.generated(c, d.blocks as Uint16Array, d.biomes as Uint8Array, d.spawns as { type: string; x: number; y: number; z: number }[] | undefined);
     } else if (d.type === 'mesh' || d.type === 'light') {
       c.meshing = false;
       if (this.chunks.get(chunkKey(c.cx, c.cz)) !== c) return;
@@ -503,6 +515,25 @@ export class World {
       c.meshedVersion = job.version!;
       if (d.type === 'mesh') this.onMesh(c, r);
     }
+  }
+
+  /** A chunk's freshly generated blocks (by a worker, or empty shipyard space). */
+  private generated(c: Chunk, blocks: Uint16Array, biomes: Uint8Array, spawns?: { type: string; x: number; y: number; z: number }[]) {
+    if (!c.loading) return; // the server sent the real thing while we were generating
+    if (c.expectHash !== null && chunkHash(blocks) !== c.expectHash) {
+      c.loading = false;
+      c.localGen = false;
+      c.pending = null;
+      this.onGenMismatch(c.cx, c.cz);
+      return;
+    }
+    // the server's changes on top of the generated terrain
+    const ch = c.genChanges;
+    if (ch) for (let k = 0; k < ch.i.length; k++) blocks[ch.i[k]] = ch.v[k];
+    const tiles = c.genTiles ?? undefined;
+    c.genChanges = c.genTiles = null;
+    this.acceptChunk(c, blocks, biomes, 'gen', tiles, spawns);
+    c.modified = !!spawns?.length; // remember that inhabitants were spawned
   }
 
   serialize(c: Chunk): SavedChunk {

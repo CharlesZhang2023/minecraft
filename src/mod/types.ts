@@ -148,6 +148,11 @@ export interface BlockBehavior {
   model?(meta: number, nb: Neighbor | undefined, faces: number[]): Box[];
   collision?(meta: number, nb?: Neighbor): Shape[];
   selection?(meta: number, nb?: Neighbor): Shape[];
+  /**
+   * The meta after the block is turned `turns` quarter turns clockwise (seen from above): a sub-level landing turned,
+   * a structure built rotated. Without it, the game turns the facings it knows (horizontal `front` blocks).
+   */
+  rotate?(meta: number, turns: number): number;
 }
 
 /** A player using an item. */

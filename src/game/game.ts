@@ -47,6 +47,8 @@ import { Events } from '../mod/events';
 import { session, live, COMMANDS } from '../mod/hooks';
 import { currentMap } from '../mod/registry';
 import { modState, guard } from '../mod/state';
+import { SubLevels } from '../sublevel/server';
+import { isShipyardX } from '../sublevel/shipyard';
 
 export const TICK_MS = 50;
 
@@ -122,8 +124,11 @@ export class Game {
   private noAchievements: Achievements;
   /** Called when someone joins or leaves (the host's player list). */
   onPlayersChanged: () => void = () => {};
+  /** Moving block structures and their physics. */
+  sublevels: SubLevels;
 
   constructor() {
+    this.sublevels = new SubLevels(this);
     this.audio = new ServerAudio(this);
     this.particles = fxSink(this);
     this.weather = new Weather(this);
@@ -245,6 +250,7 @@ export class Game {
     const dim = new Dim(world, this);
     world.onBlockChange = (x, y, z, old, v) => {
       this.inDim(dim, () => dim.ticker.onChange(x, y, z, old, v));
+      this.sublevels.blockChanged(dim, x, y, z);
       for (const p of this.players) if (p.dim === d) p.blockChanged(x, y, z, v);
     };
     world.onTileChange = (x, y, z) => { for (const p of this.players) if (p.dim === d) p.tileChanged(x, y, z); };
@@ -287,6 +293,7 @@ export class Game {
     const dim = this.dims.get(d);
     if (!dim) return;
     this.dims.delete(d);
+    this.sublevels.forget(dim);
     this.storeEntities(dim);
     await dim.world.saveAll();
     dim.world.destroy();
@@ -326,6 +333,7 @@ export class Game {
     await this.saveWorld();
     if (live.game === this) live.game = null;
     for (const d of [...this.dims.keys()]) await this.unloadDim(d);
+    this.sublevels.dispose();
   }
 
   // ------------------------------------------------------------------ players
@@ -656,8 +664,10 @@ export class Game {
     const w = dim.world;
     const here = this.players.filter((p) => p.dim === w.dimension);
     w.renderDistance = this.simDistance;
-    w.updateCenters([...here.map((p) => ({ x: p.entity.x, z: p.entity.z, r: p.simRadius() })), ...dim.keepLoaded]);
+    w.updateCenters([...here.map((p) => ({ x: p.entity.x, z: p.entity.z, r: p.simRadius() })), ...dim.keepLoaded, ...this.sublevels.centers(dim)]);
     if (!here.length) return;
+    // sub-levels move first: whatever stands on them is carried along when it ticks
+    this.sublevels.tick(dim);
     if (w.dimension === 'end' && this.meta?.dragonKilled && this.ticks % 20 === 0) buildExitPortal(this);
     if (w.dimension === 'end') buildPending(this);
     const list = dim.entities;
@@ -676,6 +686,7 @@ export class Game {
       if (e.y < -64 && !(e instanceof LivingEntity)) e.removed = true;
       if (e.removed && !(e instanceof NetPlayer)) { const k = list.indexOf(e); if (k >= 0) list.splice(k, 1); }
     }
+    this.sublevels.afterTick(dim);
     dim.ticker.tick();
     dim.redstone.tick();
     dim.pistons.tick();
@@ -836,6 +847,8 @@ export class Game {
       for (const p of this.playersHere()) p.event(['s', name, null, volume, pitch]);
       return;
     }
+    // a sub-level's block makes it where that block is in the world
+    if (isShipyardX(pos.x)) pos = this.sublevels.worldPos(pos.x, pos.y, pos.z);
     const range = Math.max(16, 16 * volume);
     const at = [Math.round(pos.x * 100) / 100, Math.round(pos.y * 100) / 100, Math.round(pos.z * 100) / 100];
     for (const p of this.playersHere()) {
@@ -848,7 +861,13 @@ export class Game {
   /** A particle effect, for everyone close enough to see it. */
   emitFx(method: string, args: unknown[]) {
     const a0 = args[0] as { x?: number; y?: number; z?: number } | number;
-    const x = typeof a0 === 'number' ? a0 : a0?.x, y = typeof a0 === 'number' ? (args[1] as number) : a0?.y, z = typeof a0 === 'number' ? (args[2] as number) : a0?.z;
+    let x = typeof a0 === 'number' ? a0 : a0?.x, y = typeof a0 === 'number' ? (args[1] as number) : a0?.y, z = typeof a0 === 'number' ? (args[2] as number) : a0?.z;
+    // effects at a sub-level's blocks show where those blocks are in the world
+    if (typeof x === 'number' && typeof y === 'number' && typeof z === 'number' && isShipyardX(x)) {
+      const p = this.sublevels.worldPos(x, y, z);
+      [x, y, z] = [p.x, p.y, p.z];
+      args = typeof a0 === 'number' ? [p.x, p.y, p.z, ...args.slice(3)] : [{ ...a0, x: p.x, y: p.y, z: p.z }, ...args.slice(1)];
+    }
     const enc = encodeValue(args);
     // fireworks are meant to be seen from afar
     const range = method === 'firework' ? 160 : 64;

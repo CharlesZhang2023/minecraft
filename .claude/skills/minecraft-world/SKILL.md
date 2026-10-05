@@ -54,3 +54,8 @@ physics unless `physics=true` (needed for redstone to update, water/lava to flow
   they can be undone.
 - `log` (with `since` and `wait`) follows chat, blocks players change, deaths, joins: use it to react to the people
   playing.
+- Moving structures (sub-levels): build it, then `command /sublevel assemble x1 y1 z1 x2 y2 z2` makes the blocks in
+  the box one physics object (`/sublevel list`, `land`, `push <id> vx vy vz`, `anchor`, `remove`). Its blocks then
+  live far east in the shipyard (x 320000+): `read`/`set` there change it, and `call entities` lists it as `sublevel`.
+  With the Aeronautics mod installed, airships fly with a Physics Assembler, propellers, a hot air burner under
+  envelope blocks (or levitite), a helm and a gyroscope (mods/aeronautics/README.md).

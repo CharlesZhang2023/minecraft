@@ -17,6 +17,7 @@ import { captureState, encodeValue, sig, netType, State } from '../net/replicate
 import { validLook } from '../render/skins';
 import { CHANNELS, MAX_PAYLOAD } from '../mod/hooks';
 import { modState, guard } from '../mod/state';
+import { SubLevel } from '../sublevel/ship';
 
 /** What a client sends every tick. */
 export interface InputPacket {
@@ -45,6 +46,8 @@ export interface InputPacket {
 }
 
 const ENTITY_RANGE = 96;
+/** Sub-levels are big: seen (with their plots' chunks) from farther away. */
+const SHIP_RANGE = 192;
 
 /** A remote-controlled player entity: its client does the walking, the server does everything else. */
 export class NetPlayer extends Player {
@@ -479,6 +482,13 @@ export class ServerPlayer {
     const centers = [{ cx: Math.floor(p.x) >> 4, cz: Math.floor(p.z) >> 4, r: this.viewDistance + 1, near }];
     // (the server isn't keeping chunks loaded around extra views, so nothing there is worth waiting for)
     for (const v of this.views) centers.push({ cx: Math.floor(v.x) >> 4, cz: Math.floor(v.z) >> 4, r: Math.max(1, Math.min(this.viewDistance, v.r | 0)) + 1, near: -1 });
+    // the plots of sub-levels in sight: their blocks are in the shipyard
+    for (const s of w.ships) {
+      const far = SHIP_RANGE + s.radius();
+      if (Math.abs(s.x - p.x) > far || Math.abs(s.z - p.z) > far) continue;
+      const c = s.plotChunks();
+      centers.push({ cx: (c.cx0 + c.cx1) >> 1, cz: (c.cz0 + c.cz1) >> 1, r: Math.ceil(Math.max(c.cx1 - c.cx0, c.cz1 - c.cz0) / 2 * 1.42) + 1, near: -1 });
+    }
     for (const k of this.sentChunks.keys()) {
       const cx = Math.floor(k / 0x10000) - 0x8000, cz = (k % 0x10000) - 0x8000;
       if (centers.every((c) => (cx - c.cx) ** 2 + (cz - c.cz) ** 2 > (c.r + 2) * (c.r + 2))) {
@@ -571,8 +581,8 @@ export class ServerPlayer {
     const seen = new Set<number>();
     for (const e of dim.entities) {
       if (e === me || e.removed) continue;
-      const dx = e.x - me.x, dz = e.z - me.z;
-      if (dx * dx + dz * dz > ENTITY_RANGE * ENTITY_RANGE) continue;
+      const dx = e.x - me.x, dz = e.z - me.z, range = e instanceof SubLevel ? SHIP_RANGE + e.radius() : ENTITY_RANGE;
+      if (dx * dx + dz * dz > range * range) continue;
       const type = netType(e);
       if (!type) continue;
       seen.add(e.id);

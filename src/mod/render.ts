@@ -39,8 +39,12 @@ export interface RenderContext {
 
 const NORMALS = [[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]];
 
-export function makeRenderContext(client: Client, er: EntityRenderer, mesh: DynMesh, partial: number): RenderContext {
-  const cam = client.renderer.cam, w = client.world!;
+/**
+ * `at` stands in for the camera: geometry is written relative to it (a sub-level's tiles are drawn relative to its
+ * pivot, then turned and placed by the draw call).
+ */
+export function makeRenderContext(client: Client, er: EntityRenderer, mesh: DynMesh, partial: number, at?: { x: number; y: number; z: number; yaw: number; pitch: number }): RenderContext {
+  const cam = at ?? client.renderer.cam, w = client.world!;
   /** Light at a block, or (inside a solid block, where it's dark) the brightest around it. */
   const light = (x: number, y: number, z: number): [number, number] => {
     const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);

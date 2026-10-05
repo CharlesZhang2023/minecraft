@@ -10,6 +10,7 @@ import { blockByName, pack } from '../world/blocks';
 import { LivingEntity } from '../entity/living';
 import { COMMANDS, ENTITIES } from '../mod/hooks';
 import { modState } from '../mod/state';
+import { sublevelCommand } from '../sublevel/commands';
 
 export class Commands {
   history: string[] = [];
@@ -33,9 +34,12 @@ export class Commands {
       }
       switch (cmd) {
         case 'help':
-          out.push('§eAvailable commands:', '/gamemode <survival|creative|adventure|spectator>', '/time <set|add> <day|night|noon|midnight|value>', '/weather <clear|rain|thunder>', '/tp <x> <y> <z>', '/give <item> [count]', '/summon <mob> [x y z]', '/kill', '/difficulty <peaceful|easy|normal|hard>', '/seed', '/spawnpoint', '/setblock <x> <y> <z> <block>', '/clear', '/xp <amount>', '/gamerule <doDaylightCycle|keepInventory> [true|false]', '/effect <effect|clear> [seconds] [amplifier]', '/locate stronghold', '/dimension <overworld|nether|end>', '/enchant <enchantment> [level]', '/heal');
+          out.push('§eAvailable commands:', '/gamemode <survival|creative|adventure|spectator>', '/time <set|add> <day|night|noon|midnight|value>', '/weather <clear|rain|thunder>', '/tp <x> <y> <z>', '/give <item> [count]', '/summon <mob> [x y z]', '/kill', '/difficulty <peaceful|easy|normal|hard>', '/seed', '/spawnpoint', '/setblock <x> <y> <z> <block>', '/clear', '/xp <amount>', '/gamerule <doDaylightCycle|keepInventory> [true|false]', '/effect <effect|clear> [seconds] [amplifier]', '/locate stronghold', '/dimension <overworld|nether|end>', '/enchant <enchantment> [level]', '/heal', '/sublevel <assemble|land|list|anchor|push|tp|remove> - moving block structures');
           // mods' commands, once each
           for (const [name, { mod, def }] of COMMANDS) if (modState.active.has(mod) && name === def.name.toLowerCase()) out.push(`${def.usage ?? '/' + def.name}${def.description ? ' §7- ' + def.description : ''}`);
+          break;
+        case 'sublevel': case 'sl':
+          out.push(...sublevelCommand(g, p, args, coord));
           break;
         case 'gamemode':
         case 'gm': {

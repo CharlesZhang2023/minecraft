@@ -318,6 +318,8 @@ export class Player extends LivingEntity {
   }
 
   override environment() { if (!this.clientSide) super.environment(); }
+  /** A player's client moves it, sub-levels included (the server's copy just follows). */
+  override ridesShips() { return this.clientSide; }
   override tickEffects() { if (!this.clientSide) super.tickEffects(); }
   override onLand(fall: number) { if (!this.clientSide) super.onLand(fall); }
 

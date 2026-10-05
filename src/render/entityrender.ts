@@ -16,6 +16,7 @@ import { FireworkRocket } from '../entity/firework';
 import { BLOCKS, TEXTURES, Render, B, T, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE } from '../world/blocks';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
+import { poseMat4 } from '../sublevel/pose';
 import { getTexture } from './textures';
 import { Player } from '../game/player';
 import { Boat } from '../entity/boat';
@@ -288,6 +289,16 @@ export class EntityRenderer {
       this.drawItemEntity(dyn, a.e, ix, iy, iz, t, 15, 0, true);
     }
     this.r.drawDyn(dyn, { cull: false });
+    // mods' tile renderers on sub-levels: built relative to each one's pivot, drawn turned and placed with it
+    if (modState.active.size) {
+      for (const s of w.ships) {
+        if (Math.abs(s.x - cam.x) > 64 + s.radius() || Math.abs(s.z - cam.z) > 64 + s.radius()) continue;
+        const pose = s.poseAt(t);
+        dyn.reset();
+        drawModTiles(makeRenderContext(game as unknown as Client, this, dyn, t, { x: pose.lx, y: pose.ly, z: pose.lz, yaw: cam.yaw, pitch: cam.pitch }));
+        if (dyn.count) this.r.drawDyn(dyn, { cull: false, model: poseMat4(pose, cam.x, cam.y, cam.z) });
+      }
+    }
     this.boatMasks(game, list, t);
     // soft round shadows under entities (vanilla-style, projected on block tops)
     const sh = this.r.dyn;

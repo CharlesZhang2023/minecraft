@@ -7,8 +7,9 @@ const precacheList = (): Plugin => ({
   name: 'precache-list',
   apply: 'build',
   generateBundle(_, bundle) {
-    // mods are fetched (and kept in IndexedDB) only when a player installs or needs them
-    const files = Object.keys(bundle).filter((f) => !f.endsWith('.map') && f !== 'precache.json' && !f.startsWith('mods/'));
+    // mods are fetched (and kept in IndexedDB) only when a player installs or needs them; the physics engine
+    // (4 MB, only for worlds with sub-levels) is cached by the service worker the first time it's loaded
+    const files = Object.keys(bundle).filter((f) => !f.endsWith('.map') && f !== 'precache.json' && !f.startsWith('mods/') && !/(^|\/)rapier-/.test(f));
     this.emitFile({ type: 'asset', fileName: 'precache.json', source: JSON.stringify(files) });
   },
 });

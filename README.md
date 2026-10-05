@@ -133,8 +133,19 @@ agents work in that world. With no game open, `mc launch` starts a headless brow
   browser) or from a file, and turns them on or off. Each mod gets a generated settings page.
 - Multiplayer: guests are switched to the host's mods automatically. Client-only mods stay with each player.
 - Example mods: Rubies (ore, tools, a mob), Computers (a scriptable terminal with redstone), Kinetics
-  (rotational power with animated machines), Minimap, Wands and Overseer (below). See [mods/README.md](mods/README.md)
-  to write your own.
+  (rotational power with animated machines), Minimap, Wands, Overseer and Aeronautics (below). See
+  [mods/README.md](mods/README.md) to write your own.
+- **Sub-levels** (in the game itself, for mods to build on): moving block structures in the way of Valkyrien Skies
+  and Sable. A sub-level's blocks are ordinary blocks in a far-off "shipyard" plot, so chests, furnaces, redstone and
+  every other block keep working on it, and its pose shows them wherever it really is. Physics is Rapier
+  (WebAssembly, loaded only for worlds that have sub-levels): rigid bodies of voxels against the terrain and each
+  other, block masses, floating in water and air drag. You walk on them and ride along as they move and turn,
+  break and place their blocks, and guests in multiplayer see and ride them too. `/sublevel` assembles, lands and
+  pushes them by hand.
+- **Aeronautics**, in the spirit of Create: Aeronautics: a Physics Assembler turns what you built into a sub-level
+  (and lands it again), propellers push it, hot air burners fill envelope balloons, levitite floats, a gyroscope
+  keeps it upright and a helm steers it with the movement keys (holding its height when you let go of jump and
+  sneak). A creative Physics Staff drags sub-levels about. See [mods/aeronautics/README.md](mods/aeronautics/README.md).
 - **Wands** brings in Noita's wands and spells: 425 of them, nearly all of Noita's, with Noita's icons. A wand fires
   its spells like a deck of cards, so they combine: projectiles, modifiers, multicasts and formations, triggers and
   timers, larpas and orbits, requirements, Greek letters and Divide By, materials and puddles that stain creatures,
@@ -172,6 +183,7 @@ src/world    blocks registry, worldgen (overworld, nether, the End, villages, st
 src/render   WebGL2 renderer, shaders, texture array, procedural textures & sprites, entity models & renderer
 src/game     game loop (20 TPS), player, interaction, block ticks, items, recipes, audio synth, storage, portals
 src/entity   entity physics (vanilla collision), living entities, mobs & AI, pathfinding, spawning, boats
+src/sublevel sub-levels: shipyard plots, poses, Rapier physics, collision and riding in each one's frame, /sublevel
 src/ui       bitmap font, GUI primitives, isometric item icons, HUD, menus, containers, trading
 src/mod      mod loader, registries and per-world id binding, events, mixins, mod API, repository client
 src/agent    the agent API inside the game tab (development only): blocks, blueprints, pictures, events, code

@@ -3,6 +3,7 @@ import type { World } from '../world/world';
 import { AABB } from '../math';
 import { BLOCKS, B, idOf, metaOf } from '../world/blocks';
 import { collisionShapes } from '../world/models';
+import { clipAgainstShips, carry, leaveShip, shipsOverlap } from '../sublevel/collide';
 
 let nextId = 1;
 
@@ -60,7 +61,12 @@ export class Entity {
     this.px = this.x; this.py = this.y; this.pz = this.z;
     this.pyaw = this.yaw; this.ppitch = this.pitch;
     this.age++;
+    // standing on a moving sub-level: move along with it
+    if (this.world.ships.length && this.ridesShips()) carry(this);
   }
+
+  /** Whether this copy of the entity moves itself with the sub-levels it stands on (not puppets, not clients' players on the server). */
+  ridesShips() { return this.world.role === 'server'; }
 
   tick() {}
 
@@ -102,7 +108,7 @@ export class Entity {
     // sneaking: don't walk off edges
     if (this.onGround && this.sneaking) {
       const step = 0.05;
-      const test = (ddx: number, ddz: number) => this.collisions(offset(box, ddx, -1, ddz)).length === 0;
+      const test = (ddx: number, ddz: number) => this.collisions(offset(box, ddx, -1, ddz)).length === 0 && !(this.world.ships.length && shipsOverlap(this.world, offset(box, ddx, -1, ddz)));
       while (dx !== 0 && test(dx, 0)) {
         if (dx < step && dx >= -step) dx = 0;
         else if (dx > 0) dx -= step;
@@ -120,6 +126,22 @@ export class Entity {
         if (dz < step && dz >= -step) dz = 0;
         else if (dz > 0) dz -= step;
         else dz += step;
+      }
+    }
+    // sub-levels first, each in its own frame; then the world's blocks
+    let shipGround = false;
+    if (this.world.ships.length) {
+      const sc = clipAgainstShips(this, dx, dy, dz);
+      // (turning into a sub-level's frame and back isn't exact: what barely changed didn't)
+      if (Math.abs(sc.dx - dx) > 1e-7) dx = sc.dx;
+      if (Math.abs(sc.dy - dy) > 1e-7) dy = sc.dy;
+      if (Math.abs(sc.dz - dz) > 1e-7) dz = sc.dz;
+      shipGround = sc.ground;
+      // velocity into what stopped us goes
+      for (const n of sc.stops) {
+        const d = this.vx * n.x + this.vy * n.y + this.vz * n.z;
+        const into = n.x * odx + n.y * ody + n.z * odz;
+        if (d * into > 0) { this.vx -= n.x * d; this.vy -= n.y * d; this.vz -= n.z * d; }
       }
     }
     const sdx = dx, sdz = dz;
@@ -161,7 +183,9 @@ export class Entity {
     this.collidedH = odx !== dx || odz !== dz;
     this.collidedV = ody !== dy;
     const wasOnGround = this.onGround;
-    this.onGround = this.collidedV && ody < 0;
+    this.onGround = (this.collidedV && ody < 0) || shipGround;
+    // on the world's own ground: no longer riding a sub-level
+    if (this.collidedV && ody < 0 && !shipGround && this.world.ships.length) leaveShip(this);
     if (odx !== dx) this.vx = 0;
     if (odz !== dz) this.vz = 0;
     // slime blocks bounce whatever lands on them (unless sneaking) and cancel fall damage

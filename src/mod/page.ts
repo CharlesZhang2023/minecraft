@@ -33,6 +33,11 @@ import { tex } from '../world/blocks';
 import type { Img } from '../render/pixels';
 import { Random } from '../noise';
 import { device } from '../game/device';
+import { SubLevel } from '../sublevel/ship';
+import * as pose from '../sublevel/pose';
+import { airPressure, setBlockPhysics, blockPhysics, PHYS } from '../sublevel/server';
+import { ridingShip } from '../sublevel/collide';
+import { gatherStructure } from '../sublevel/commands';
 
 /** The game's classes and helpers (page only). */
 export const pageMc = {
@@ -46,6 +51,13 @@ export const pageMc = {
   getTexture,
   /** The context block hooks get, for any block (server side: inside the simulation's current dimension). */
   blockCtx,
+  /**
+   * Sub-levels (moving block structures): the entity class (`world.ships` lists them on both sides; the server's
+   * `game.sublevels` assembles them and pushes them), pose maths (quaternions, local <-> world), block physics
+   * properties, air pressure, the physics settings, the connected structure a block belongs to, and which
+   * sub-level an entity is standing on.
+   */
+  SubLevel, pose, airPressure, setBlockPhysics, blockPhysics, PHYS, gatherStructure, ridingShip,
   /** The page's client and running simulation (null when not playing / not hosting). */
   get client() { return live.client; },
   get game() { return live.game; },

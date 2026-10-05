@@ -44,6 +44,8 @@ export interface WorldMeta {
   mods?: Record<string, string>;
   /** Mods' own per-world data (ModContext.worldData), by mod id. */
   modData?: Record<string, unknown>;
+  /** Sub-levels: how many shipyard plots have been handed out (plots aren't reused). */
+  plots?: number;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;

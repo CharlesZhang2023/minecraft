@@ -1,0 +1,10 @@
+{
+  "id": "aeronautics",
+  "version": "1.0.0",
+  "name": "Aeronautics",
+  "description": "Physics contraptions in the spirit of Create: Aeronautics. A Physics Assembler turns what you built into a moving sub-level; propellers, hot air balloons and levitite fly it, a helm steers it, a gyro keeps it level.",
+  "authors": ["Minecraft Web Edition"],
+  "environment": "*",
+  "icon": "item:aeronautics:physics_assembler",
+  "depends": { "minecraft": ">=1.0.0" }
+}

@@ -13,6 +13,9 @@ import { Options, loadOptions, saveOptions, myLook } from '../game/options';
 import { Particles } from '../game/particles';
 import { computeEnv, netherEnv, endEnv } from '../game/env';
 import { raycastBlocks, BlockHit } from '../game/raycast';
+import { SubLevel } from '../sublevel/ship';
+import { qmat3, poseMat4, toWorld } from '../sublevel/pose';
+import type { ShipDraw } from '../render/renderer';
 import { BLOCKS, B, idOf, metaOf, TEXTURES, tex, CHUNK_H } from '../world/blocks';
 import { selectionShapes } from '../world/models';
 import { ItemStack } from '../game/items';
@@ -892,6 +895,8 @@ export class Client {
         if (k >= 0) this.entities.splice(k, 1);
       }
     }
+    // the sub-levels among them (collisions, rays and drawing need them)
+    if (b.ents) w.ships = this.entities.filter((e): e is SubLevel => e instanceof SubLevel);
     if (b.self) this.applySelf(b.self);
     if (b.push) { p.vx += b.push[0]; p.vy += b.push[1]; p.vz += b.push[2]; }
     if (b.nudge) p.move(b.nudge[0], b.nudge[1], b.nudge[2]);
@@ -1270,7 +1275,9 @@ export class Client {
     this.cam = cam;
     this.audio.setListener(eye.x, eye.y, eye.z, yaw);
     r.setupCamera(cam, 0.05, Math.max(256, w.renderDistance * 16 * 1.5 + 64));
-    if (this.views.length) w.updateCenters([{ x: p.x, z: p.z, r: w.renderDistance }, ...this.views], (cx, cz) => r.chunkVisible(cx, cz));
+    // sub-levels' plots get meshed too (their chunks are far off in the shipyard)
+    const plots = w.ships.map((s) => { const c = s.plotChunks(); return { x: (c.cx0 + c.cx1 + 1) * 8, z: (c.cz0 + c.cz1 + 1) * 8, r: Math.ceil(Math.max(c.cx1 - c.cx0, c.cz1 - c.cz0) / 2 * 1.42) }; });
+    if (this.views.length || plots.length) w.updateCenters([{ x: p.x, z: p.z, r: w.renderDistance }, ...this.views, ...plots], (cx, cz) => r.chunkVisible(cx, cz));
     else w.update(p.x, p.z, (cx, cz) => r.chunkVisible(cx, cz));
 
     const camBlock = w.get(Math.floor(cam.x), Math.floor(cam.y), Math.floor(cam.z));
@@ -1308,7 +1315,8 @@ export class Client {
       const snow = this.renderer.atlas.average('snow') ?? [240, 250, 250];
       r.drawLod(lod.draws(), mask, mcx, mcz, lodRange * 1.25 + 256, [snow[0], snow[1], snow[2]]);
     } else r.drawnLod = 0;
-    r.drawChunks(w.chunks.values(), 'opaque');
+    const ships = this.shipDraws(t);
+    r.drawChunks(w.chunks.values(), 'opaque', ships);
     this.entityRenderer.render(this, t);
     this.drawSelection();
     for (const f of this.overlays) f(r, cam);
@@ -1316,7 +1324,7 @@ export class Client {
     pm.reset();
     this.particles!.build(pm, cam.x, cam.y, cam.z, t, yaw, pitch);
     r.drawDyn(pm, { blend: false, cull: false, alphaCut: 0.1 });
-    r.drawChunks(w.chunks.values(), 'trans');
+    r.drawChunks(w.chunks.values(), 'trans', ships);
     if (!nether && !end) {
       if (!ortho) r.drawClouds(192.33);
       this.weather!.render(t);
@@ -1355,9 +1363,23 @@ export class Client {
     this.ui.render(ctx);
   }
 
+  /** The sub-levels near enough to draw, posed for this frame. */
+  private shipDraws(t: number): ShipDraw[] {
+    const w = this.world!, cam = this.cam, out: ShipDraw[] = [];
+    const far = w.renderDistance * 16 + 32;
+    for (const s of w.ships) {
+      if (s.removed || Math.abs(s.x - cam.x) > far + s.radius() || Math.abs(s.z - cam.z) > far + s.radius()) continue;
+      const pose = s.poseAt(t), c = s.plotChunks(), chunks = [];
+      for (let cx = c.cx0; cx <= c.cx1; cx++) for (let cz = c.cz0; cz <= c.cz1; cz++) { const ch = w.getChunk(cx, cz); if (ch?.mesh) chunks.push(ch); }
+      out.push({ rot: qmat3(pose.q), tx: pose.tx, ty: pose.ty, tz: pose.tz, lx: pose.lx, ly: pose.ly, lz: pose.lz, chunks });
+    }
+    return out;
+  }
+
   private drawSelection() {
     const r = this.renderer, w = this.world!, cam = this.cam;
     const tgt = this.target;
+    if (tgt?.ship) { this.drawShipSelection(tgt); return; }
     if (!tgt || this.hideHud || this.cameraOverride || this.ui.screen?.hidesSelection) return;
     const v = w.get(tgt.x, tgt.y, tgt.z);
     const shapes = selectionShapes(v, (a, b, c) => w.get(tgt.x + a, tgt.y + b, tgt.z + c));
@@ -1388,6 +1410,35 @@ export class Client {
       r.gl.enable(r.gl.POLYGON_OFFSET_FILL);
       r.gl.polygonOffset(-1, -10);
       r.drawDyn(m, { blend: true, fullbright: true, alphaCut: 0.01 });
+      r.gl.disable(r.gl.POLYGON_OFFSET_FILL);
+    }
+  }
+
+  /** The outline (and cracks) of a sub-level's block: drawn turned with it. */
+  private drawShipSelection(tgt: BlockHit) {
+    const r = this.renderer, w = this.world!, cam = this.cam, s = tgt.ship!;
+    if (this.hideHud || this.cameraOverride || this.ui.screen?.hidesSelection) return;
+    const v = w.get(tgt.x, tgt.y, tgt.z);
+    const shapes = selectionShapes(v, (a, b, c) => w.get(tgt.x + a, tgt.y + b, tgt.z + c));
+    if (!shapes.length) return;
+    let x0 = 1, y0 = 1, z0 = 1, x1 = 0, y1 = 0, z1 = 0;
+    for (const q of shapes) { x0 = Math.min(x0, q.x0); y0 = Math.min(y0, q.y0); z0 = Math.min(z0, q.z0); x1 = Math.max(x1, q.x1); y1 = Math.max(y1, q.y1); z1 = Math.max(z1, q.z1); }
+    const e = 0.002, pose = s.poseAt(this.partial);
+    const P = (x: number, y: number, z: number) => { const q = toWorld(pose, tgt.x + x, tgt.y + y, tgt.z + z); return [q.x - cam.x, q.y - cam.y, q.z - cam.z]; };
+    const c = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => P(i & 1 ? x1 + e : x0 - e, i & 2 ? y1 + e : y0 - e, i & 4 ? z1 + e : z0 - e));
+    const edges = [[0, 1], [1, 5], [5, 4], [4, 0], [2, 3], [3, 7], [7, 6], [6, 2], [0, 2], [1, 3], [5, 7], [4, 6]];
+    r.drawLines(new Float32Array(edges.flatMap(([a, b]) => [...c[a], ...c[b]])), [0, 0, 0, 0.45]);
+    const br = this.interact!.breaking;
+    if (br && br.x === tgt.x && br.y === tgt.y && br.z === tgt.z && br.progress > 0) {
+      const stage = Math.min(9, Math.floor(br.progress * 10));
+      const layer = TEXTURES.indexOf('destroy_stage_' + stage);
+      const m = r.dyn;
+      m.reset();
+      const E = 0.004, ox = tgt.x - pose.lx, oy = tgt.y - pose.ly, oz = tgt.z - pose.lz;
+      for (const q of shapes) boxFaces(m, [ox + q.x0 - E, oy + q.y0 - E, oz + q.z0 - E], [ox + q.x1 + E, oy + q.y1 + E, oz + q.z1 + E], layer, q);
+      r.gl.enable(r.gl.POLYGON_OFFSET_FILL);
+      r.gl.polygonOffset(-1, -10);
+      r.drawDyn(m, { blend: true, fullbright: true, alphaCut: 0.01, model: poseMat4(pose, cam.x, cam.y, cam.z) });
       r.gl.disable(r.gl.POLYGON_OFFSET_FILL);
     }
   }

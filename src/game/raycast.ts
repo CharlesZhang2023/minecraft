@@ -2,15 +2,28 @@ import type { World } from '../world/world';
 import { BLOCKS, idOf, metaOf, B } from '../world/blocks';
 import { selectionShapes } from '../world/models';
 import { rayAABB } from '../math';
+import { raycastShips } from '../sublevel/collide';
+import type { SubLevel } from '../sublevel/ship';
 
 export interface BlockHit {
   x: number; y: number; z: number;
   face: number; // 0..5 (-x,+x,-y,+y,-z,+z)
   t: number;
   hx: number; hy: number; hz: number; // hit point
+  /** A sub-level's block: x y z, face and the hit point are in its local (plot) coordinates. */
+  ship?: SubLevel;
 }
 
+/** The first block along a ray, the world's or a sub-level's. */
 export function raycastBlocks(world: World, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number, fluids = false): BlockHit | null {
+  const hit = raycastWorld(world, ox, oy, oz, dx, dy, dz, maxDist, fluids);
+  if (!world.ships.length) return hit;
+  const sh = raycastShips(world, ox, oy, oz, dx, dy, dz, hit ? hit.t : maxDist, (a, b, c, d, e, f, m) => raycastWorld(world, a, b, c, d, e, f, m, fluids));
+  return sh && (!hit || sh.t < hit.t) ? sh : hit;
+}
+
+/** The first of the world's own blocks along a ray. */
+export function raycastWorld(world: World, ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number, fluids = false): BlockHit | null {
   let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
   const sx = Math.sign(dx), sy = Math.sign(dy), sz = Math.sign(dz);
   const tdx = dx !== 0 ? Math.abs(1 / dx) : Infinity;

@@ -28,3 +28,6 @@ export type { World } from '../src/world/world';
 export type { Screen } from '../src/ui/screen';
 export type { UI } from '../src/ui/ui';
 export type { Ctx } from '../src/ui/gui';
+export type { SubLevel } from '../src/sublevel/ship';
+export type { SubLevels, BlockPhysics } from '../src/sublevel/server';
+export type { Pose, Quat, Vec3 } from '../src/sublevel/pose';

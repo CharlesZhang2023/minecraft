@@ -4,6 +4,7 @@ import * as SH from './shaders';
 import { BlockAtlas } from './atlas';
 import { Mat4, mat4, perspective, ortho, lookDir, multiply, invert, identity } from '../math';
 import type { Chunk } from '../world/world';
+import { isShipyardChunk } from '../sublevel/shipyard';
 import type { MeshResult } from '../world/mesher';
 import type { LodDraw } from '../world/lod';
 import { Random } from '../noise';
@@ -421,12 +422,14 @@ export class Renderer {
     gl.uniform1f(u.u_end, 0);
   }
 
-  drawChunks(chunks: Iterable<Chunk>, pass: 'opaque' | 'trans') {
+  drawChunks(chunks: Iterable<Chunk>, pass: 'opaque' | 'trans', ships: ShipDraw[] = []) {
     const gl = this.gl;
     const cam = this.cam;
     const p = this.chunkProg;
     gl.useProgram(p.prog);
     gl.uniformMatrix4fv(p.u.u_viewProj, false, this.viewProj);
+    gl.uniformMatrix3fv(p.u.u_rot, false, IDENT3);
+    gl.uniform3f(p.u.u_pre, 0, 0, 0);
     this.setCommonUniforms(p);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.atlas.texture);
@@ -451,19 +454,18 @@ export class Renderer {
       const g = c.mesh as ChunkGPU | null;
       if (!g) continue;
       if (pass === 'opaque' ? !g.opaqueVao : !g.transVao) continue;
+      // sub-levels' chunks are drawn where their sub-level is, below
+      if (isShipyardChunk(c.cx)) continue;
       if (!this.chunkVisible(c.cx, c.cz)) continue;
       const dx = c.cx * 16 + 8 - cam.x, dz = c.cz * 16 + 8 - cam.z;
       list.push([dx * dx + dz * dz, c]);
     }
     list.sort((a, b) => (pass === 'opaque' ? a[0] - b[0] : b[0] - a[0]));
     let drawn = 0;
-    for (const [, c] of list) {
-      const g = c.mesh as ChunkGPU;
-      const ox = c.cx * 16 - cam.x, oz = c.cz * 16 - cam.z;
-      gl.uniform3f(p.u.u_offset, ox, -cam.y, oz);
+    const order = [...Array(16).keys()];
+    const drawSections = (g: ChunkGPU, visible: (s: number) => boolean) => {
       gl.bindVertexArray(pass === 'opaque' ? g.opaqueVao : g.transVao);
       const secs = pass === 'opaque' ? g.opaqueSections : g.transSections;
-      const order = pass === 'opaque' || cam.y > 128 ? [...Array(16).keys()] : [...Array(16).keys()];
       let runStart = -1, runEnd = -1;
       const flush = () => {
         if (runStart >= 0 && runEnd > runStart) {
@@ -475,14 +477,39 @@ export class Renderer {
       for (const s of order) {
         const a = secs[s], b = secs[s + 1];
         if (b <= a) continue;
-        if (!this.boxVisible(ox, s * 16 - cam.y, oz, ox + 16, s * 16 + 16 - cam.y, oz + 16)) { flush(); continue; }
+        if (!visible(s)) { flush(); continue; }
         if (runStart < 0) { runStart = a; runEnd = b; }
         else if (a === runEnd) runEnd = b;
         else { flush(); runStart = a; runEnd = b; }
       }
       flush();
+    };
+    for (const [, c] of list) {
+      const ox = c.cx * 16 - cam.x, oz = c.cz * 16 - cam.z;
+      gl.uniform3f(p.u.u_offset, ox, -cam.y, oz);
+      drawSections(c.mesh as ChunkGPU, (s) => this.boxVisible(ox, s * 16 - cam.y, oz, ox + 16, s * 16 + 16 - cam.y, oz + 16));
     }
     if (pass === 'opaque') this.drawnChunks = list.length;
+    // sub-levels: each chunk turned about the pivot, then put where the pivot is
+    for (const sd of ships) {
+      gl.uniformMatrix3fv(p.u.u_rot, false, sd.rot);
+      gl.uniform3f(p.u.u_offset, sd.tx - cam.x, sd.ty - cam.y, sd.tz - cam.z);
+      const r = sd.rot;
+      for (const c of sd.chunks) {
+        const g = c.mesh as ChunkGPU | null;
+        if (!g || (pass === 'opaque' ? !g.opaqueVao : !g.transVao)) continue;
+        const px = c.cx * 16 - sd.lx, py = -sd.ly, pz = c.cz * 16 - sd.lz;
+        gl.uniform3f(p.u.u_pre, px, py, pz);
+        drawSections(g, (s) => {
+          // the section's centre, turned and placed, in a box big enough for any turn
+          const lx = px + 8, ly = py + s * 16 + 8, lz = pz + 8;
+          const x = r[0] * lx + r[3] * ly + r[6] * lz + sd.tx - cam.x, y = r[1] * lx + r[4] * ly + r[7] * lz + sd.ty - cam.y, z = r[2] * lx + r[5] * ly + r[8] * lz + sd.tz - cam.z;
+          return this.boxVisible(x - 14, y - 14, z - 14, x + 14, y + 14, z + 14);
+        });
+      }
+    }
+    gl.uniformMatrix3fv(p.u.u_rot, false, IDENT3);
+    gl.uniform3f(p.u.u_pre, 0, 0, 0);
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);
     return drawn;
@@ -726,6 +753,10 @@ export class Renderer {
 }
 
 const IDENT = mat4();
+const IDENT3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+
+/** A sub-level to draw: its chunks, its rotation (column-major 3x3) and where its pivot is (world and local). */
+export interface ShipDraw { rot: Float32Array; tx: number; ty: number; tz: number; lx: number; ly: number; lz: number; chunks: Chunk[] }
 
 function extractPlanes(m: Mat4, p: Float32Array) {
   const rows = [

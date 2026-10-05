@@ -12,7 +12,7 @@ Contents: [The model](#how-the-game-is-put-together) · [Quick start](#quick-sta
 [Build and test](#build-install-and-test) · [Lifecycle](#lifecycle-and-entrypoints) · [The context](#the-context-mod) ·
 [Blocks](#blocks) · [Items](#items) · [Recipes](#recipes) · [World generation](#world-generation) ·
 [Entities](#entities-and-mobs) · [Commands](#commands) · [Server side](#programming-the-server-side) ·
-[Events](#events) · [Client side](#programming-the-client-side) · [Rendering](#rendering) · [Views](#views-camera-and-controls) · [Screens](#screens) ·
+[Events](#events) · [Client side](#programming-the-client-side) · [Rendering](#rendering) · [Views](#views-camera-and-controls) · [Sub-levels](#sub-levels-moving-structures) · [Screens](#screens) ·
 [Phones](#phones-and-touch) · [Settings](#settings) · [Networking](#networking) · [Mixins](#mixins) ·
 [Ids and worlds](#ids-worlds-and-missing-mods) · [Multiplayer](#multiplayer) · [Rules and pitfalls](#rules-and-pitfalls) ·
 [Examples](#example-mods) · [Where things are](#where-things-are) · [Publishing](#publishing)
@@ -629,6 +629,7 @@ It lives on the server only, so send what clients need over a channel.
 | `blockBroken`, `blockPlaced` | server | `{ game, player, x, y, z, v }` | |
 | `entityDamage` | server | `{ game, entity, amount, source }` | `'fail'` cancels |
 | `entityDeath` | server | `{ game, entity, source }` | |
+| `subLevelTick` | server | `{ game, ship, dt }`, each moving sub-level before the physics step | push it ([Sub-levels](#sub-levels-moving-structures)) |
 | `clientTick`, `clientJoin` | client | `client` | |
 | `screenOpen` | client | `{ screen }` | |
 | `tooltip` | client | `{ stack, lines }` | |
@@ -733,6 +734,69 @@ The player still exists while a view is on: the world loads around it and the se
 that roams (a strategy camera) moves the player along (the Overseer puts its player in spectator mode and carries
 it under the camera). Picking what's under the pointer is up to the view: the Overseer's `cam.ts` has the ray
 through a screen point for a flat projection, a voxel ray walk and a point-to-screen projection.
+
+---
+
+## Sub-levels (moving structures)
+
+The game has moving block structures built in, the way Valkyrien Skies and Sable add them to Minecraft: airships,
+boats, cars, drawbridges. A **sub-level** is a set of ordinary blocks living in its own **plot** in the
+**shipyard**, a strip of every dimension far to the east (block x 320000 and on) that is never generated. Its
+**pose** places those blocks in the world. Because they're real blocks in real chunks, every block keeps working on
+a sub-level: chests and furnaces, redstone, tile entities, your mod's machines and their tile renderers. Players
+walk on sub-levels and ride along as they move and turn, aim at their blocks, break and place them; entities that
+appear in a plot (a broken block's drop) are moved out to where that spot really is.
+
+Physics is Rapier (WebAssembly, loaded the first time a world has a sub-level, on the host only). Each sub-level is
+a rigid body made of its blocks, colliding with the terrain around it and with other sub-levels. Gravity is 11 m/s²
+(Sable's), masses are in kpg (a plain block weighs 1; wood, wool and glass less, stone and metal more), and blocks
+under water are pushed up by the water they displace. Air resistance grows with the square of the speed.
+
+**Coordinates.** A sub-level's blocks have **local** coordinates: their position in its plot. Its pose maps them to
+the world: `world = R * (local - L) + T`, with `L` the pivot (local, near the centre of mass), `T` where the pivot is
+(the entity's `x y z`) and `R` its rotation (a quaternion). In block hooks, `c.x c.y c.z` of a block on a sub-level
+are local. Use `game.sublevels.containing(x, y, z)` to find the sub-level, and `s.toWorld(x, y, z)` /
+`s.toLocal(x, y, z)` to go between the two.
+
+**The sub-level** (`SubLevel`, an entity, `mod.mc.SubLevel`; `world.ships` lists them on the server and on every
+client):
+
+| | |
+|---|---|
+| `x y z`, `q` (`qx qy qz qw`), `lx ly lz` | Pivot in the world, rotation, pivot in local coordinates. |
+| `pose()`, `poseAt(partial)` | The pose now, or between ticks (for drawing). |
+| `toWorld(x, y, z)`, `toLocal(x, y, z)` | Map points. Directions: `mod.mc.pose.dirToWorld(pose, x, y, z)`. |
+| `bounds` | Local block bounds `[x0, y0, z0, x1, y1, z1]` (inclusive). `radius()`: everything is within it of the pivot. |
+| `lin`, `ang` | Velocity (m/s) and angular velocity (rad/s), world axes. |
+| `mass`, `blockCount`, `label`, `owner`, `anchored` | |
+| `data` | Your mod's own data for it (saved with it, and replicated to clients: keep it small). |
+
+**On the server**, `game.sublevels`:
+
+| | |
+|---|---|
+| `assemble(cells, { owner?, label?, anchor? })` | Turn world blocks (`[x, y, z][]`) into a sub-level. Returns `{ ship }` or `{ error }`. `mod.mc.gatherStructure(world, x, y, z)` gives the blocks connected to one (without the ground), as a Physics Assembler would take them. |
+| `disassemble(ship, { force? })` | Put its blocks back into the world, turned to the nearest quarter turn. Returns why not (too tilted, something in the way), or null. Blocks turn with it: your blocks with a facing should have a `rotate(meta, turns)` hook. |
+| `remove(ship)` | Take it away (its blocks stay behind in its plot, unused). |
+| `list(dim?)`, `get(id)`, `containing(x, y, z)`, `worldPos(x, y, z)` | Find sub-levels; map a shipyard point to the world. |
+| `applyForce(ship, fx, fy, fz, px, py, pz)` | Push (kpg·m/s², world directions) at a world point, for this tick. |
+| `applyLocalForce(ship, fx, fy, fz, lx, ly, lz)` | The same in the sub-level's own directions at a local point: a thruster. |
+| `applyTorque(ship, tx, ty, tz)`, `velocityAt(ship, px, py, pz)` | |
+| `setVelocity(ship, lin, ang)`, `teleport(ship, x, y, z, q?)`, `anchor(ship, on)`, `markDirty(ship)` | |
+
+Push sub-levels from the **`subLevelTick`** event, which runs once a tick for every moving sub-level just before the
+physics step: `mod.on('subLevelTick', ({ game, ship, dt }) => game.sublevels.applyLocalForce(ship, 0, 220, 0, x, y, z))`.
+Forces applied at other times are dropped. Your parts can find themselves cheaply from their tile entity's `tick`:
+note the part there and use the list in `subLevelTick` (the Aeronautics mod does this).
+
+Also in `mod.mc`: `pose` (quaternion helpers: `qrot`, `qmul`, `slerp`, `qyaw`, `toWorld`, `toLocal`...),
+`airPressure(y)` (1 at sea level, less higher up, none above 320), `setBlockPhysics(id, { mass, friction,
+restitution, volume })` for your blocks, `blockPhysics(v)`, `PHYS` (gravity and the other settings),
+`ridingShip(entity)` (the sub-level an entity stands on, on either side). Rays: a `BlockHit` on a sub-level has
+`ship` set and local coordinates, on the client (`client.target`) and the server (`game.target`).
+
+For trying things by hand there's `/sublevel` (host): `assemble` (what you look at, or a box `x1 y1 z1 x2 y2 z2`),
+`land`, `list`, `push id vx vy vz`, `spin`, `tp`, `anchor`, `name`, `remove`.
 
 ---
 
@@ -972,6 +1036,7 @@ Each example is a complete mod in this folder; read the one closest to what you'
 | `kinetic` (Kinetics) | `main.ts` | Machines: power spread through neighbouring tile entities, animated tile renderers (spinning shafts, crank, windmill sails, millstone), custom shapes, a HUD readout. |
 | `minimap` (Minimap) | `main.ts` | A client-only mod (`"environment": "client"`): HUD drawing, a rebindable key, a generated settings page. |
 | `overseer` (Overseer) | `main.ts` (wiring), `defs.ts` (units, buildings, blueprints), `cam.ts`, `ctl.ts`, `hud.ts`, `units.ts`, `ai.ts`, `server.ts`, `place.ts`, `state.ts` | A view (`setView`): a flat 2.5D camera, a free pointer with mouse and touch gestures, camera-relative walking and pointer aiming for a hero. A strategy game on top: one mob class for many unit kinds drawn in player skins and armour, server-side unit AI (paths, fights, gathering, building block by block), shared placement rules for the client's ghost and the server's check, `keepLoaded`, a mixin that makes monsters target units, a command, host settings. Its own tour is [`overseer/README.md`](overseer/README.md). |
+| `aeronautics` (Aeronautics) | `main.ts` (wiring), `blocks.ts`, `flight.ts`, `client.ts`, `art.ts` | Sub-levels: assembling and landing structures, forces from the `subLevelTick` event (propellers, hot-air balloons found by a layered flood fill, levitite, gyroscopes), parts that find their sub-level from their tile ticks, a view that turns the movement keys into a pilot's controls sent over a channel, flight readouts on the HUD, tile renderers spinning on moving ships, a hold-to-use tool that drags sub-levels. Its own guide is [`aeronautics/README.md`](aeronautics/README.md). |
 | `wands` (Wands) | `main.ts` (wiring), `spelldefs.ts` + `catalog/*.ts` (data), `engine.ts`, `motion.ts`, `server.ts`, `status.ts`, `blocks.ts`, `fx.ts`, `hud.ts`, `editor.ts`, `dummy.ts`, `art.ts`, `icons.ts` | A large mod: hold-to-use items with data in `stack.tag`; server-side projectiles sent as compact per-tick events that each client flies itself; glow rendering; a phone-friendly editor screen with drag and drop, tap-to-move and undo, whose edits the server checks; a touch button; host settings; a mob drawn by its own renderer with private data kept off the entity. Its own reference is [`wands/README.md`](wands/README.md), and every spell is listed in [`wands/SPELLS.md`](wands/SPELLS.md). |
 
 ## Where things are
@@ -991,6 +1056,7 @@ Each example is a complete mod in this folder; read the one closest to what you'
 | `src/entity/*.ts` | Entities and mobs. |
 | `src/client/client.ts`, `src/ui/*.ts` | The client, screens, HUD, GUI helpers, touch controls. |
 | `src/client/view.ts` | `ClientView`: what a mod's view can take over. |
+| `src/sublevel/*.ts` | Sub-levels: `ship.ts` (the entity), `server.ts` (`game.sublevels`, physics), `collide.ts` (walking and riding, rays), `pose.ts`, `shipyard.ts`. |
 | `tools/vite-mods.ts` | How mods are built and served. |
 
 ## Publishing

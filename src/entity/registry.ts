@@ -8,6 +8,7 @@ import { Minecart } from './minecart';
 import { Horse, Donkey, Mule } from './horse';
 import { EnderDragon, EndCrystal } from './dragon';
 import { ENTITIES } from '../mod/hooks';
+import { SubLevel } from '../sublevel/ship';
 import { isActive } from '../mod/state';
 
 type Ctor = new (w: World, g: Game) => Entity;
@@ -21,6 +22,7 @@ export function createEntity(type: string, world: World, game: Game): Entity | n
   if (type === 'item') return new ItemEntity(world, game, { id: 1, count: 1 });
   if (type === 'boat') return new Boat(world, game);
   if (type === 'minecart') return new Minecart(world, game);
+  if (type === 'sublevel') return new SubLevel(world, game);
   const C = MOB_TYPES[type];
   if (C) return new C(world, game);
   // mod entities ('mod:name')

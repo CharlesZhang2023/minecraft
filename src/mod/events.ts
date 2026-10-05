@@ -9,6 +9,7 @@ import type { Screen } from '../ui/screen';
 import type { Ctx } from '../ui/gui';
 import type { ActionResult } from './types';
 import type { RenderContext } from './render';
+import type { SubLevel } from '../sublevel/ship';
 import { isActive, reportError } from './state';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -82,6 +83,8 @@ export const Events = {
   /** A living thing is about to take damage: 'fail' cancels it. */
   entityDamage: ev<(c: { game: Game; entity: Entity; amount: number; source: string }) => ActionResult | void>('entityDamage'),
   entityDeath: ev<(c: { game: Game; entity: Entity; source: string }) => void>('entityDeath'),
+  /** Each moving sub-level, once a tick before the physics step: push it with game.sublevels.applyForce & co. */
+  subLevelTick: ev<(c: { game: Game; ship: SubLevel; dt: number }) => void>('subLevelTick'),
   // client
   clientTick: ev<(client: Client) => void>('clientTick'),
   /** Joined a world (single-player or someone else's): the registries are bound, the world is about to load. */

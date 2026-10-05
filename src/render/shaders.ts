@@ -43,13 +43,16 @@ layout(location=1) in vec4 a_uvl;
 layout(location=2) in vec4 a_col;
 uniform mat4 u_viewProj;
 uniform vec3 u_offset;
+// sub-levels: their chunks are turned (u_rot) about their pivot (u_pre: the chunk's corner from the pivot)
+uniform mat3 u_rot;
+uniform vec3 u_pre;
 out vec3 v_uv;
 out vec4 v_col;
 out vec2 v_light;
 out vec3 v_dist;
 flat out int v_masked;
 void main() {
-  vec3 p = vec3(a_pos.xyz) / 128.0 - 16.0 + u_offset;
+  vec3 p = u_rot * (vec3(a_pos.xyz) / 128.0 - 16.0 + u_pre) + u_offset;
   gl_Position = u_viewProj * vec4(p, 1.0);
   v_uv = vec3(a_uvl.xy / 128.0, float(a_pos.w & 0x7fffu));
   v_masked = int(a_pos.w >> 15u);
