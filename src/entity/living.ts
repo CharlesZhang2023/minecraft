@@ -403,7 +403,7 @@ export class LivingEntity extends Entity {
           } else if (id === B.FIRE && !this.fireImmune) {
             this.damage(1, 'fire');
             this.fireTicks = Math.max(this.fireTicks, 160);
-          } else if (id === B2.SWEET_BERRY_BUSH || id === B2.SOUL_FIRE) insideBlock(this as never, id, metaOf(this.world.get(x, y, z)));
+          } else if (id === B2.SWEET_BERRY_BUSH || id === B2.SOUL_FIRE || id === B2.WITHER_ROSE) insideBlock(this as never, id, metaOf(this.world.get(x, y, z)));
         }
     if (this.y < -64) this.damage(4, 'void');
   }

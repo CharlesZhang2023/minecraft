@@ -7,7 +7,7 @@ import type { World } from '../world/world';
 import type { Player } from './player';
 import { commandTile } from './commandblocks';
 import { B, B2, BLOCKS, OPAQUE, WOOD, SHULKER_BOXES, BANNERS, isCommandBlock, idOf, metaOf, pack, WATERLOGGED, waterloggable, blockByName, isLog } from '../world/blocks';
-import { I, I3, I7, I11, ItemStack, ItemDef, getItem, stack, POTION_ITEMS, DISCS, isDyeable } from './items';
+import { I, I3, I7, I11, ItemStack, ItemDef, getItem, stack, POTION_ITEMS, DISCS, isDyeable, DYES } from './items';
 import { SMELTING } from './recipes';
 import { POT_PLANTS } from '../world/models';
 import { Random } from '../noise';
@@ -50,6 +50,16 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
   const id = idOf(v), m = metaOf(v);
   // the dyed shulker boxes open like the plain one
   if (SHULKER_BOXES.includes(id)) return stationUse(h, x, y, z, pack(B2.SHULKER_BOX, m), held) && (w.getId(x, y, z) === id || true);
+  // a dye on a sign colours its words (1.14)
+  if (held && DYES.includes(held.id) && /_sign$/.test(BLOCKS[id]?.name ?? '')) {
+    const t = (w.getTile(x, y, z) as unknown as { type: string; lines?: string[]; color?: number } | undefined) ?? { type: 'sign', lines: ['', '', '', ''] };
+    const c = DYES.indexOf(held.id);
+    if (t.color === c) return false;
+    w.setTile(x, y, z, { ...t, color: c } as never);
+    h.consume(1);
+    g.audio.play('dig.cloth', at(x, y, z), 0.4, 1.4);
+    return true;
+  }
   // command blocks: only someone in creative may edit them
   if (isCommandBlock(id)) { if (!p.creative) return false; commandTile(w, x, y, z); (g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>).openCommandBlock?.(x, y, z); return true; }
   const ui = g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>;

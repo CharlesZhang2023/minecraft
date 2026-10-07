@@ -88,6 +88,10 @@ export function insideBlock(e: Entity & { damage?(n: number, s: string): boolean
     const moved = Math.abs(e.x - e.px) > 0.003 || Math.abs(e.z - e.pz) > 0.003;
     const kind = (e as unknown as { typeName?: string }).typeName;
     if (meta > 0 && moved && kind !== 'Fox' && kind !== 'Bee') e.damage?.(1, 'sweet_berry_bush');
+  } else if (id === B2.WITHER_ROSE) {
+    // wither roses wither whatever touches them (but not the undead's master, nor the undead)
+    const m = e as unknown as { typeName?: string; undead?: boolean; addEffect?(id: string, t: number, a: number): void; creative?: boolean };
+    if (m.typeName !== 'Wither' && !m.undead && !m.creative) m.addEffect?.('wither', 40, 0);
   } else if (id === B2.SOUL_FIRE && !e.fireImmune) {
     e.damage?.(2, 'soul_fire');
     e.fireTicks = Math.max(e.fireTicks, 160);

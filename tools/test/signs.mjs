@@ -36,6 +36,17 @@ await t.page.evaluate(([x, y, z]) => window.sim((g) => g.world.setTile(x + 1, y 
 await wait(800);
 await t.look(at.x + 0.5, at.y + 1.4, at.z - 2.5, 0, 12, 60);
 await wait(800);
+const dyed = await t.page.evaluate(async ([x, y, z]) => {
+  const { DYES, stack } = await import('/src/game/items.ts');
+  const { stationUse } = await import('/src/game/stations.ts');
+  return window.sim((g, p) => {
+    p.inventory.main[p.inventory.selected] = stack(DYES[14]);
+    stationUse(g.interact, x + 1, y + 1, z + 2, g.world.get(x + 1, y + 1, z + 2), p.inventory.held());
+    return g.world.getTile(x + 1, y + 1, z + 2)?.color;
+  });
+}, [at.x, at.y, at.z]);
+ok(dyed === 14, `a dye colours a sign's words (${dyed})`);
+await wait(800);
 await t.shot('signs');
 await t.look(null);
 
@@ -64,6 +75,21 @@ const box = await t.page.evaluate(async () => {
 });
 ok(box.kept, 'a broken shulker box keeps its contents in the item');
 ok(box.placed && box.back, 'and placing it puts them back');
+
+// a wither rose withers what walks into it
+const rose = await t.page.evaluate(async () => {
+  const { B2 } = await import('/src/world/blocks.ts');
+  return window.sim((g, p) => {
+    const w = g.world, x = Math.floor(p.x) - 4, y = Math.floor(p.y) + 20, z = Math.floor(p.z) - 4;
+    w.set(x, y - 1, z, 2); w.set(x, y, z, B2.WITHER_ROSE);
+    const pig = g.interact.spawnMob('pig', x + 0.5, y, z + 0.5);
+    pig.noAi = true;
+    return pig.id;
+  });
+});
+await wait(800);
+const withered = await t.page.evaluate((id) => window.sim((g) => g.entities.find((e) => e.id === id)?.effects?.has('wither')), rose);
+ok(withered, 'a wither rose withers a pig standing in it');
 
 ok(t.errors.length === 0, 'no page errors ' + t.errors.slice(0, 3).join(' | '));
 await t.close();

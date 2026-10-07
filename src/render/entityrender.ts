@@ -21,7 +21,7 @@ import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball } from '../entity/item';
 import { ThrownPotion } from '../entity/potion';
-import { getItem, I, I6, I7 } from '../game/items';
+import { getItem, I, I6, I7, DYE_RGB } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
 import { BLOCKS, TEXTURES, Render, B, B2, WOOD, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX, Shape, metaOf, idOf, OPAQUE, isBanner, bannerColor } from '../world/blocks';
 import { bannerPixels } from '../game/banners';
@@ -1366,14 +1366,14 @@ export class EntityRenderer {
     for (const c of w.chunks.values()) {
       if (!c.tiles.size || Math.abs(c.cx - ccx) > 2 || Math.abs(c.cz - ccz) > 2) continue;
       for (const [i, tl] of c.tiles) {
-        const st = tl as unknown as { type: string; lines?: string[] };
+        const st = tl as unknown as { type: string; lines?: string[]; color?: number };
         if (st.type !== 'sign' || !st.lines?.some((l) => l)) continue;
         const bx = c.cx * 16 + (i & 15), by = i >> 8, bz = c.cz * 16 + ((i >> 4) & 15);
         if ((bx + 0.5 - cam.x) ** 2 + (by - cam.y) ** 2 + (bz + 0.5 - cam.z) ** 2 > 24 * 24) continue;
         const v = w.get(bx, by, bz), def = BLOCKS[idOf(v)];
         const wall = def?.shape === Shape.WallSign;
         if (!def || (!wall && def.shape !== Shape.Sign)) continue;
-        const key = 'sign:' + st.lines.join('\n');
+        const key = 'sign:' + (st.color ?? 15) + ':' + st.lines.join('\n');
         let tex = this.signTextures.get(key);
         if (!tex) {
           if (this.signTextures.size > 200) this.signTextures.clear();
@@ -1383,7 +1383,10 @@ export class EntityRenderer {
           ctx.imageSmoothingEnabled = false;
           ctx.save();
           ctx.scale(1, 1.6);
-          st.lines.slice(0, 4).forEach((l, k) => game.ui.gui.font.drawCentered(ctx as never, l, 56, 1 + k * 10, '#000000', false));
+          // dyed text: vanilla darkens the dye a little (black stays black)
+          const dc = st.color === undefined || st.color === 15 ? 0 : DYE_RGB[st.color];
+          const ink = '#' + (0x1000000 + ((Math.round(((dc >> 16) & 255) * 0.4) << 16) | (Math.round(((dc >> 8) & 255) * 0.4) << 8) | Math.round((dc & 255) * 0.4))).toString(16).slice(1);
+          st.lines.slice(0, 4).forEach((l, k) => game.ui.gui.font.drawCentered(ctx as never, l, 56, 1 + k * 10, ink, false));
           ctx.restore();
           tex = this.r.makeTexture(cv, 224);
           this.signTextures.set(key, tex);
