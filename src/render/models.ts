@@ -455,6 +455,19 @@ const PROFESSION_ROBES: Record<string, [string, string, string?]> = {
   priest: ['#6a2a8a', '#4a1a62', '#e0c040'],
   smith: ['#3a3a3a', '#262626', '#7a5a36'],
   butcher: ['#e8e8e8', '#c0c0c0', '#b02020'],
+  // 1.14 professions (and the jobless)
+  unemployed: ['#7a6a52', '#5e503c'],
+  nitwit: ['#3e7a3a', '#2c5a28', '#c8b078'],
+  armorer: ['#3a3a3e', '#26262a', '#c8c8c8'],
+  cartographer: ['#c8b890', '#a89870', '#3a5a9a'],
+  cleric: ['#6a2a8a', '#4a1a62', '#e0c040'],
+  fisherman: ['#7a6a52', '#5e503c', '#d8c050'],
+  fletcher: ['#7a6a52', '#5e503c', '#a8d0e0'],
+  leatherworker: ['#8a5a32', '#6a4222', '#3a2a1a'],
+  mason: ['#7a6a52', '#5e503c', '#2a2a2a'],
+  shepherd: ['#8a6a4a', '#6a4e34', '#e8e8e8'],
+  toolsmith: ['#3a3a3a', '#262626', '#7a5a36'],
+  weaponsmith: ['#3a3a3a', '#262626', '#c02a2a'],
 };
 export const PROFESSIONS = Object.keys(PROFESSION_ROBES);
 export function villagerSkin(prof: string): Skin {

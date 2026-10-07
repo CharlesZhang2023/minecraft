@@ -116,6 +116,7 @@ const effects = await t.page.evaluate(async () => {
     a.setPos(p.x, p.y + 1, p.z - 1);
     a.vx = 0; a.vy = 0; a.vz = 1;
     g.addEntity(a);
+    p.invulnerable = 0; p.health = 20;
     a.tick();
     const slowed = p.effects.has('slowness');
     p.invulnerable = 0;

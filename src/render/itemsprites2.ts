@@ -144,6 +144,7 @@ export function paintItems2(k: SpriteKit) {
   define('writable_book', () => { const img = newImg(); const s = k.get('book'); if (s) img.set(s); for (let i = 0; i < 8; i++) set(img, 6 + i, 1 + i, i < 2 ? hex('#2a2a2a') : hex('#f0f0f0')); return img; });
   define('unused_item_1', () => newImg());
   define('unused_item_2', () => newImg());
+  sprite('ominous_banner', ['.ss.............', '.sWWWWWWWWW.....', '.sWWWWWWWWW.....', '.sWbbWWWbbW.....', '.sWbkbbbkbW.....', '.sWWbbbbbWW.....', '.sWWbkkkbWW.....', '.sWWWbbbWWW.....', '.sWWbbkbbWW.....', '.sWWWbbbWWW.....', '.sWWWWWWWWW.....', '.sWgWgWgWgW.....', '.sWWWWWWWWW.....', '.s..............', '.s..............', '.s..............'], { s: hex('#6a4a2a'), W: hex('#e8e8e0'), b: hex('#1a8a8a'), k: hex('#1a1a1a'), g: hex('#c8a040') });
   sprite('nether_star', ['', '.......w........', '......wWw.......', '......wWw.......', '..ww.wWWWw.ww...', '...wWWWyWWWw....', '....wWyyyWw.....', '.....wWyWw......', '....wWWwWWw.....', '...wWw...wWw....', '..ww.......ww...'], { w: hex('#d8e0f0'), W: hex('#ffffff'), y: hex('#f8f0a0') }, '#4a4a6a');
   // boats in every wood
   const BOAT_WOOD: Record<string, [string, string]> = { spruce: ['#5a4024', '#3e2d17'], birch: ['#c8b077', '#9a8757'], jungle: ['#a0734d', '#5f4027'], acacia: ['#ad5d32', '#7a3e1f'], dark_oak: ['#442d14', '#2d1d0c'] };

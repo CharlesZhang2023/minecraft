@@ -282,6 +282,13 @@ export class Hud {
     const p = g.player!;
     const wither = g.entities.find((e) => (e as unknown as { typeName?: string }).typeName === 'Wither' && !e.removed && e.distanceTo(p) < 64) as (LivingEntity & { invul?: number }) | undefined;
     if (wither) { this.drawBossBar(ctx, 'Wither', wither.health / wither.maxHealth, '#5a1a6a', '#c040ff'); return; }
+    // a raid: the health left in the raiders nearby
+    const raiders = g.entities.filter((e) => ((e as unknown as { raid?: number }).raid ?? 0) > 0 && !(e as LivingEntity).dead && e.distanceTo(p) < 96) as LivingEntity[];
+    if (raiders.length) {
+      const hp = raiders.reduce((a, e) => a + e.health, 0), max = raiders.reduce((a, e) => a + e.maxHealth, 0);
+      this.drawBossBar(ctx, `Raid - Raiders Remaining: ${raiders.length}`, hp / max, '#4a1010', '#c02020');
+      return;
+    }
     if (g.world.dimension !== 'end') return;
     const d = g.entities.find((e) => e instanceof EnderDragon && !e.removed) as EnderDragon | undefined;
     if (!d) return;

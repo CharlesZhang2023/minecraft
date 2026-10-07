@@ -474,6 +474,10 @@ export const EXTRA_EGGS5: { mob: string; display: string; c1: number; c2: number
   { mob: 'wandering_trader', display: 'Wandering Trader', c1: 0x456296, c2: 0xeaa430 },
 ];
 for (const e of EXTRA_EGGS5) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
+export const I9 = {
+  /** What a patrol captain carries (banners as blocks aren't in the game yet: this one is an item). */
+  OMINOUS_BANNER: item('ominous_banner', 'Ominous Banner', { maxStack: 16, rarity: 'uncommon' }),
+};
 
 // block items of the new blocks: sizes and fuel that differ from the defaults
 for (const id of [...BEDS]) { const d = ITEMS.get(id); if (d) d.maxStack = 1; }

@@ -9,6 +9,7 @@ import { BIOME, isOceanBiome } from '../world/biomes';
 import { MOB_TYPES } from './registry';
 import { spawnPhantoms } from './overworldmobs';
 import { pickVariant, releaseShoulders, spawnWanderingTrader } from './animals';
+import { tickRaids } from '../game/raids';
 
 export class Spawner {
   private rng = new Random(Date.now() & 0xffff);
@@ -53,6 +54,7 @@ export class Spawner {
     }
     if (w.dimension === 'overworld' && g.ticks % 1200 === 0) spawnPhantoms(g, this.rng);
     if (w.dimension === 'overworld' && g.ticks % 24000 === 12000) spawnWanderingTrader(g, this.rng);
+    if (w.dimension === 'overworld') tickRaids(g, this.rng);
     if (w.dimension === 'overworld' && g.ticks % 40 === 0) this.ambient(mobs);
   }
 

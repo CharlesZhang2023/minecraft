@@ -260,7 +260,7 @@ export abstract class Illager extends GoalMob {
     if (this.captain && !this.raid && who instanceof Player) {
       const cur = who.effectAmp('bad_omen');
       who.addEffect('bad_omen', 120000, Math.min(4, cur + 1));
-      this.game.dropItem(this.x, this.y + 0.5, this.z, stack(itemId('ominous_banner') || itemId('white_banner') || I.STICK));
+      this.game.dropItem(this.x, this.y + 0.5, this.z, stack(itemId('ominous_banner')));
     }
   }
   override despawnCheck() { if (!this.raid && !this.patrol && !this.persistentHostile) super.despawnCheck(); }

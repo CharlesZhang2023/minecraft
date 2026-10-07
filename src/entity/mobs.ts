@@ -1,4 +1,5 @@
 // Mob behaviours.
+import { villagerTick, villagerTrades } from './villagers';
 import { LivingEntity, DamageSource } from './living';
 import type { Entity } from './entity';
 import type { World } from '../world/world';
@@ -1166,7 +1167,7 @@ function bookTrade(r: Random): { ench: Record<string, number>; cost2: [number, n
   const lvl = 1 + r.int(e.max);
   return { ench: { [e.id]: lvl }, cost2: [I.EMERALD, Math.min(64, 2 + r.int(5 + lvl * 10) + 3 * lvl)] };
 }
-export interface Trade { cost: [number, number]; cost2?: [number, number]; result: [number, number]; ench?: Record<string, number>; uses: number; max: number }
+export interface Trade { cost: [number, number]; cost2?: [number, number]; result: [number, number]; ench?: Record<string, number>; uses: number; max: number; /** Villager experience for making it. */ xp?: number }
 
 export class Villager extends Mob {
   typeName = 'Villager';
@@ -1175,9 +1176,15 @@ export class Villager extends Mob {
   override hurtName = 'villager.hurt';
   override deathName = 'villager.hurt';
   override speedAttr = 0.25;
-  profession = 'farmer';
+  /** '' = unemployed (looks for a workstation); 'nitwit' never works. */
+  profession = '';
   trades: Trade[] | null = null;
   tradingWith: LivingEntity | null = null;
+  /** Experience from trading, and the level it unlocks (1 novice .. 5 master). */
+  tradeXp = 0;
+  level = 1;
+  /** The workstation it has claimed. */
+  jobSite: { x: number; y: number; z: number } | null = null;
   constructor(world: World, game: Game) {
     super(world, game);
     this.width = 0.6; this.height = 1.95;
@@ -1199,26 +1206,14 @@ export class Villager extends Mob {
     this.wander(0.035, 200);
   }
   override onDamaged() { this.panicTicks = 60; this.path = null; }
-  ensureTrades(): Trade[] {
-    if (this.trades) return this.trades;
-    const r = new Random((this.id * 7919) ^ 0x5eed);
-    const t = (cost: [number, number], result: [number, number], cost2?: [number, number]): Trade => ({ cost, cost2, result, uses: 0, max: 7 + r.int(6) });
-    const E = I.EMERALD;
-    const n = (lo: number, hi: number) => lo + r.int(hi - lo + 1);
-    const T: Record<string, Trade[]> = {
-      farmer: [t([I.WHEAT, n(18, 22)], [E, 1]), t([E, 1], [I.BREAD, n(4, 6)]), t([E, 1], [I.APPLE, n(4, 6)]), t([B.PUMPKIN, n(8, 13)], [E, 1]), t([E, 1], [I.COOKIE, n(7, 10)])],
-      librarian: [t([I.PAPER, n(24, 36)], [E, 1]), { ...t([I.BOOK, 1], [I3.ENCHANTED_BOOK, 1], [E, 0]), ...bookTrade(r) }, t([I.BOOK, n(8, 10)], [E, 1]), t([E, n(3, 4)], [B.BOOKSHELF, 1]), t([E, 1], [B.GLASS, n(3, 5)]), t([E, n(8, 10)], [I.COMPASS, 1]), t([E, n(20, 22)], [I3.NAME_TAG, 1])],
-      priest: [t([I.ROTTEN_FLESH, n(36, 40)], [E, 1]), t([I.GOLD_INGOT, n(8, 10)], [E, 1]), t([E, n(2, 4)], [I3.GLASS_BOTTLE, n(2, 3)]), t([E, 1], [I3.NETHER_WART, n(1, 3)]), t([E, 1], [I.REDSTONE, n(1, 4)]), t([E, 1], [I.LAPIS, n(1, 2)]), t([E, n(4, 7)], [I.ENDER_PEARL, 1]), t([E, n(3, 4)], [I.GLOWSTONE_DUST, n(1, 3)])],
-      smith: [t([I.COAL, n(16, 24)], [E, 1]), t([I.IRON_INGOT, n(7, 9)], [E, 1]), t([E, n(7, 9)], [TOOLS.iron_pickaxe, 1]), t([E, n(9, 12)], [TOOLS.iron_sword, 1]), t([E, n(12, 15)], [TOOLS.diamond_axe, 1])],
-      butcher: [t([I.PORKCHOP, n(14, 18)], [E, 1]), t([I.CHICKEN, n(14, 18)], [E, 1]), t([E, 1], [I.COOKED_PORKCHOP, n(5, 7)]), t([E, 1], [I.COOKED_BEEF, n(5, 7)])],
-    };
-    this.trades = T[this.profession] ?? T.farmer;
-    return this.trades;
-  }
-  useLabel() { return this.baby || this.dead ? null : 'Trade'; }
+  /** Its trades (vanilla 1.16 tables by profession and level, see villagers.ts). */
+  ensureTrades(): Trade[] { return villagerTrades(this); }
+  useLabel() { return this.baby || this.dead || !this.profession || this.profession === 'nitwit' ? null : 'Trade'; }
   interact(game: Game, held: ItemStack | null): boolean {
     void held;
     if (this.baby || this.dead) return false;
+    // no job, nothing to sell: it shakes its head
+    if (!this.profession || this.profession === 'nitwit' || !this.ensureTrades().length) { game.audio.play('villager.no', this, 1, 1); this.lookTarget = game.player ? { x: game.player.x, y: game.player.y + 1.6, z: game.player.z } : null; this.lookTimer = 40; return true; }
     this.ensureTrades();
     game.audio.play('villager.trade', this, 1, 1);
     this.tradingWith = game.player;
@@ -1236,8 +1231,21 @@ export class Villager extends Mob {
     }
     super.die(source, attacker);
   }
-  override extraJSON() { return { profession: this.profession, trades: this.trades }; }
-  override loadExtra(d: Record<string, unknown>) { this.profession = (d.profession as string) ?? 'farmer'; this.trades = (d.trades as Trade[]) ?? null; }
+  override tick() {
+    super.tick();
+    if (!this.dead) villagerTick(this);
+    this.skin = 'villager_' + (this.profession || 'unemployed');
+  }
+  override extraJSON() { return { profession: this.profession, trades: this.trades, tradeXp: this.tradeXp, level: this.level, jobSite: this.jobSite }; }
+  override loadExtra(d: Record<string, unknown>) {
+    this.profession = (d.profession as string) ?? '';
+    this.trades = (d.trades as Trade[]) ?? null;
+    this.tradeXp = (d.tradeXp as number) ?? 0;
+    this.level = (d.level as number) ?? 1;
+    this.jobSite = (d.jobSite as Villager['jobSite']) ?? null;
+    // villagers saved with the old trades keep them (and their old professions take the new names)
+    if (this.trades && d.level === undefined) this.level = 1;
+  }
 }
 
 // ------------------------------------------------------------------ nether

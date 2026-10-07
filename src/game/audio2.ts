@@ -189,5 +189,15 @@ export function moreSounds(add: (name: string, g: Gen) => void, s: Synth, SR: nu
   add('anchor.charge', (r) => normalize(mixInto(env(tone(Math.floor(SR * 0.6), 250, 450, 'saw', 0.05, 10), 0.01, 0.5, 1.5), env(highpass(noise(Math.floor(SR * 0.6), r), 2500), 0.01, 0.4, 2), 0.3), 0.5));
   add('anchor.set', (r) => normalize(env(tone(Math.floor(SR * 0.8), 330, 330, 'tri', 0.02, 5), 0.02, 0.7, 1.5), 0.5));
   add('lodestone.lock', (r) => normalize(mixInto(env(tone(Math.floor(SR * 0.5), 700, 700, 'square'), 0.002, 0.4, 2.5), env(tone(Math.floor(SR * 0.5), 1050, 1050, 'sine'), 0.002, 0.4, 2.5), 0.5), 0.35));
+  add('raid.horn', (r) => {
+    const n = Math.floor(SR * 3), b = env(tone(n, 98, 92, 'saw', 0.02, 4), 0.4, 2.4, 1.2);
+    mixInto(b, env(tone(n, 147, 140, 'saw', 0.02, 4), 0.5, 2.3, 1.2), 0.5);
+    return normalize(lowpass(b, 900), 0.8);
+  });
+  add('raid.victory', (r) => {
+    const n = Math.floor(SR * 2), b = new Float32Array(n);
+    [0, 4, 7, 12].forEach((k, i) => mixInto(b, env(tone(Math.floor(SR * 0.9), 330 * 2 ** (k / 12), 330 * 2 ** (k / 12), 'tri'), 0.01, 0.8, 2), 0.5, Math.floor(SR * 0.18 * i)));
+    return normalize(b, 0.6);
+  });
   void highpass;
 }
