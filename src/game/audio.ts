@@ -2,6 +2,7 @@
 // procedurally synthesised ones.
 import { Random } from '../noise';
 import { SoundBank, loadSoundIndex, loadSoundBank } from './soundbank';
+import { cachedAsset, pruneAssets } from '../net/cdn';
 
 const SR = 22050;
 type Buf = Float32Array;
@@ -488,7 +489,7 @@ export class Audio {
   private music: Record<string, string[]> = {};
   private musicFailed = false;
   private musicKind: MusicKind = 'menu';
-  private track: { el: HTMLAudioElement; gain: GainNode; kind: MusicKind } | null = null;
+  private track: { el: HTMLAudioElement; gain: GainNode; kind: MusicKind; file: string; url: string } | null = null;
   private base = import.meta.env?.BASE_URL ?? '/';
   /** Resolves once the recorded set is in (or known not to be there). */
   readonly ready: Promise<void>;
@@ -500,10 +501,12 @@ export class Audio {
   private async load() {
     const idx = await loadSoundIndex(this.base);
     if (!idx) return;
-    // music streams through an <audio> element: only where that plays Ogg Opus
+    // music plays through an <audio> element: only where that plays Ogg Opus
     if (document.createElement('audio').canPlayType('audio/ogg; codecs="opus"')) this.music = idx.music ?? {};
-    this.bank = await loadSoundBank(this.base, idx);
+    this.bank = await loadSoundBank(idx);
     if (this.bank && this.ctx) void this.bank.warm(this.ctx);
+    // tracks kept from an earlier set
+    void pruneAssets([idx.sfx ?? '', ...Object.values(idx.music ?? {}).flat()].map((f) => 'sounds/' + f)).catch(() => {});
   }
 
   /** Must be called from a user gesture. */
@@ -754,13 +757,13 @@ export class Audio {
     const c = this.ctx!, tracks = this.tracksFor(kind);
     if (!tracks.length) return;
     const el = document.createElement('audio');
-    el.src = this.base + 'sounds/' + tracks[this.rng.int(tracks.length)];
     el.preload = 'auto';
     const gain = c.createGain();
     gain.gain.value = this.musicVolume;
     c.createMediaElementSource(el).connect(gain);
     gain.connect(this.master);
-    const t = { el, gain, kind };
+    const file = tracks[this.rng.int(tracks.length)];
+    const t = { el, gain, kind, file, url: '' };
     this.track = t;
     // the quiet after it is chosen when it ends
     this.musicTimer = Infinity;
@@ -769,13 +772,22 @@ export class Audio {
       if (this.track !== t) return;
       this.track = null;
       gain.disconnect();
+      if (t.url) URL.revokeObjectURL(t.url);
       this.musicTimer = Math.min(this.musicTimer, lo + this.rng.int(hi - lo + 1));
     };
-    el.onended = done;
-    el.onerror = () => { if (this.track === t) { this.musicFailed = true; console.warn('music: cannot play', el.src); } done(); };
-    el.play().catch((e: Error) => {
-      // not allowed yet (no gesture): try again in a while
-      if (e.name === 'NotAllowedError' && this.track === t) { this.track = null; gain.disconnect(); this.musicTimer = 200; }
+    // the whole track is downloaded first (once: it's kept in this browser), so a track played again costs nothing
+    // and plays offline; when it can't be had, the quiet starts and another is tried after it
+    void cachedAsset('sounds/' + file).then((blob) => {
+      if (this.track !== t) return;
+      if (!blob) { done(); return; }
+      t.url = URL.createObjectURL(blob);
+      el.onended = done;
+      el.onerror = () => { if (this.track === t) { this.musicFailed = true; console.warn('music: cannot play', file); } done(); };
+      el.src = t.url;
+      el.play().catch((e: Error) => {
+        // not allowed yet (no gesture): try again in a while
+        if (e.name === 'NotAllowedError' && this.track === t) { this.track = null; gain.disconnect(); URL.revokeObjectURL(t.url); this.musicTimer = 200; }
+      });
     });
   }
 
@@ -787,11 +799,11 @@ export class Audio {
     const now = this.ctx!.currentTime;
     t.gain.gain.setValueAtTime(t.gain.gain.value, now);
     t.gain.gain.linearRampToValueAtTime(0, now + 1);
-    setTimeout(() => { t.el.pause(); t.el.removeAttribute('src'); t.el.load(); t.gain.disconnect(); }, 1100);
+    setTimeout(() => { t.el.pause(); t.el.removeAttribute('src'); t.el.load(); t.gain.disconnect(); if (t.url) URL.revokeObjectURL(t.url); }, 1100);
   }
 
   /** What's playing (tests and the agent). */
-  musicNow() { return this.track ? { kind: this.track.kind, src: this.track.el.src, time: this.track.el.currentTime } : this.musicPlaying ? { kind: this.musicKind, src: 'synth', time: 0 } : null; }
+  musicNow() { return this.track ? { kind: this.track.kind, src: this.track.file, time: this.track.el.currentTime } : this.musicPlaying ? { kind: this.musicKind, src: 'synth', time: 0 } : null; }
 
   private synthPiece() {
     if (!this.ctx) return;

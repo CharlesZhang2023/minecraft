@@ -1,6 +1,8 @@
 // Offline support: the game keeps working with no internet (e.g. playing over a phone hotspot, paired by QR code).
 // Pages load network-first (so updates arrive), game files cache-first; the signaling service is never cached.
 const CACHE = 'mcw-v2';
+/** Sounds and music the game keeps itself (src/net/cdn.ts): not this worker's to clear. */
+const KEEP = [CACHE, 'mcw-media'];
 const CORE = ['./', './index.html', './manifest.webmanifest', './favicon.png', './apple-touch-icon.png', './icon-192.png', './icon-512.png', './multiplayer.json'];
 
 /** Cache everything this build consists of (listed at build time), including parts that load on demand. */
@@ -22,7 +24,7 @@ async function precache() {
 
 self.addEventListener('install', (e) => { e.waitUntil(precache().then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => !KEEP.includes(k)).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 // the page asks after each online load, so a new build's files get cached too
 self.addEventListener('message', (e) => { if (e.data === 'precache') e.waitUntil(precache()); });

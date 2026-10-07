@@ -3,7 +3,7 @@
 // vanilla.mjs), re-encoded small with ffmpeg. Mojang's audio isn't kept in git: the output folder is ignored, and a
 // game without it plays its own synthesised sounds.
 //
-//   node tools/sounds/make.mjs <pack>/assets/minecraft/sounds [--out public/sounds] [--sfx-kbps 32] [--music-kbps 40] [--no-music]
+//   node tools/sounds/make.mjs <pack>/assets/minecraft/sounds [--out public/sounds] [--sfx-kbps 32] [--music-kbps 32] [--no-music]
 //
 // Output:
 // - sfx-<hash>.bin: every sound effect, mono Opus (Ogg), in one file with an index (see src/game/soundbank.ts).
@@ -21,11 +21,11 @@ const args = process.argv.slice(2);
 const flag = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args.splice(i, 2)[1] : def; };
 const out = path.resolve(flag('--out', 'public/sounds'));
 const sfxKbps = Number(flag('--sfx-kbps', 32));
-const musicKbps = Number(flag('--music-kbps', 40));
+const musicKbps = Number(flag('--music-kbps', 32));
 const noMusic = args.includes('--no-music') && args.splice(args.indexOf('--no-music'), 1);
 const src = args[0] && path.resolve(args[0]);
 if (!src || !fs.existsSync(src)) {
-  console.error('usage: node tools/sounds/make.mjs <pack>/assets/minecraft/sounds [--out public/sounds] [--sfx-kbps 32] [--music-kbps 40] [--no-music]');
+  console.error('usage: node tools/sounds/make.mjs <pack>/assets/minecraft/sounds [--out public/sounds] [--sfx-kbps 32] [--music-kbps 32] [--no-music]');
   process.exit(1);
 }
 const file = (f) => path.join(src, f + '.ogg');

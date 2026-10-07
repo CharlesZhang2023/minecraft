@@ -1,7 +1,8 @@
-// The pack repository: static files next to the game (packs/index.json, one file per pack version), built from the
-// repo's packs/ folder like the mod repository. Downloads are checked against the SHA-256 in the index, then kept in
+// The pack repository: static files next to the game (packs/index.json, one file per pack version, also on the
+// CDN), built from the repo's packs/ folder like the mod repository. Downloads are checked against the SHA-256 in the index, then kept in
 // this browser.
 import { Storage } from '../game/storage';
+import { fetchAsset } from '../net/cdn';
 import { ZipArchive, decodeImage } from './zip';
 import { VALID_PACK_ID, type PackManifest, type PackPackage, type PackRepoEntry, type PackRepoIndex, type ShaderBundle, type ShaderManifest } from './types';
 
@@ -36,7 +37,8 @@ export function cleanPackManifest(m: PackManifest): PackManifest {
 export async function downloadPack(e: PackRepoEntry, onProgress?: (f: number) => void): Promise<PackPackage> {
   const have = await Storage.getPack(e.sha256);
   if (have) return have;
-  const r = await fetch('./packs/' + e.file, { cache: 'no-cache' });
+  // the file is named after its hash: from the CDN where it's quicker
+  const r = await fetchAsset('packs/' + e.file);
   if (!r.ok || !r.body) throw new Error(`Download failed (${r.status})`);
   // read it in pieces, for a progress bar on big resource packs
   const reader = r.body.getReader(), parts: Uint8Array[] = [];

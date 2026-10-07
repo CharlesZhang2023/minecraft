@@ -33,10 +33,20 @@ npm run sounds -- ~/Downloads/SoundPack/assets/minecraft/sounds
 ```
 
 It takes only the sounds the game plays (`tools/sounds/vanilla.mjs` says which file is which) and re-encodes them
-as Opus into `public/sounds/`: the sound effects as one ~1.8 MB file that's kept for offline play, and the music
-(~42 MB, 28 tracks) as one file per track, streamed only when it plays. Options: `--sfx-kbps 32`,
-`--music-kbps 40`, `--no-music`. The folder is Mojang's audio, so it stays out of git; without it (or in a browser
-that can't decode Ogg Opus) the synthesised sounds play.
+as Opus into `public/sounds/`: the sound effects as one ~1.8 MB file, and the music (~34 MB, 28 tracks) as one
+file per track, downloaded only when it's about to play. Both are kept in the browser once downloaded (a track is
+fetched at most once, and plays offline). Options: `--sfx-kbps 32`, `--music-kbps 32`, `--no-music`. The folder is
+Mojang's audio, so it stays out of git; without it (or in a browser that can't decode Ogg Opus) the synthesised
+sounds play.
+
+### CDN
+
+The big files named after their hash (sound effects, music, the pack repository's files) can also be served from
+a CDN: `npm run deploy:cdn` (after `npm run build`, with `wrangler` logged in) puts them on a Cloudflare Worker that
+serves only static files (`cdn/wrangler.jsonc`, address in `src/net/cdn.ts`). Each visit asks the CDN first; if it
+doesn't answer within 2.5 s (it can't be reached from mainland China), everything comes from the game's own server,
+and a file the CDN doesn't have is fetched from the server too, so the CDN can lag behind without breaking anything.
+Indexes and the game itself always come from the server.
 
 ## Agents (Claude Code, scripts)
 

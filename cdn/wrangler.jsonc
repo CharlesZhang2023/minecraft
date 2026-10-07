@@ -1,0 +1,9 @@
+{
+  // The game's CDN: only static files (the build's hashed sounds, music and pack files), put together in ../dist-cdn
+  // and deployed by tools/cdn.mjs (`npm run deploy:cdn`). No code runs here.
+  "name": "mc-cdn",
+  "compatibility_date": "2026-09-25",
+  "assets": { "directory": "../dist-cdn", "not_found_handling": "none" },
+  "workers_dev": true,
+  "preview_urls": false
+}

@@ -10,7 +10,8 @@
     "check": "tsc --noEmit",
     "mc": "node tools/agent/mc.mjs",
     "mcp": "node tools/agent/mcp.mjs",
-    "sounds": "node tools/sounds/make.mjs"
+    "sounds": "node tools/sounds/make.mjs",
+    "deploy:cdn": "node tools/cdn.mjs"
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.74",

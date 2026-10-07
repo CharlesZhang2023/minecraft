@@ -1,7 +1,8 @@
 // Recorded sounds (the vanilla set made by tools/sounds/make.mjs), standing in for the synthesised ones where the
 // bank has them. The bank is one file: "MCSB", a u32 header length, the header (JSON), then each sound file (Ogg
-// Opus) back to back. It's fetched at start-up; each file is decoded the first time it plays and dropped again
+// Opus) back to back. It's fetched at start-up (from the CDN or the server, then kept in this browser); each file is decoded the first time it plays and dropped again
 // when decoded audio passes a budget (a second of decoded sound is ~190 KB), so phones keep only what's in use.
+import { cachedAsset } from '../net/cdn';
 
 export interface BankSound {
   /** Its variants (blob indices), one picked at random each time. */
@@ -121,12 +122,12 @@ export async function loadSoundIndex(base: string): Promise<SoundIndex | null> {
   }
 }
 
-export async function loadSoundBank(base: string, idx: SoundIndex): Promise<SoundBank | null> {
+export async function loadSoundBank(idx: SoundIndex): Promise<SoundBank | null> {
   if (!idx.sfx) return null;
   try {
-    const r = await fetch(base + 'sounds/' + idx.sfx);
-    if (!r.ok) return null;
-    return SoundBank.parse(await r.arrayBuffer());
+    const blob = await cachedAsset('sounds/' + idx.sfx);
+    if (!blob) return null;
+    return SoundBank.parse(await blob.arrayBuffer());
   } catch (e) {
     console.warn('sound bank', e);
     return null;

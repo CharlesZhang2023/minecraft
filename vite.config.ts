@@ -12,9 +12,9 @@ const precacheList = (): Plugin => ({
     // mods and packs are fetched (and kept in IndexedDB) only when a player installs or needs them; the physics engine
     // (4 MB, only for worlds with sub-levels) is cached by the service worker the first time it's loaded
     const files = Object.keys(bundle).filter((f) => !f.endsWith('.map') && f !== 'precache.json' && !f.startsWith('mods/') && !f.startsWith('packs/') && !/(^|\/)rapier-/.test(f));
-    // the recorded sound effects (public/sounds, from tools/sounds/make.mjs) play offline too; music streams
-    const sounds = 'public/sounds/index.json';
-    if (fs.existsSync(sounds)) files.push('sounds/index.json', 'sounds/' + JSON.parse(fs.readFileSync(sounds, 'utf8')).sfx);
+    // the recorded sounds' index (public/sounds, from tools/sounds/make.mjs); the sound effects and music are kept
+    // by the game itself once downloaded (src/net/cdn.ts), from the CDN where it's quicker
+    if (fs.existsSync('public/sounds/index.json')) files.push('sounds/index.json');
     this.emitFile({ type: 'asset', fileName: 'precache.json', source: JSON.stringify(files) });
   },
 });
