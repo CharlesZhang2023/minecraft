@@ -7,6 +7,9 @@ import type { Ctx } from './gui';
 import { ItemStack, getItem, stack, I, I3 } from '../game/items';
 import { SMITHING, STONECUTTING } from '../game/recipes';
 import { ENCH_BY_ID } from '../game/enchant';
+import { BEACON_POWERS, BEACON_PAYMENT, type BeaconTile } from '../game/beacon';
+import { effectIcon } from './effects';
+import { EFFECTS } from '../game/potiondata';
 
 type Items = (ItemStack | null)[];
 const take = (items: Items, i: number, n = 1) => { const s = items[i]; if (!s) return; s.count -= n; if (s.count <= 0) items[i] = null; };
@@ -169,3 +172,97 @@ export class GrindstoneScreen extends ContainerScreen {
     super.onClose();
   }
 }
+
+/**
+ * The beacon: pick a primary power (what the pyramid's levels allow) and, at four levels, a secondary one (regeneration
+ * or the primary at level II), put in one iron, gold, emerald, diamond or netherite ingot and confirm.
+ */
+export class BeaconScreen extends ContainerScreen {
+  title = 'Beacon';
+  override pw = 230;
+  override ph = 219;
+  items: Items = [null];
+  primary = '';
+  secondary = '';
+  constructor(ui: UI, public x: number, public y: number, public z: number) { super(ui); }
+  tile(): BeaconTile | null { const t = this.game.world!.getTile(this.x, this.y, this.z) as unknown as BeaconTile | undefined; return t?.type === 'beacon' ? t : null; }
+  override init() { super.init(); const t = this.tile(); this.primary = t?.primary ?? ''; this.secondary = t?.secondary ?? ''; }
+  override buildSlots() {
+    const it = this.items;
+    this.slots.push({ x: 136, y: 110, get: () => it[0], set: (s) => (it[0] = s), group: 'payment', limit: 1, canPlace: (s) => BEACON_PAYMENT().includes(s.id) });
+    this.addPlayerSlots(36, 137, 195);
+  }
+  /** The buttons: [x, y, power, row (0-3; 4 = secondary)]. */
+  buttons(): [number, number, string, number][] {
+    const out: [number, number, string, number][] = [];
+    BEACON_POWERS.slice(0, 3).forEach((row, r) => row.forEach((p, i) => out.push([row.length === 1 ? 64 : 52 + i * 24, 22 + r * 25, p, r])));
+    out.push([154, 47, 'regeneration', 4]);
+    if (this.primary) out.push([178, 47, this.primary, 4]);
+    return out;
+  }
+  levels() { return this.tile()?.levels ?? 0; }
+  override quickTargets(s: Slot, st: ItemStack): string[] {
+    if ((s.group === 'main' || s.group === 'hotbar') && BEACON_PAYMENT().includes(st.id)) return ['payment'];
+    return super.quickTargets(s, st);
+  }
+  override drawBackground(ctx: Ctx, mx: number, my: number) {
+    const L = this.left, T = this.top, lv = this.levels();
+    for (const [bx, by, p, r] of this.buttons()) {
+      const on = r < 4 ? lv > r : lv >= 4;
+      const sel = r < 4 ? this.primary === p : this.secondary === p;
+      const hover = mx >= L + bx && my >= T + by && mx < L + bx + 22 && my < T + by + 22;
+      ctx.fillStyle = !on ? '#3a3a3a' : sel ? '#5a8a3a' : hover ? '#8a8aaa' : '#6a6a7a';
+      ctx.fillRect(L + bx, T + by, 22, 22);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(L + bx, T + by + 21, 22, 1); ctx.fillRect(L + bx + 21, T + by, 1, 22);
+      ctx.globalAlpha = on ? 1 : 0.4;
+      ctx.drawImage(effectIcon(p), L + bx + 2, T + by + 2, 18, 18);
+      ctx.globalAlpha = 1;
+    }
+    // the confirm button
+    const ok = this.canConfirm();
+    ctx.fillStyle = ok ? '#4a8a2a' : '#5a5a5a';
+    ctx.fillRect(L + 164, T + 107, 22, 22);
+    ctx.fillStyle = ok ? '#b8f088' : '#8a8a8a';
+    for (let k = 0; k < 6; k++) { ctx.fillRect(L + 168 + k, T + 117 + k, 2, 2); }
+    for (let k = 0; k < 9; k++) ctx.fillRect(L + 173 + k, T + 122 - k, 2, 2);
+    // payment hints
+    BEACON_PAYMENT().slice(0, 4).forEach((id, i) => this.ui.drawItem(ctx, stack(id), L + 20 + i * 22 + (i > 1 ? 4 : 0), T + 109));
+  }
+  override drawForeground(ctx: Ctx) {
+    this.label(ctx, 'Primary Power', 40, 10);
+    this.label(ctx, 'Secondary Power', 150, 10);
+  }
+  canConfirm() { return !!this.items[0] && !!this.primary && this.levels() > 0; }
+  override mouseDown(mx: number, my: number, button: number): boolean {
+    const L = this.left, T = this.top, lv = this.levels();
+    for (const [bx, by, p, r] of this.buttons()) {
+      if (mx < L + bx || my < T + by || mx >= L + bx + 22 || my >= T + by + 22) continue;
+      if (r < 4 && lv > r) { this.primary = p; if (this.secondary && this.secondary !== 'regeneration') this.secondary = p; }
+      else if (r === 4 && lv >= 4) this.secondary = p;
+      this.game.audio.play('click', null, 0.4, 1);
+      return true;
+    }
+    if (mx >= L + 164 && my >= T + 107 && mx < L + 186 && my < T + 129) {
+      if (!this.canConfirm()) return true;
+      const t = this.tile();
+      if (t) {
+        t.primary = this.primary; t.secondary = this.secondary;
+        this.game.world!.setTile(this.x, this.y, this.z, t as never);
+        take(this.items, 0);
+        this.game.audio.play('beacon.power', { x: this.x + 0.5, y: this.y + 0.5, z: this.z + 0.5 }, 1, 1);
+      }
+      this.ui.open(null);
+      return true;
+    }
+    return super.mouseDown(mx, my, button);
+  }
+  override syncState() { return { primary: this.primary, secondary: this.secondary }; }
+  override applySyncState(s: unknown) { const d = s as { primary?: string; secondary?: string } | null; if (d) { this.primary = d.primary ?? ''; this.secondary = d.secondary ?? ''; } }
+  override onClose() {
+    this.giveBack(this.items);
+    super.onClose();
+  }
+}
+void EFFECTS;
+

@@ -1,5 +1,6 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
 import { buildGolem } from '../entity/overworldmobs';
+import { buildWither } from '../entity/wither';
 import { swingDamage, sweep, shieldBlocks, shieldHand, crossbowLoadTicks, loadCrossbow, fireCrossbow, releaseTrident, ThrownTrident } from './combat';
 import { hiveBroken } from '../entity/bees';
 import { FISH_BUCKETS, releaseFish } from '../entity/animals';
@@ -509,7 +510,7 @@ export class Interaction {
       return true;
     }
     // a bed is your own respawn point (the world spawn stays where new players start)
-    p.spawnX = x; p.spawnY = y + 1; p.spawnZ = z;
+    p.spawnX = x; p.spawnY = y + 1; p.spawnZ = z; p.spawnKind = 'bed';
     if (g.isDaytime()) { g.ui.hud.actionBar('You can only sleep at night'); g.ui.chat.add('Respawn point set'); return true; }
     const monsters = g.entities.some((e) => (e as unknown as { hostile?: boolean }).hostile && !(e as LivingEntity).dead && Math.abs(e.x - x) < 8 && Math.abs(e.y - y) < 5 && Math.abs(e.z - z) < 8);
     if (monsters) { g.ui.hud.actionBar('You may not rest now; there are monsters nearby'); return true; }
@@ -1067,6 +1068,8 @@ export class Interaction {
     if (def.mod && def.behavior?.onPlaced) callBlock(idOf(v), 'onPlaced', () => def.behavior!.onPlaced!({ ...blockCtx(g, x, y, z, v), player: this.player }), undefined);
     // a pumpkin on iron or snow blocks brings a golem to life
     if (idOf(v) === B2.CARVED_PUMPKIN || idOf(v) === B.JACK_O_LANTERN) buildGolem(g, x, y, z);
+    // three wither skeleton skulls on a T of soul sand: the Wither
+    if ((idOf(v) === B2.WITHER_SKELETON_SKULL || idOf(v) === B2.WITHER_SKELETON_WALL_SKULL) && w.dimension !== undefined) buildWither(g, x, y, z);
     if (Events.blockPlaced.any) Events.blockPlaced.fire({ game: g, player: this.player, x, y, z, v });
     g.playBlockSound(soundBlock, x, y, z, 'place');
     this.consume(1);

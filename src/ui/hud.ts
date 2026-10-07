@@ -275,10 +275,14 @@ export class Hud {
     ctx.restore();
   }
 
-  /** The Ender Dragon's health bar across the top of the screen. */
+  /** The boss's health bar across the top of the screen: the Ender Dragon in the End, or a Wither within 64 blocks. */
   private bossBar(ctx: Ctx) {
     const g = this.ui.game, gui = this.ui.gui;
-    if (g.hideHud || !g.world || g.world.dimension !== 'end') return;
+    if (g.hideHud || !g.world) return;
+    const p = g.player!;
+    const wither = g.entities.find((e) => (e as unknown as { typeName?: string }).typeName === 'Wither' && !e.removed && e.distanceTo(p) < 64) as (LivingEntity & { invul?: number }) | undefined;
+    if (wither) { this.drawBossBar(ctx, 'Wither', wither.health / wither.maxHealth, '#5a1a6a', '#c040ff'); return; }
+    if (g.world.dimension !== 'end') return;
     const d = g.entities.find((e) => e instanceof EnderDragon && !e.removed) as EnderDragon | undefined;
     if (!d) return;
     const x = Math.floor(gui.w / 2) - 91;
@@ -294,6 +298,19 @@ export class Hud {
     ctx.fillRect(x, y, Math.round(182 * f), 5);
     ctx.fillStyle = '#e8a0ff';
     ctx.fillRect(x, y, Math.round(182 * f), 1);
+  }
+
+  private drawBossBar(ctx: Ctx, name: string, f: number, dark: string, light: string) {
+    const gui = this.ui.gui;
+    const x = Math.floor(gui.w / 2) - 91;
+    const y = device.touch ? 30 : 12;
+    gui.textCenter(ctx, name, gui.w / 2, y - 9, '#FFFFFF');
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(x - 1, y - 1, 184, 7);
+    ctx.fillStyle = dark;
+    ctx.fillRect(x, y, 182, 5);
+    ctx.fillStyle = light;
+    ctx.fillRect(x, y, Math.round(182 * Math.max(0, Math.min(1, f))), 5);
   }
 
   private renderChatAndText(ctx: Ctx) {

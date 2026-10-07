@@ -11,6 +11,7 @@ import { SMELTING } from './recipes';
 import { POT_PLANTS } from '../world/models';
 import { Random } from '../noise';
 import { tickHive, harvestHive, type HiveTile } from '../entity/bees';
+import { tickBeacon, tickConduit, type BeaconTile, type ConduitTile } from './beacon';
 
 /** The interaction (one player's hands) as stations see it. */
 export interface Hands {
@@ -48,6 +49,36 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
   const ui = g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>;
   switch (id) {
     case B2.SMOKER: case B2.BLAST_FURNACE: g.ui.openFurnace(x, y, z); return true;
+    case B2.RESPAWN_ANCHOR: {
+      // glowstone charges it (four charges); used in the Nether it sets the spawn point, anywhere else it explodes
+      if (held?.id === B.GLOWSTONE && m < 4) {
+        w.set(x, y, z, pack(id, m + 1));
+        h.consume(1);
+        g.audio.play('anchor.charge', at(x, y, z), 1, 1);
+        return true;
+      }
+      if (m === 0) return false;
+      if (w.dimension !== 'nether') {
+        w.set(x, y, z, 0);
+        g.interact!.explode(x + 0.5, y + 0.5, z + 0.5, 5, true, null);
+        return true;
+      }
+      if (p.spawnKind !== 'anchor' || p.spawnX !== x || p.spawnY !== y || p.spawnZ !== z) {
+        p.spawnX = x; p.spawnY = y; p.spawnZ = z; p.spawnKind = 'anchor';
+        g.ui.chat.add('Respawn point set');
+        g.audio.play('anchor.set', at(x, y, z), 1, 1);
+      }
+      return true;
+    }
+    case B2.LODESTONE: {
+      // a compass used on a lodestone points to it from then on (in this dimension)
+      if (held?.id !== I.COMPASS) return false;
+      const lc = { ...stack(I.COMPASS), lodestone: { x, y, z, dim: w.dimension }, name: 'Lodestone Compass', ench: {} } as ItemStack;
+      if (held.count > 1) { held.count--; if (p.inventory.add(lc) > 0) g.dropItem(p.x, p.y + 1, p.z, lc); }
+      else p.inventory.setHeld(lc);
+      g.audio.play('lodestone.lock', at(x, y, z), 1, 1);
+      return true;
+    }
     case B2.BEE_NEST: case B2.BEEHIVE:
       return harvestHive(g, p, x, y, z, held, (n) => h.consume(n), (s) => { if (p.inventory.add(s) > 0) g.dropItem(p.x, p.y + 1, p.z, s); });
     case B2.BARREL: g.ui.openChest(x, y, z); g.audio.play('chestOpen', at(x, y, z), 0.5, 1.1); return true;
@@ -58,6 +89,7 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
       return true;
     case B2.SMITHING_TABLE: ui.openSmithing?.(x, y, z); return true;
     case B2.STONECUTTER: ui.openStonecutter?.(x, y, z); return true;
+    case B2.BEACON: if (!w.getTile(x, y, z)) w.setTile(x, y, z, { type: 'beacon', levels: 0, primary: '', secondary: '', beam: 0 } as never); ui.openBeacon?.(x, y, z); return true;
     case B2.GRINDSTONE: ui.openGrindstone?.(x, y, z); return true;
     case B2.COMPOSTER: {
       if (m >= 8) {
@@ -230,6 +262,9 @@ export function stationTile(w: World, x: number, y: number, z: number, id: numbe
   else if (id === B2.CAMPFIRE || id === B2.SOUL_CAMPFIRE) campfireTile(w, x, y, z);
   else if (id === B2.DAYLIGHT_DETECTOR) w.setTile(x, y, z, { type: 'daylight', power: 0 } as never);
   else if (id === B2.TARGET) w.setTile(x, y, z, { type: 'target', power: 0, ticks: 0 } as never);
+  else if (id === B2.BEACON) w.setTile(x, y, z, { type: 'beacon', levels: -1, primary: '', secondary: '', beam: 0 } as never);
+  else if (id === B2.CONDUIT) w.setTile(x, y, z, { type: 'conduit', frame: 0, active: false, target: 0 } as never);
+  else if (id === B2.BEE_NEST || id === B2.BEEHIVE) w.setTile(x, y, z, { type: 'beehive', bees: [], honey: 0 } as never);
 }
 
 /** Items used on blocks: axes strip logs, shears carve pumpkins, shovels make paths, buckets fill and empty waterlogged blocks. */
@@ -286,6 +321,8 @@ export function tickStations(g: Game) {
     for (const [i, tile] of c.tiles) {
       if (tile.type === 'daylight' || tile.type === 'target') { sensorTick(g, w, c.cx * 16 + (i & 15), i >> 8, c.cz * 16 + ((i >> 4) & 15), tile as unknown as Sensor); continue; }
       if (tile.type === 'beehive') { tickHive(g, c.cx * 16 + (i & 15), i >> 8, c.cz * 16 + ((i >> 4) & 15), tile as unknown as HiveTile); continue; }
+      if (tile.type === 'beacon') { tickBeacon(g, c.cx * 16 + (i & 15), i >> 8, c.cz * 16 + ((i >> 4) & 15), tile as unknown as BeaconTile); continue; }
+      if (tile.type === 'conduit') { tickConduit(g, c.cx * 16 + (i & 15), i >> 8, c.cz * 16 + ((i >> 4) & 15), tile as unknown as ConduitTile); continue; }
       if (tile.type !== 'campfire') continue;
       const t = tile as unknown as CampfireTile;
       const x = c.cx * 16 + (i & 15), z = c.cz * 16 + ((i >> 4) & 15), y = i >> 8;

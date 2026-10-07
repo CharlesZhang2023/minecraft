@@ -158,6 +158,14 @@ MODELS.bee = build([
   { n: 'legs', p: [1.5, 22, -2], b: [[-5, 0, 0, 7, 2, 0], [-5, 0, 2, 7, 2, 0], [-5, 0, 4, 7, 2, 0]] },
 ]);
 
+MODELS.wither = build([
+  { n: 'head', p: [0, 0, 0], b: [[-4, -4, -4, 8, 8, 8]] },
+  { n: 'headL', p: [10, 2, 0], b: [[-3, -3, -3, 6, 6, 6]] },
+  { n: 'headR', p: [-10, 2, 0], b: [[-3, -3, -3, 6, 6, 6]] },
+  { n: 'shoulders', p: [0, 0, 0], b: [[-10, 4, -1.5, 20, 3, 3]] },
+  { n: 'spine', p: [0, 7, 0], b: [[-1.5, 0, -1.5, 3, 10, 3], [-4.5, 1.5, 0.5, 9, 2, 2], [-4.5, 4, 0.5, 9, 2, 2], [-4.5, 6.5, 0.5, 9, 2, 2]], r: [0.2, 0, 0] },
+  { n: 'tail', p: [0, 16.8, 2], b: [[-1.5, 0, -1.5, 3, 7, 3]], r: [0.5, 0, 0] },
+]);
 export const MOB_MODELS3: Record<string, () => ModelDef> = Object.fromEntries(Object.entries(MODELS).map(([k, b]) => [k, () => b.def]));
 
 // ------------------------------------------------------------------ skins
@@ -322,6 +330,17 @@ function mooshroomSkin(brown: boolean): Skin {
   return s;
 }
 
+function witherSkin(invul: boolean): Skin {
+  const bone = hx(invul ? '#6a7aa8' : '#3a3a3e'), dark = hx(invul ? '#4a5a88' : '#1e1e22');
+  return paint(MODELS.wither, invul ? 182 : 181, (part, i, face, x, y, w, h, r) => {
+    if (part.startsWith('head') && face === 'front') {
+      if (y === Math.floor(h / 3) && (x === 1 || x === w - 2)) return hx('#e8e8f0');
+      if (y > h / 2 && y < h - 1 && x > 0 && x < w - 1 && (x % 2 === 0)) return dark;
+    }
+    return vary(r.int(4) ? bone : dark, r, 0.08);
+  });
+}
+
 const WT = (): Skin => {
   // the wandering trader: a blue robe with a gold trim over the villager layout (64x64)
   const s = new Skin(64, 64);
@@ -348,6 +367,7 @@ export const MOB_SKINS3: Record<string, () => Skin> = {
   turtle: turtleSkin, dolphin: dolphinSkin, cod: () => fishSkin('cod'), salmon: () => fishSkin('salmon'), pufferfish: pufferSkin,
   bee: () => beeSkin(false, false), bee_angry: () => beeSkin(true, false), bee_nectar: () => beeSkin(false, true), bee_angry_nectar: () => beeSkin(true, true),
   mooshroom: () => mooshroomSkin(false), brown_mooshroom: () => mooshroomSkin(true), wandering_trader: WT,
+  wither: () => witherSkin(false), wither_invul: () => witherSkin(true),
 };
 /** Skins made when first needed (the tropical fish's many colourings). */
 export function lazySkin(name: string): Skin | null {
@@ -442,6 +462,16 @@ export const MOB_POSES3: Record<string, (p: PoseCtx) => PoseOut> = {
     return { pose, offs };
   },
   cod: fishPose, salmon: fishPose, tropical_fish: fishPose, tropical_fish_b: fishPose,
+  wither: (p) => {
+    const sy = (p.e.sideYaw as number[]) ?? [0, 0];
+    const sway = c(p.age * 0.1) * 0.05;
+    const invul = (p.e.invul as number) > 0;
+    return {
+      pose: { head: [p.hp, p.netHead, 0], headL: [p.hp * 0.5, (sy[1] * Math.PI) / 180, 0], headR: [p.hp * 0.5, (sy[0] * Math.PI) / 180, 0], spine: [0.2 + sway, 0, 0], tail: [0.5 + sway * 2, 0, 0] },
+      offs: { tail: [0, c(0.2 + sway) * 10 - 10, s(0.2 + sway) * 10 - 2] },
+      skin: invul && Math.floor(p.age / 5) % 2 ? 'wither_invul' : 'wither',
+    };
+  },
   pufferfish: (p) => {
     const puff = (p.e.puff as number) ?? 0;
     return { pose: { tail: [0, s(p.age * 0.3) * 0.4, 0] }, skip: new Set(['small', 'mid', 'full'].filter((_, i) => i !== puff)) };

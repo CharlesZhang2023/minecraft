@@ -12,6 +12,7 @@ import { MOB_MODELS2, MOB_SKINS2, MOB_POSES as MOB_POSES2 } from './mobmodels2';
 import { MOB_MODELS3, MOB_SKINS3, MOB_POSES3, lazySkin } from './mobmodels3';
 const MOB_POSES = { ...MOB_POSES2, ...MOB_POSES3 };
 import { EvokerFangs, Guardian } from '../entity/overworldmobs';
+import { WitherSkull } from '../entity/wither';
 import { Hanging, ItemFrame, Painting } from '../entity/hanging';
 import { ShulkerBullet } from '../entity/endmobs';
 import { Entity } from '../entity/entity';
@@ -20,7 +21,7 @@ import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball }
 import { ThrownPotion } from '../entity/potion';
 import { getItem, I, I6, I7 } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
-import { BLOCKS, TEXTURES, Render, B, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX } from '../world/blocks';
+import { BLOCKS, TEXTURES, Render, B, B2, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX } from '../world/blocks';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
 import { poseMat4 } from '../sublevel/pose';
@@ -255,6 +256,7 @@ export class EntityRenderer {
       else if (e instanceof XpOrb) this.billboard(dyn, x, y + 0.25, z, 0.25, TEXTURES.indexOf('particle_spell'), 0x9ffc3a, 15, 15);
       else if (e instanceof Snowball) this.billboard(dyn, x, y + 0.125, z, 0.25, TEXTURES.indexOf('item/' + e.kind), 0xffffff, sky, blk);
       else if (e instanceof EyeOfEnder) this.billboard(dyn, x, y + 0.12, z, 0.4, TEXTURES.indexOf('item/ender_eye'), 0xffffff, 15, 15);
+      else if (e instanceof WitherSkull) this.blockModel(dyn, pack(B2.WITHER_SKELETON_SKULL, 0), x - 0.5, y - 0.1, z - 0.5, 15, 15);
       else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, e.small ? 0.35 : 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
       else if (e instanceof Hanging) this.drawHanging(dyn, e, x, y, z, sky, blk);
       else if (e instanceof EvokerFangs) this.drawFangs(e, x, y, z, t, sky, blk);
@@ -280,6 +282,19 @@ export class EntityRenderer {
       const tg = e.beamTarget, k = Math.min(1, e.beam / e.chargeTime());
       const col = (Math.round(64 + 191 * k) << 16) | (Math.round(64 + 160 * k) << 8) | Math.round(255 - 128 * k);
       this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + e.height / 2 - cam.y, e.lerpZ(t) - cam.z, tg.lerpX(t) - cam.x, tg.lerpY(t) + tg.height / 2 - cam.y, tg.lerpZ(t) - cam.z, e.age + t, col, 0.06 + 0.06 * k);
+    }
+    // beacon beams (the beacons' tiles keep their colour; 0 is off)
+    if (w.dimension === 'overworld' || w.dimension === 'nether' || w.dimension === 'end') {
+      const ccx = Math.floor(cam.x) >> 4, ccz = Math.floor(cam.z) >> 4;
+      for (const c of w.chunks.values()) {
+        if (!c.tiles.size || Math.abs(c.cx - ccx) > 8 || Math.abs(c.cz - ccz) > 8) continue;
+        for (const [i, tl] of c.tiles) {
+          const bt = tl as unknown as { type: string; beam?: number };
+          if (bt.type !== 'beacon' || !bt.beam) continue;
+          const bx = c.cx * 16 + (i & 15) + 0.5 - cam.x, by = (i >> 8) + 1 - cam.y, bz = c.cz * 16 + ((i >> 4) & 15) + 0.5 - cam.z;
+          this.beam(dyn, bx, by, bz, bx, 256 - cam.y, bz, game.ticks + t, bt.beam, 0.2);
+        }
+      }
     }
     // an End gateway that was just opened or used: a beam straight up and down through it
     const gb = game.gatewayBeam;

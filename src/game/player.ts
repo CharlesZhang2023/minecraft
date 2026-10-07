@@ -42,6 +42,8 @@ export class Player extends LivingEntity {
   xpProgress = 0;
   xpTotal = 0;
   spawnX = 0; spawnY = 80; spawnZ = 0;
+  /** Where the spawn point is: the world spawn, a bed (overworld) or a respawn anchor (the Nether). */
+  spawnKind: 'world' | 'bed' | 'anchor' = 'world';
   difficulty = 2; // 0 peaceful .. 3 hard
   sleeping = false;
   /** Parrots riding on the shoulders (variant, health and owner, to put back into the world). */
@@ -466,7 +468,7 @@ export class Player extends LivingEntity {
       health: this.health, food: this.food, saturation: this.saturation, air: this.air,
       xpLevel: this.xpLevel, xpProgress: this.xpProgress, xpTotal: this.xpTotal,
       gameMode: this.gameMode, flying: this.flying, inventory: this.inventory.toJSON(),
-      spawn: [this.spawnX, this.spawnY, this.spawnZ], fireTicks: this.fireTicks,
+      spawn: [this.spawnX, this.spawnY, this.spawnZ], spawnKind: this.spawnKind, fireTicks: this.fireTicks,
       effects: [...this.effects.values()], absorption: this.absorption, restTicks: this.restTicks,
     };
   }
@@ -480,6 +482,7 @@ export class Player extends LivingEntity {
     this.flying = !!d.flying && this.canFly;
     this.inventory.load(d.inventory);
     if (d.spawn) [this.spawnX, this.spawnY, this.spawnZ] = d.spawn;
+    this.spawnKind = d.spawnKind ?? (d.spawn ? 'bed' : 'world');
     this.fireTicks = d.fireTicks ?? 0;
     this.effects.clear();
     for (const e of d.effects ?? []) this.effects.set(e.id, { ...e });

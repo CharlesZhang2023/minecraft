@@ -169,5 +169,25 @@ export function moreSounds(add: (name: string, g: Gen) => void, s: Synth, SR: nu
   add('llama.spit', (r) => normalize(env(bandpass(noise(Math.floor(SR * 0.2), r), 1000, 4000), 0.005, 0.15, 3), 0.4));
   add('turtle.egg_crack', (r) => normalize(env(highpass(noise(Math.floor(SR * 0.1), r), 2500), 0.001, 0.07, 3), 0.4));
   add('turtle.egg_hatch', (r) => normalize(env(highpass(noise(Math.floor(SR * 0.25), r), 2000), 0.001, 0.2, 2), 0.5));
+  // ---- the Wither, beacons, conduits, anchors, lodestones
+  add('wither.spawn', (r) => {
+    const n = Math.floor(SR * 3), b = env(tone(n, 90, 45, 'saw', 0.1, 5), 0.05, 2.8, 1.2);
+    mixInto(b, env(lowpass(noise(n, r), 400), 0.02, 2.5, 1.5), 0.6);
+    mixInto(b, env(tone(n, 180, 70, 'square', 0.15, 3), 0.1, 2.6, 1.3), 0.3);
+    return normalize(lowpass(b, 1200), 0.9);
+  });
+  add('wither.ambient', (r) => normalize(lowpass(env(tone(Math.floor(SR * 1.2), 110, 80, 'saw', 0.12, 6), 0.1, 1, 1.4), 900), 0.6));
+  add('wither.hurt', (r) => normalize(lowpass(env(tone(Math.floor(SR * 0.4), 200, 120, 'saw', 0.2, 18), 0.01, 0.35, 2), 1500), 0.6));
+  add('wither.death', (r) => normalize(mixInto(lowpass(env(tone(Math.floor(SR * 3.5), 140, 30, 'saw', 0.2, 4), 0.05, 3.3, 1.2), 1000), env(lowpass(noise(Math.floor(SR * 3.5), r), 500), 0.1, 3, 1.3), 0.5), 0.9));
+  add('wither.shoot', (r) => normalize(env(lowpass(noise(Math.floor(SR * 0.4), r), 900), 0.005, 0.35, 2), 0.6));
+  add('wither.break_block', (r) => normalize(env(lowpass(noise(Math.floor(SR * 0.5), r), 1200), 0.002, 0.45, 2), 0.7));
+  add('beacon.activate', (r) => normalize(env(tone(Math.floor(SR * 1.5), 300, 600, 'sine', 0.05, 8), 0.2, 1.2, 1.2), 0.5));
+  add('beacon.deactivate', (r) => normalize(env(tone(Math.floor(SR * 1.2), 600, 250, 'sine', 0.05, 8), 0.05, 1.1, 1.2), 0.5));
+  add('beacon.power', (r) => normalize(mixInto(env(tone(Math.floor(SR * 1), 500, 500, 'tri'), 0.01, 0.9, 1.5), env(tone(Math.floor(SR * 1), 750, 750, 'sine'), 0.01, 0.9, 1.5), 0.5), 0.5));
+  add('conduit.activate', (r) => normalize(env(tone(Math.floor(SR * 2), 200, 400, 'sine', 0.1, 4), 0.3, 1.6, 1.2), 0.5));
+  add('conduit.attack', (r) => normalize(env(tone(Math.floor(SR * 0.3), 900, 300, 'square'), 0.002, 0.25, 2.5), 0.4));
+  add('anchor.charge', (r) => normalize(mixInto(env(tone(Math.floor(SR * 0.6), 250, 450, 'saw', 0.05, 10), 0.01, 0.5, 1.5), env(highpass(noise(Math.floor(SR * 0.6), r), 2500), 0.01, 0.4, 2), 0.3), 0.5));
+  add('anchor.set', (r) => normalize(env(tone(Math.floor(SR * 0.8), 330, 330, 'tri', 0.02, 5), 0.02, 0.7, 1.5), 0.5));
+  add('lodestone.lock', (r) => normalize(mixInto(env(tone(Math.floor(SR * 0.5), 700, 700, 'square'), 0.002, 0.4, 2.5), env(tone(Math.floor(SR * 0.5), 1050, 1050, 'sine'), 0.002, 0.4, 2.5), 0.5), 0.35));
   void highpass;
 }

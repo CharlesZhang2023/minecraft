@@ -9,7 +9,7 @@ import { World, Dimension, Chunk } from '../world/world';
 import { Player, GameMode } from './player';
 import { findPortal, buildPortal } from './portal';
 import { raycastBlocks, BlockHit } from './raycast';
-import { BLOCKS, B } from '../world/blocks';
+import { BLOCKS, B, B2, idOf, metaOf, pack } from '../world/blocks';
 import { ItemStack, stack, I, getItem } from './items';
 import { Storage, WorldMeta } from './storage';
 import { Entity } from '../entity/entity';
@@ -477,7 +477,8 @@ export class Game {
       return;
     }
     p.respawn(this.keepInventory);
-    if (sp.dim !== 'overworld') this.travel(sp, 'overworld', true);
+    const home: Dimension = p.spawnKind === 'anchor' ? 'nether' : 'overworld';
+    if (sp.dim !== home) this.travel(sp, home, true);
     else sp.pendingArrival = { x: p.x, y: p.y, z: p.z, toSpawn: true };
     if (Events.playerRespawn.any) this.asActor(sp, () => Events.playerRespawn.fire(this, p));
   }
@@ -547,6 +548,17 @@ export class Game {
       p.setPos(END_PLATFORM.x + 0.5, END_PLATFORM.y + 1, END_PLATFORM.z + 0.5);
       this.audio.play('portalTravel', null, 0.6, 1);
       this.ensureDragon();
+    } else if (a.toSpawn && p.spawnKind !== 'world') {
+      // a bed or a charged respawn anchor (which spends a charge); gone or empty: back to the world spawn
+      const spot = personalSpawn(w, p);
+      if (spot) p.setPos(spot[0], spot[1], spot[2]);
+      else {
+        this.asActor(sp, () => sp.ui.chat.add(p.spawnKind === 'anchor' ? 'You have no charged respawn anchor, or it was obstructed' : 'You have no home bed or charged respawn anchor, or it was obstructed'));
+        p.spawnKind = 'world';
+        if (this.meta?.spawn) [p.spawnX, p.spawnY, p.spawnZ] = this.meta.spawn;
+        if (sp.dim !== 'overworld') { setTimeout(() => this.travel(sp, 'overworld', true), 0); }
+        else { sp.pendingArrival = { x: p.spawnX + 0.5, y: p.spawnY, z: p.spawnZ + 0.5, toSpawn: true }; return false; }
+      }
     } else if (a.toSpawn) {
       const y = w.topSolidY(Math.floor(a.x), Math.floor(a.z)) + 1;
       p.setPos(a.x, Math.max(a.y, y), a.z);
@@ -914,3 +926,18 @@ export class Game {
 
 export { stack, I, getItem };
 export type { Msg };
+
+/** The free spot next to a player's bed or respawn anchor to wake up in (the anchor spends a charge); null if it's gone. */
+function personalSpawn(w: World, p: Player): [number, number, number] | null {
+  const x = p.spawnX, y = p.spawnKind === 'bed' ? p.spawnY - 1 : p.spawnY, z = p.spawnZ;
+  const v = w.get(x, y, z), id = idOf(v);
+  if (p.spawnKind === 'bed' && id !== B.BED) return null;
+  if (p.spawnKind === 'anchor') {
+    if (id !== B2.RESPAWN_ANCHOR || metaOf(v) === 0) return null;
+    w.set(x, y, z, pack(id, metaOf(v) - 1));
+  }
+  const free = (cx: number, cy: number, cz: number) => !BLOCKS[w.getId(cx, cy, cz)].solid && !BLOCKS[w.getId(cx, cy + 1, cz)].solid && BLOCKS[w.getId(cx, cy - 1, cz)].solid;
+  for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) for (const dy of [1, 0, -1]) if (free(x + dx, y + dy, z + dz)) return [x + dx + 0.5, y + dy, z + dz + 0.5];
+  return [x + 0.5, y + 1, z + 0.5];
+}
+

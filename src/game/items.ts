@@ -527,6 +527,8 @@ export interface ItemStack {
   name?: string; // custom name from an anvil
   repair?: number; // anvil prior-work penalty
   fw?: Firework; // firework rockets and stars
+  /** A lodestone compass: the lodestone it points to. */
+  lodestone?: { x: number; y: number; z: number; dim: string };
   /** A loaded crossbow: what it's loaded with. */
   charged?: { id: number; fw?: Firework };
   /** Mods: JSON data of their own (a wand's spells...). Stacks only stack when their tags match. Replace it, don't mutate it. */
