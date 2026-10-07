@@ -704,7 +704,7 @@ export class Client {
     const held = ['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft'].filter((k) => i.isDown(k));
     conn.send({
       t: 'in', x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, yaw: p.yaw, pitch: p.pitch,
-      g: p.onGround, sn: p.sneaking, sp: p.sprinting, fl: p.flying, jp: inp.jump, gl: p.gliding, wh: p.wallHit, fw: inp.forward, st: inp.strafe,
+      g: p.onGround, sn: p.sneaking, sp: p.sprinting, fl: p.flying, jp: inp.jump, gl: p.gliding, sw: p.swimming, wh: p.wallHit, fw: inp.forward, st: inp.strafe,
       j: p.jumps, sel: p.inventory.selected, act, md: act ? (va ? [...va.down] : [...i.mouseDown]) : [], mp: act ? pressed : [],
       dir: aim ? [aim.x, aim.y, aim.z] : null, kd: held, kp: this.keyQueue, tp: this.tpId,
     });

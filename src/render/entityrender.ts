@@ -556,7 +556,8 @@ export class EntityRenderer {
       if (Math.floor(s / 30 * 10) % 2) overlay[0] = overlay[1] = overlay[2] = 1, overlay[3] = Math.max(overlay[3], s / 30 * 0.6);
     }
     let tilt: [number, number] | undefined;
-    if (e instanceof Player && e.gliding) {
+    if (e instanceof Player && e.swimming && !e.gliding) tilt = [-90 - pitch, 0];
+    else if (e instanceof Player && e.gliding) {
       // vanilla RenderPlayer: swing level over the first second, then bank by the angle between look and motion
       const f = e.glideTicks + t, k = Math.min(1, (f * f) / 100);
       const yaw = (e.pyaw + wrapDelta(e.yaw - e.pyaw) * t) * DEG;

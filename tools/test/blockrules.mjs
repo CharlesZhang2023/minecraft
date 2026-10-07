@@ -2,7 +2,7 @@
 // bubble columns, honey and magma underfoot, berry bushes, minecarts with chests/furnaces/hoppers/TNT, boats of
 // every wood.
 //   node tools/test/blockrules.mjs
-import { openWorld } from './browser.mjs';
+import { openWorld, wait } from './browser.mjs';
 
 const t = await openWorld({ seed: 31, mode: 0 });
 const fails = [];
@@ -152,6 +152,30 @@ const grow = await t.page.evaluate(() => window.sim((g, p) => {
 ok(grow.kelp > 2, `kelp grows up through the water (${grow.kelp} tall)`);
 ok(grow.beet === 3, `beetroots ripen (stage ${grow.beet})`);
 ok(grow.coral === 'dead_tube_coral_block', `coral out of the water dies (${grow.coral})`);
+
+// swimming (1.13): sprinting under water lays the player flat (0.6 tall) and moves along the look
+const pool = await t.page.evaluate(() => window.sim((g, p) => {
+  const w = g.world, x = Math.floor(p.x) - 30, y = Math.floor(p.y) + 60, z = Math.floor(p.z) - 30;
+  const water = window.__mc.BLOCKS.find((b) => b?.name === 'water').id;
+  for (let a = -4; a <= 4; a++) for (let c = -4; c <= 4; c++) for (let b = 0; b < 6; b++) w.set(x + a, y + b, z + c, water);
+  return { x, y, z };
+}));
+await wait(1500);
+const swim = await t.page.evaluate(({ x, y, z }) => {
+  const p = window.game.player;
+  p.setPos(x + 0.5, y + 2, z + 0.5);
+  p.vx = p.vy = p.vz = 0;
+  p.sprinting = true; p.flying = false;
+  p.updateFluidState();
+  p.updateGlide();
+  const swimming = p.swimming, h = p.height;
+  p.yaw = 0; p.pitch = 30;
+  const y0 = p.y, z0 = p.z;
+  for (let i = 0; i < 10; i++) p.travel(0, 1);
+  return { swimming, h, dove: p.y < y0 - 0.1, ahead: p.z > z0 + 0.3 };
+}, pool);
+ok(swim.swimming && swim.h < 1, `sprinting under water swims (lying flat, ${swim.h} tall)`);
+ok(swim.dove && swim.ahead, 'and moves along the look, diving when looking down');
 
 ok(t.errors.length === 0, 'no page errors ' + t.errors.slice(0, 3).join(' | '));
 await t.close();
