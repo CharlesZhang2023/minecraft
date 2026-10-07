@@ -2,7 +2,7 @@
 // (used by hoppers, droppers and comparators).
 import type { Game } from './game';
 import type { World } from '../world/world';
-import { B, B2, BLOCKS, FACING6, SHULKER_BOXES, idOf, metaOf, pack } from '../world/blocks';
+import { B, B2, BLOCKS, FACING6, SHULKER_BOXES, COMMAND_BLOCKS, idOf, metaOf, pack } from '../world/blocks';
 import { ItemStack, getItem, sameItem, I, I2, I3, I6, stack, DISCS } from './items';
 import { Arrow, Snowball, PrimedTnt, ItemEntity, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
@@ -85,6 +85,7 @@ export function containerLevel(w: World, x: number, y: number, z: number): numbe
 function blockLevel(w: World, x: number, y: number, z: number, id: number): number | null {
   const m = metaOf(w.get(x, y, z));
   const t = w.getTile(x, y, z) as Record<string, unknown> | undefined;
+  if (COMMAND_BLOCKS.includes(id)) return Math.min(15, (t?.success as number) ?? 0);
   switch (id) {
     case B2.CAULDRON: return m & 3;
     case B2.CAKE: return (7 - Math.min(6, m)) * 2;

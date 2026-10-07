@@ -721,6 +721,11 @@ function SHAPE_OF(id: number) { return BLOCKS[id]?.shape; }
 /** A banner block's colour index (DYE_COLORS order). */
 export const bannerColor = (id: number) => { const i = BANNERS.indexOf(id); return i >= 0 ? i : WALL_BANNERS.indexOf(id); };
 
+/** Command blocks (1.4; chain and repeating 1.9): facing six ways, bit 8 conditional; the command lives in the tile. */
+export const COMMAND_BLOCKS = (['command_block', 'chain_command_block', 'repeating_command_block'] as const).map((n) =>
+  reg(n, n === 'command_block' ? 'Command Block' : n === 'chain_command_block' ? 'Chain Command Block' : 'Repeating Command Block', { side: `${n}_side`, top: `${n}_side`, bottom: `${n}_side`, front: `${n}_front`, hardness: -1, blastResistance: 3600000, sound: 'metal' }));
+export const isCommandBlock = (id: number) => COMMAND_BLOCKS.includes(id);
+
 /** Painting motifs and their sizes in blocks (vanilla's 26); each cell of each motif is a texture of its own. */
 export const PAINTINGS: [string, number, number][] = [
   ['kebab', 1, 1], ['aztec', 1, 1], ['alban', 1, 1], ['aztec2', 1, 1], ['bomb', 1, 1], ['plant', 1, 1], ['wasteland', 1, 1],
@@ -759,6 +764,8 @@ export const T2 = {
   campfireLog: tex('campfire_log'),
   lecternBase: tex('lectern_base'),
   lecternBook: tex('lectern_book'),
+  commandBack: ['command_block', 'chain_command_block', 'repeating_command_block'].map((n) => tex(n + '_back')),
+  commandCond: ['command_block', 'chain_command_block', 'repeating_command_block'].map((n) => tex(n + '_conditional')),
   stem: tex('pumpkin_stem'),
   itemFrame: tex('item_frame'),
   paintingBack: tex('painting_back'),
@@ -966,7 +973,7 @@ export const FACING6: ReadonlyArray<readonly [number, number, number]> = [[0, -1
 /** FACING6 index -> FACE_DIRS face index */
 export const FACING6_TO_FACE = [2, 3, 4, 5, 0, 1];
 export const FACE_TO_FACING6 = [4, 5, 0, 1, 2, 3];
-export const isFacing6Cube = (id: number) => id === B.DISPENSER || id === B.DROPPER || id === B.OBSERVER;
+export const isFacing6Cube = (id: number) => id === B.DISPENSER || id === B.DROPPER || id === B.OBSERVER || isCommandBlock(id);
 /** Crop texture for a crop block and growth meta. */
 export function cropTexture(id: number, meta: number): number {
   if (id === B.NETHER_WART) return T.netherWart[meta >= 3 ? 2 : meta >= 1 ? 1 : 0];

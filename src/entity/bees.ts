@@ -249,7 +249,7 @@ export function harvestHive(g: Game, p: Player, x: number, y: number, z: number,
   g.playerOf(p)?.achievements.event('honey', { smoked: smoked(w, x, y, z) && held.id !== I.SHEARS });
   if (!smoked(w, x, y, z)) {
     releaseBees(g, x, y, z, t, p);
-    for (const e of g.entities) if (e instanceof Bee && e.hive && e.hive.x === x && e.hive.y === y && e.hive.z === z) e.anger(p);
+    for (const e of g.entities) if (isHiveBee(e, x, y, z)) e.anger(p);
   }
   w.setTile(x, y, z, t as unknown as TileEntity);
   return true;
@@ -258,8 +258,13 @@ export function harvestHive(g: Game, p: Player, x: number, y: number, z: number,
 export function hiveBroken(g: Game, x: number, y: number, z: number, by: Player | null) {
   const t = g.world!.getTile(x, y, z) as unknown as HiveTile | undefined;
   if (t?.type === 'beehive' && t.bees.length) releaseBees(g, x, y, z, t, by);
-  if (by) for (const e of g.entities) if (e instanceof Bee && e.hive && e.hive.x === x && e.hive.y === y && e.hive.z === z) e.anger(by);
+  if (by) for (const e of g.entities) if (isHiveBee(e, x, y, z)) e.anger(by);
 }
 /** A nest generated with the world: three bees inside, ready to come out. */
 export function nestTile(): HiveTile { return { type: 'beehive', bees: [0, 1, 2].map(() => ({ nectar: false, ticksIn: 600, minTicks: 600, health: 10 })), honey: 0 }; }
 void Mob;
+/** One of this hive's bees (by type name: a hot-reloaded module's Bee class is a different class). */
+function isHiveBee(e: unknown, x: number, y: number, z: number): e is Bee {
+  const b = e as Bee;
+  return b.typeName === 'Bee' && !!b.hive && b.hive.x === x && b.hive.y === y && b.hive.z === z;
+}

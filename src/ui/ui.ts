@@ -14,6 +14,7 @@ import { TradeScreen } from './trade';
 import { EnchantScreen } from './enchant';
 import { HopperScreen, DispenserScreen, BrewingScreen, AnvilScreen } from './devices';
 import { BookScreen } from './book';
+import { CommandBlockScreen } from './commandblock';
 import { AdvancementsScreen } from './advancements';
 import { bannerCanvas } from './stations';
 import { SmithingScreen, StonecutterScreen, BeaconScreen, GrindstoneScreen, CartScreen, SignScreen, LoomScreen, CartographyScreen } from './stations';
@@ -203,6 +204,7 @@ export class UI {
   openGrindstone(x: number, y: number, z: number) { this.open(new GrindstoneScreen(this, x, y, z)); }
   openLoom(x: number, y: number, z: number) { this.open(new LoomScreen(this, x, y, z)); }
   openBook(slot: number) { this.open(new BookScreen(this, { slot })); }
+  openCommandBlock(x: number, y: number, z: number) { this.open(new CommandBlockScreen(this, x, y, z)); }
   openLectern(x: number, y: number, z: number) { this.open(new BookScreen(this, { lectern: [x, y, z] })); }
   openCartography(x: number, y: number, z: number) { this.open(new CartographyScreen(this, x, y, z)); }
   /** A container's contents changed outside the UI (hoppers, droppers): open screens read tiles live. */

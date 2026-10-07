@@ -5,7 +5,8 @@
 import type { Game } from './game';
 import type { World } from '../world/world';
 import type { Player } from './player';
-import { B, B2, BLOCKS, OPAQUE, WOOD, SHULKER_BOXES, idOf, metaOf, pack, WATERLOGGED, waterloggable, blockByName, isLog } from '../world/blocks';
+import { commandTile } from './commandblocks';
+import { B, B2, BLOCKS, OPAQUE, WOOD, SHULKER_BOXES, isCommandBlock, idOf, metaOf, pack, WATERLOGGED, waterloggable, blockByName, isLog } from '../world/blocks';
 import { I, I3, I7, I11, ItemStack, ItemDef, getItem, stack, POTION_ITEMS, DISCS } from './items';
 import { SMELTING } from './recipes';
 import { POT_PLANTS } from '../world/models';
@@ -49,6 +50,8 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
   const id = idOf(v), m = metaOf(v);
   // the dyed shulker boxes open like the plain one
   if (SHULKER_BOXES.includes(id)) return stationUse(h, x, y, z, pack(B2.SHULKER_BOX, m), held) && (w.getId(x, y, z) === id || true);
+  // command blocks: only someone in creative may edit them
+  if (isCommandBlock(id)) { if (!p.creative) return false; commandTile(w, x, y, z); (g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>).openCommandBlock?.(x, y, z); return true; }
   const ui = g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>;
   switch (id) {
     case B2.SMOKER: case B2.BLAST_FURNACE: g.ui.openFurnace(x, y, z); return true;

@@ -12,7 +12,7 @@ import { swingDamage, sweep, shieldBlocks, shieldHand, crossbowLoadTicks, loadCr
 import { hiveBroken } from '../entity/bees';
 import { FISH_BUCKETS, releaseFish, FLOWER_EFFECTS } from '../entity/animals';
 import type { Game } from './game';
-import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor, isFence, isBanner, bannerColor, BANNERS } from '../world/blocks';
+import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor, isFence, isBanner, bannerColor, BANNERS, isCommandBlock } from '../world/blocks';
 import { familyPlacement, doubleSlab, partners, toggled } from './families';
 import { stationUse, stationItemUse, stationTile, isShulkerBox } from './stations';
 import { blockIs } from './tags';
@@ -1120,7 +1120,7 @@ export class Interaction {
     else if (isRepeater(blockId) || blockId === B.COMPARATOR) meta = facing;
     else if (blockId === B.ANVIL) meta = (facing + 1) & 3;
     else if (isPiston(blockId) || blockId === B.DISPENSER || blockId === B.DROPPER) meta = this.facingFromEntity(x, y, z);
-    else if (blockId === B.OBSERVER) meta = this.facingFromEntity(x, y, z) ^ 1;
+    else if (blockId === B.OBSERVER || isCommandBlock(blockId)) meta = this.facingFromEntity(x, y, z) ^ 1;
     else if (blockId === B.HOPPER) { meta = FACE_TO_FACING6[face] ^ 1; if (meta === 1) meta = 0; }
     else if (isRail(blockId)) meta = facing & 1 ? 1 : 0;
     const v = pack(blockId, meta);

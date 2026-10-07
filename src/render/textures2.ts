@@ -215,6 +215,15 @@ export function paintMore(p: Painters) {
     gens[`${c}_stained_glass_pane_top`] = () => { const img = newImg(); const col = tone(hex(DYE[i]), 0.8); for (let y = 0; y < S; y++) for (let x = 7; x < 9; x++) set(img, x, y, col, 220); return img; };
     if (c !== 'red') bedSet(`${c}_`, DYE[i]);
     // the banner as an item: cloth on a crossbar and pole
+    if (i === 0) for (const [n, col] of [['command_block', '#c88a5a'], ['chain_command_block', '#7ab09a'], ['repeating_command_block', '#8a72c8']] as const) {
+      // the shell: a panelled metal box; an arrow up the sides (turned to the facing), a screen on the front
+      const base = hex(col), dark = tone(base, 0.7), light = tone(base, 1.2);
+      const shell = (img: ReturnType<typeof newImg>) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) set(img, x, y, x === 0 || y === 0 ? light : x === 15 || y === 15 ? dark : (x + y) % 7 === 0 ? tone(base, 0.95) : base); return img; };
+      gens[`${n}_side`] = () => { const img = shell(newImg()); for (let y = 3; y < 13; y++) set(img, 7, y, dark), set(img, 8, y, dark); for (let k = 0; k < 4; k++) { set(img, 7 - k, 3 + k, dark); set(img, 8 + k, 3 + k, dark); } return img; };
+      gens[`${n}_conditional`] = () => { const img = shell(newImg()); for (let y = 3; y < 13; y++) set(img, 7, y, dark), set(img, 8, y, dark); for (let k = 0; k < 4; k++) { set(img, 7 - k, 3 + k, dark); set(img, 8 + k, 3 + k, dark); } for (let x = 4; x < 12; x++) set(img, x, 12, dark); return img; };
+      gens[`${n}_front`] = () => { const img = shell(newImg()); for (let y = 4; y < 12; y++) for (let x = 4; x < 12; x++) set(img, x, y, (x + y) % 2 ? hex('#202020') : hex('#2a2a2a')); set(img, 6, 6, hex('#e0e0e0')); set(img, 7, 7, hex('#e0e0e0')); set(img, 6, 8, hex('#e0e0e0')); for (let x = 8; x < 10; x++) set(img, x, 9, hex('#e0e0e0')); return img; };
+      gens[`${n}_back`] = () => { const img = shell(newImg()); for (let y = 5; y < 11; y++) for (let x = 5; x < 11; x++) set(img, x, y, dark); return img; };
+    }
     if (i === 0) gens['lectern_book'] = () => {
       // an open book seen from above: two pages and the spine
       const img = newImg(), page = G('#f0e8d0'), line = G('#b8ac90'), cover = G('#6a3a22');

@@ -16,8 +16,10 @@ export class Commands {
   history: string[] = [];
   constructor(private game: Game) {}
 
-  run(line: string): string[] {
+  /** Run a command line; `origin` (a command block) is where ~ coordinates count from, instead of the player. */
+  run(line: string, origin?: { x: number; y: number; z: number }): string[] {
     const g = this.game, p = g.player!;
+    const o = origin ?? p;
     const out: string[] = [];
     const args = line.trim().replace(/^\//, '').split(/\s+/);
     const cmd = args.shift()?.toLowerCase() ?? '';
@@ -27,7 +29,7 @@ export class Commands {
       const mc = COMMANDS.get(cmd);
       if (mc && modState.active.has(mc.mod)) {
         const rest = line.trim().replace(/^\/?\S+\s*/, '');
-        const r = mc.def.run({ game: g, player: p, args: args.filter(Boolean), rest, reply: (m) => out.push(m), coord: (s, axis) => coord(s ?? '~', [p.x, p.y, p.z][axis]) });
+        const r = mc.def.run({ game: g, player: p, args: args.filter(Boolean), rest, reply: (m) => out.push(m), coord: (s, axis) => coord(s ?? '~', [o.x, o.y, o.z][axis]) });
         if (typeof r === 'string') out.push(r);
         else if (Array.isArray(r)) out.push(...r);
         return out;
@@ -70,7 +72,7 @@ export class Commands {
         case 'tp':
         case 'teleport': {
           if (args.length < 3) throw new Error('Usage: /tp <x> <y> <z>');
-          const x = coord(args[0], p.x), y = coord(args[1], p.y), z = coord(args[2], p.z);
+          const x = coord(args[0], o.x), y = coord(args[1], o.y), z = coord(args[2], o.z);
           if ([x, y, z].some(isNaN)) throw new Error('Invalid coordinates');
           p.setPos(x, y, z);
           p.vx = p.vy = p.vz = 0;
@@ -99,7 +101,7 @@ export class Commands {
           const modType = ENTITIES.get(type);
           if (!MOB_TYPES[type] && !(modType && modState.active.has(modType.mod))) throw new Error(`Unknown entity '${type}'. Try: ${Object.keys(MOB_TYPES).join(', ')}`);
           const d = g.lookVec(p.yaw, 0);
-          const x = args[1] ? coord(args[1], p.x) : p.x + d.x * 2, y = args[2] ? coord(args[2], p.y) : p.y, z = args[3] ? coord(args[3], p.z) : p.z + d.z * 2;
+          const x = args[1] ? coord(args[1], o.x) : o.x + d.x * 2, y = args[2] ? coord(args[2], o.y) : o.y, z = args[3] ? coord(args[3], o.z) : o.z + d.z * 2;
           g.interact!.spawnMob(type, x, y, z);
           out.push(`Summoned new ${type[0].toUpperCase() + type.slice(1)}`);
           break;
@@ -145,7 +147,7 @@ export class Commands {
           out.push(`Set Player's spawn point to ${p.spawnX}, ${p.spawnY}, ${p.spawnZ}`);
           break;
         case 'setblock': {
-          const x = Math.floor(coord(args[0], p.x)), y = Math.floor(coord(args[1], p.y)), z = Math.floor(coord(args[2], p.z));
+          const x = Math.floor(coord(args[0], o.x)), y = Math.floor(coord(args[1], o.y)), z = Math.floor(coord(args[2], o.z));
           const b = blockByName((args[3] ?? '').replace('minecraft:', ''));
           if (!b) throw new Error('Unknown block');
           g.world!.set(x, y, z, pack(b.id, parseInt(args[4] ?? '0') || 0));
@@ -153,7 +155,7 @@ export class Commands {
           break;
         }
         case 'fill': {
-          const [x0, y0, z0, x1, y1, z1] = args.slice(0, 6).map((a, i) => Math.floor(coord(a, [p.x, p.y, p.z][i % 3])));
+          const [x0, y0, z0, x1, y1, z1] = args.slice(0, 6).map((a, i) => Math.floor(coord(a, [o.x, o.y, o.z][i % 3])));
           const b = blockByName((args[6] ?? '').replace('minecraft:', ''));
           if (!b) throw new Error('Unknown block');
           const vol = (Math.abs(x1 - x0) + 1) * (Math.abs(y1 - y0) + 1) * (Math.abs(z1 - z0) + 1);

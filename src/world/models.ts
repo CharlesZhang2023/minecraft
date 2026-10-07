@@ -1,5 +1,5 @@
 // Box models for non-cube blocks. Shared by the mesher (rendering), physics (collision) and raycasting.
-import { B, B2, BLOCKS, OPAQUE, REDSTONE, Render, T, T2, idOf, metaOf, isStairs, isFence, HORIZ, FACING6, FACING6_TO_FACE, SHAPE, Shape as BS, BED_TEX, SHULKER_BOXES, WOOD } from './blocks';
+import { B, B2, BLOCKS, OPAQUE, REDSTONE, Render, T, T2, idOf, metaOf, isStairs, isFence, HORIZ, FACING6, FACING6_TO_FACE, SHAPE, Shape as BS, BED_TEX, SHULKER_BOXES, WOOD, COMMAND_BLOCKS, isCommandBlock } from './blocks';
 
 export interface Box {
   x0: number; y0: number; z0: number;
@@ -142,6 +142,15 @@ export function facing6CubeFaces(id: number, meta: number, tex: Int32Array, rot:
   const frontFace = FACING6_TO_FACE[fc];
   const backFace = frontFace ^ 1;
   const vertical = fc < 2;
+  if (isCommandBlock(id)) {
+    // sides carry arrows along the facing (conditional ones a different mark); the front and back their own faces
+    const dir = FACING6[fc], k = COMMAND_BLOCKS.indexOf(id);
+    for (let f = 0; f < 6; f++) { tex[f] = meta & 8 ? T2.commandCond[k] : def.faces[0]; rot[f] = rotFor(f, dir); }
+    tex[frontFace] = def.faces[6];
+    tex[backFace] = T2.commandBack[k];
+    rot[frontFace] = rot[backFace] = vertical ? rotFor(frontFace, [0, 0, -1]) : 0;
+    return;
+  }
   if (id === B.OBSERVER) {
     const dir = FACING6[fc];
     const back = [-dir[0], -dir[1], -dir[2]];
