@@ -1053,6 +1053,10 @@ export class Interaction {
       const m = metaOf(tv) & 7;
       if ((face === 3 && m === 0) || (face === 2 && m === 1)) return this.setPlaced(x, y, z, doubleSlab(blockId, tv), blockId);
     }
+    // scaffolding used on the top of scaffolding goes on top of the tower
+    if (blockId === B2.SCAFFOLDING && tid === B2.SCAFFOLDING && face === 3) {
+      while (y < 255 && w.getId(x, y + 1, z) === B2.SCAFFOLDING) y++;
+    }
     if (BLOCKS[tid].replaceable && tid !== B.WATER && tid !== B.LAVA || tid === B.SNOW) {
       face = 3;
     } else {

@@ -173,6 +173,29 @@ const chorus = await t.page.evaluate(() => window.sim((g, p) => {
 }));
 ok(chorus.plant >= 4 && chorus.flowers >= 1 && chorus.wide >= 1, `a chorus flower grows into a branching plant (${chorus.plant} stalks, ${chorus.wide} off-centre, ${chorus.flowers} flowers)`);
 
+// scaffolding (1.14): towers and overhangs up to six out; the seventh falls; using it on a tower's top adds to the top
+const scaf = await t.page.evaluate(async () => {
+  const { B2 } = await import('/src/world/blocks.ts');
+  const r = await window.sim((g, p) => {
+    const w = g.world, x = Math.floor(p.x) + 20, y = Math.floor(p.y) + 50, z = Math.floor(p.z) + 20;
+    for (let a = -2; a <= 10; a++) for (let c = -2; c <= 2; c++) { w.set(x + a, y - 1, z + c, 1); for (let b = 0; b < 8; b++) w.set(x + a, y + b, z + c, 0); }
+    for (let b = 0; b < 3; b++) w.set(x, y + b, z, B2.SCAFFOLDING);
+    for (let a = 1; a <= 7; a++) w.set(x + a, y + 2, z, B2.SCAFFOLDING);
+    return { x, y, z };
+  });
+  await new Promise((res) => setTimeout(res, 1500));
+  return window.sim((g, p) => {
+    const w = g.world, { x, y, z } = r;
+    const metas = [];
+    for (let a = 0; a <= 7; a++) metas.push(w.getId(x + a, y + 2, z) === B2.SCAFFOLDING ? w.get(x + a, y + 2, z) >>> 12 : -1);
+    const held = { id: B2.SCAFFOLDING, count: 5 };
+    g.interact.placeBlock({ x, y, z, face: 3, hx: x + 0.5, hy: y + 1, hz: z + 0.5 }, held, window.__mc.ITEMS.get(B2.SCAFFOLDING));
+    return { metas, top: w.getId(x, y + 3, z) === B2.SCAFFOLDING };
+  });
+});
+ok(JSON.stringify(scaf.metas.slice(0, 7)) === JSON.stringify([0, 9, 10, 11, 12, 13, 14]) && scaf.metas[7] === -1, `scaffolding counts out from its tower and the seventh falls (${scaf.metas})`);
+ok(scaf.top, 'scaffolding used on a tower goes on its top');
+
 // swimming (1.13): sprinting under water lays the player flat (0.6 tall) and moves along the look
 const pool = await t.page.evaluate(() => window.sim((g, p) => {
   const w = g.world, x = Math.floor(p.x) - 30, y = Math.floor(p.y) + 60, z = Math.floor(p.z) - 30;

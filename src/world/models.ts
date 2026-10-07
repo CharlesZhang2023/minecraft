@@ -428,7 +428,10 @@ function newBlockBoxes(id: number, meta: number, nb: Neighbor | undefined, f: nu
     }
     case B2.SCAFFOLDING: {
       const t = f[0];
-      return [box(0, 14, 0, 16, 16, 16, [t, t, f[2], f[3], t, t]), box(0, 0, 0, 2, 14, 2, t), box(14, 0, 0, 16, 14, 2, t), box(0, 0, 14, 2, 14, 16, t), box(14, 0, 14, 16, 14, 16, t)];
+      const out = [box(0, 14, 0, 16, 16, 16, [t, t, f[2], f[3], t, t]), box(0, 0, 0, 2, 14, 2, t), box(14, 0, 0, 16, 14, 2, t), box(0, 0, 14, 2, 14, 16, t), box(14, 0, 14, 16, 14, 16, t)];
+      // hanging over nothing: a frame round the bottom too
+      if (meta & 8) out.push(box(2, 0, 0, 14, 2, 2, t), box(2, 0, 14, 14, 2, 16, t), box(0, 0, 2, 2, 2, 14, t), box(14, 0, 2, 16, 2, 14, t));
+      return out;
     }
     case B2.STONECUTTER: return [box(0, 0, 0, 16, 9, 16, faces)];
     case B2.GRINDSTONE: {

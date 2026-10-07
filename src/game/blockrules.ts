@@ -93,3 +93,31 @@ export function insideBlock(e: Entity & { damage?(n: number, s: string): boolean
     e.fireTicks = Math.max(e.fireTicks, 160);
   }
 }
+
+/**
+ * Scaffolding (1.14): each piece is 0 on the ground or a tower over it, one more than its least neighbour sideways
+ * (to 7); at 7 it falls. A piece hanging over nothing gets a frame round its bottom (meta bit 8).
+ */
+export function scaffoldingDistance(w: World, x: number, y: number, z: number): number {
+  const below = w.getId(x, y - 1, z);
+  if (below === B2.SCAFFOLDING) return metaOf(w.get(x, y - 1, z)) & 7;
+  if (BLOCKS[below]?.solid) return 0;
+  let d = 7;
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (w.getId(x + dx, y, z + dz) === B2.SCAFFOLDING) d = Math.min(d, (metaOf(w.get(x + dx, y, z + dz)) & 7) + 1);
+  return d;
+}
+BLOCKS[B2.SCAFFOLDING].behavior = {
+  ...BLOCKS[B2.SCAFFOLDING].behavior,
+  neighborChanged(c) { c.game.ticker?.schedule(c.x, c.y, c.z, 1); },
+  onPlaced(c) { c.game.ticker?.schedule(c.x, c.y, c.z, 1); },
+  scheduledTick(c) {
+    const w = c.world, d = scaffoldingDistance(w, c.x, c.y, c.z);
+    if (d >= 7) {
+      w.set(c.x, c.y, c.z, B.AIR);
+      c.game.interact?.fallingBlock(c.x, c.y, c.z, B2.SCAFFOLDING);
+      return;
+    }
+    const bottom = d > 0 && w.getId(c.x, c.y - 1, c.z) !== B2.SCAFFOLDING && !BLOCKS[w.getId(c.x, c.y - 1, c.z)]?.solid ? 8 : 0;
+    if ((c.meta & 15) !== (d | bottom)) w.set(c.x, c.y, c.z, pack(B2.SCAFFOLDING, d | bottom));
+  },
+};
