@@ -2,8 +2,12 @@
 // (used by hoppers, droppers and comparators).
 import type { Game } from './game';
 import type { World } from '../world/world';
-import { B, B2, BLOCKS, FACING6, SHULKER_BOXES, COMMAND_BLOCKS, idOf, metaOf, pack } from '../world/blocks';
-import { ItemStack, getItem, sameItem, I, I2, I3, I6, stack, DISCS } from './items';
+import { B, B2, BLOCKS, FACING6, SHULKER_BOXES, COMMAND_BLOCKS, WOOL_COLORS, idOf, metaOf, pack } from '../world/blocks';
+import { ItemStack, getItem, sameItem, I, I2, I3, I5, I6, I7, stack, DISCS, BOATS, HORSE_ARMOR, POTION_ITEMS } from './items';
+import { Minecart, placeOnRail } from '../entity/minecart';
+import { FISH_BUCKETS } from '../entity/animals';
+import { buildGolem } from '../entity/overworldmobs';
+import { buildWither } from '../entity/wither';
 import { Arrow, Snowball, PrimedTnt, ItemEntity, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
 import { ThrownPotion } from '../entity/potion';
@@ -185,7 +189,17 @@ export class Devices {
       fb.setPos(ox, oy - 0.5, oz);
       g.addEntity(fb); take(); g.audio.play('fireball', at, 1, 1); return;
     }
-    if (d.splash) {
+    if (s.id === I7.SPECTRAL_ARROW || (d.potion && d.name.startsWith('tipped_arrow'))) {
+      const a = new Arrow(w, g, null);
+      a.setPos(ox, oy, oz);
+      a.shoot(dx, dy + 0.1, dz, 1.1, 6);
+      if (s.id === I7.SPECTRAL_ARROW) a.effect = ['glowing', 200, 0];
+      else a.tipped = d.potion!;
+      a.itemId = s.id;
+      g.addEntity(a); take(); g.audio.play('bow', at, 1, 1.2); return;
+    }
+    if (dispenseNewer(this, g, s, d.name, fx, fy, fz, f, take, done)) return;
+    if (d.splash || d.lingering) {
       const p = new ThrownPotion(w, g, null, { ...s, count: 1 });
       p.setPos(ox, oy, oz);
       p.vx = dx * 1.1; p.vy = dy * 1.1 + 0.1; p.vz = dz * 1.1;
@@ -240,11 +254,13 @@ export class Devices {
       e.setPos(fx + 0.5, fy, fz + 0.5);
       g.addEntity(e); take(); g.audio.play('fuse', at, 1, 1); return;
     }
-    if (s.id === I2.BOAT) {
+    if (s.id === I2.BOAT || Object.values(BOATS).includes(s.id)) {
       const water = w.getId(fx, fy, fz) === B.WATER;
       const below = w.getId(fx, fy - 1, fz) === B.WATER;
       if (water || below) {
         const b = new Boat(w, g);
+        const wood = Object.entries(BOATS).find(([, id]) => id === s.id)?.[0];
+        if (wood) (b as unknown as { wood?: string }).wood = wood;
         b.setPos(fx + 0.5, water ? fy + 0.52 : fy, fz + 0.5);
         b.yaw = b.pyaw = [0, 0, 180, 0, 90, 270][f];
         g.addEntity(b); take(); done(); return;
@@ -355,3 +371,102 @@ export class Devices {
     }
   }
 }
+
+/**
+ * Dispenser behaviours of 1.9-1.16: armour onto whoever stands in front, saddles and horse armour onto horses,
+ * shulker boxes placed, shears on sheep and full hives, bottles filled with water or honey, minecarts onto rails,
+ * glowstone into respawn anchors, carved pumpkins and wither skulls placed (building golems and withers), fish
+ * buckets emptied. Returns true if it did something (or should not fall back to dropping the item).
+ */
+function dispenseNewer(dev: unknown, g: Game, s: ItemStack, name: string, fx: number, fy: number, fz: number, f: number, take: (n?: number) => void, done: () => void): boolean {
+  const w = g.world!;
+  const front = g.entities.filter((e) => !e.removed && Math.abs(e.x - (fx + 0.5)) < 0.9 && e.y >= fy - 0.5 && e.y < fy + 1.5 && Math.abs(e.z - (fz + 0.5)) < 0.9) as unknown as Record<string, unknown>[];
+  const armor = getItem(s.id).armor;
+  if (armor) {
+    const who = front.find((e) => (e.inventory as { armor?: unknown[] } | undefined)?.armor || e.typeName === 'Armor Stand');
+    const slots = ((who?.inventory as { armor?: (ItemStack | null)[] } | undefined)?.armor ?? (who?.armorItems as (ItemStack | null)[] | undefined));
+    if (who && Array.isArray(slots) && !slots[armor.slot]) { slots[armor.slot] = { ...s, count: 1 }; take(); done(); return true; }
+    if (who) return false;
+  }
+  if (s.id === I5.SADDLE || HORSE_ARMOR[s.id]) {
+    const h = front.find((e) => ['Horse', 'Donkey', 'Mule', 'Strider', 'Pig'].includes(e.typeName as string)) as unknown as { saddle?: ItemStack | null; saddled?: boolean; tame?: boolean; armorItem?: ItemStack | null; setArmor?(s: ItemStack): void; canWearArmor?: boolean; baby?: boolean } | undefined;
+    if (h && !h.baby && s.id === I5.SADDLE) {
+      // horses keep the saddle itself; striders (and saddle-able pigs) just wear one
+      if ('saddle' in h && !h.saddle && h.tame) { h.saddle = { ...s, count: 1 }; take(); done(); return true; }
+      if ('saddled' in h && !h.saddled) { h.saddled = true; take(); done(); return true; }
+    }
+    if (h && HORSE_ARMOR[s.id] && h.canWearArmor && !h.armorItem && h.setArmor) { h.setArmor({ ...s, count: 1 }); take(); done(); return true; }
+  }
+  if (s.id === B2.SHULKER_BOX || SHULKER_BOXES.includes(s.id)) {
+    if (w.getId(fx, fy, fz) !== B.AIR) return false;
+    w.set(fx, fy, fz, pack(s.id, f));
+    if (s.box) w.setTile(fx, fy, fz, { type: 'chest', items: s.box.map((q) => (q ? { ...q } : null)) } as never);
+    take(); done(); return true;
+  }
+  if (name === 'shears') {
+    const sheep = front.find((e) => e.typeName === 'Sheep' && !e.sheared && !e.baby) as unknown as { sheared: boolean; color: number; x: number; y: number; z: number } | undefined;
+    if (sheep) {
+      sheep.sheared = true;
+      for (let i = 0, n = 1 + Math.floor(Math.random() * 3); i < n; i++) g.dropItem(sheep.x, sheep.y + 1, sheep.z, stack(WOOL_COLORS[sheep.color]));
+      s.damage = (s.damage ?? 0) + 1;
+      if (s.damage >= (getItem(s.id).durability ?? 238)) take();
+      done(); return true;
+    }
+    const hv = w.get(fx, fy, fz);
+    if ((idOf(hv) === B2.BEE_NEST || idOf(hv) === B2.BEEHIVE) && (metaOf(hv) & 8)) {
+      const t = w.getTile(fx, fy, fz) as unknown as { honey: number } | undefined;
+      g.dropItem(fx + 0.5, fy + 1, fz + 0.5, stack(I7.HONEYCOMB, 3));
+      if (t) { t.honey = 0; w.setTile(fx, fy, fz, t as never); }
+      w.set(fx, fy, fz, pack(idOf(hv), metaOf(hv) & 7));
+      done(); return true;
+    }
+    return true;
+  }
+  if (s.id === I3.GLASS_BOTTLE) {
+    const hv = w.get(fx, fy, fz);
+    let out: ItemStack | null = null;
+    if ((idOf(hv) === B2.BEE_NEST || idOf(hv) === B2.BEEHIVE) && (metaOf(hv) & 8)) {
+      const t = w.getTile(fx, fy, fz) as unknown as { honey: number } | undefined;
+      if (t) { t.honey = 0; w.setTile(fx, fy, fz, t as never); }
+      w.set(fx, fy, fz, pack(idOf(hv), metaOf(hv) & 7));
+      out = stack(I7.HONEY_BOTTLE);
+    } else if (idOf(hv) === B.WATER) out = stack(POTION_ITEMS.water);
+    if (!out) return false;
+    take();
+    const dd = dev as { w: World };
+    void dd;
+    g.dropItem(fx + 0.5, fy + 0.5, fz + 0.5, out);
+    done(); return true;
+  }
+  const cart = s.id === I5.MINECART ? 'minecart' : s.id === I7.CHEST_MINECART ? 'chest' : s.id === I7.FURNACE_MINECART ? 'furnace' : s.id === I7.HOPPER_MINECART ? 'hopper' : s.id === I7.TNT_MINECART ? 'tnt' : null;
+  if (cart) {
+    const on = placeOnRail(w, fx, fy, fz) ?? placeOnRail(w, fx, fy - 1, fz);
+    if (!on) return false;
+    const c = new Minecart(w, g);
+    c.setKind(cart);
+    c.setPos(fx + 0.5, on.y, fz + 0.5);
+    c.yaw = c.pyaw = on.yaw;
+    g.addEntity(c); take(); done(); return true;
+  }
+  if (s.id === B.GLOWSTONE && w.getId(fx, fy, fz) === B2.RESPAWN_ANCHOR) {
+    const m = metaOf(w.get(fx, fy, fz));
+    if (m < 4) { w.set(fx, fy, fz, pack(B2.RESPAWN_ANCHOR, m + 1)); take(); g.audio.play('anchor.charge', { x: fx + 0.5, y: fy + 0.5, z: fz + 0.5 }, 1, 1); }
+    return true;
+  }
+  if ((s.id === B2.CARVED_PUMPKIN || s.id === B2.WITHER_SKELETON_SKULL) && w.getId(fx, fy, fz) === B.AIR) {
+    w.set(fx, fy, fz, s.id === B2.CARVED_PUMPKIN ? pack(s.id, [0, 0, 2, 0, 3, 1][f] ?? 0) : s.id);
+    take(); done();
+    if (s.id === B2.CARVED_PUMPKIN) buildGolem(g, fx, fy, fz); else buildWither(g, fx, fy, fz);
+    return true;
+  }
+  if (FISH_BUCKET_IDS().includes(s.id) && BLOCKS[w.getId(fx, fy, fz)].replaceable) {
+    const kind = FISH_BUCKETS[s.id];
+    w.set(fx, fy, fz, B.WATER);
+    g.ticker!.schedule(fx, fy, fz, 5);
+    g.interact!.spawnMob(kind, fx + 0.5, fy + 0.2, fz + 0.5);
+    s.id = I.BUCKET; delete (s as { fish?: unknown }).fish;
+    done(); return true;
+  }
+  return false;
+}
+const FISH_BUCKET_IDS = () => Object.keys(FISH_BUCKETS).map(Number);
