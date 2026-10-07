@@ -84,7 +84,10 @@ export class LivingEntity extends Entity {
     if (res >= 0 && source !== 'void' && source !== 'kill') amount *= Math.max(0, 1 - 0.2 * (res + 1));
     // armor reduces most damage
     if (source !== 'drown' && source !== 'starve' && source !== 'void' && source !== 'fall' && source !== 'suffocate' && source !== 'kill' && source !== 'magic' && source !== 'wall') {
-      amount = (amount * (25 - this.armor)) / 25;
+      // 1.9: toughness lets armour hold up against big hits
+      const tough = this.armorToughness();
+      const eff = Math.min(20, Math.max(this.armor / 5, this.armor - amount / (2 + tough / 4)));
+      amount = (amount * (25 - eff)) / 25;
     }
     let applied = amount;
     if (this.invulnerable > this.hurtDuration / 2) {
@@ -129,6 +132,8 @@ export class LivingEntity extends Entity {
   }
 
   onHurt(_source: DamageSource, _attacker: Entity | null) {}
+  /** Armour toughness (players: from what they wear). */
+  armorToughness() { return 0; }
   die(_source: DamageSource, _attacker: Entity | null) {
     this.dead = true;
   }

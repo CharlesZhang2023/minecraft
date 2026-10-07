@@ -441,6 +441,8 @@ export class Creeper extends Monster {
   swell = 0;
   swellDir = 0;
   fuse = 30;
+  /** Struck by lightning: a charged creeper blows up twice as big (and its kills drop heads). */
+  charged = false;
   constructor(world: World, game: Game) {
     super(world, game);
     this.width = 0.6; this.height = 1.7;
@@ -474,7 +476,7 @@ export class Creeper extends Monster {
       this.swell = this.fuse;
       this.removed = true;
       this.dead = true;
-      this.game.interact!.explode(this.x, this.y, this.z, 3, false, this);
+      this.game.interact!.explode(this.x, this.y, this.z, this.charged ? 6 : 3, false, this);
     }
   }
   override drops(): ItemStack[] {

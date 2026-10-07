@@ -5,6 +5,8 @@ export type Slots = (ItemStack | null)[];
 export class Inventory {
   main: Slots = new Array(36).fill(null); // 0-8 hotbar, 9-35 storage
   armor: Slots = new Array(4).fill(null); // helmet, chest, legs, boots
+  /** The off hand (1.9): shields, totems, torches, fireworks for crossbows... */
+  offhand: ItemStack | null = null;
   selected = 0;
 
   held(): ItemStack | null {
@@ -48,12 +50,14 @@ export class Inventory {
   clear() {
     this.main.fill(null);
     this.armor.fill(null);
+    this.offhand = null;
   }
 
   toJSON() {
-    return { main: this.main, armor: this.armor, selected: this.selected };
+    return { main: this.main, armor: this.armor, offhand: this.offhand, selected: this.selected };
   }
-  load(d: { main: Slots; armor: Slots; selected: number }) {
+  load(d: { main: Slots; armor: Slots; selected: number; offhand?: ItemStack | null }) {
+    this.offhand = cloneStack(d.offhand ?? null);
     this.main = d.main.map(cloneStack);
     while (this.main.length < 36) this.main.push(null);
     this.armor = (d.armor ?? [null, null, null, null]).map(cloneStack);

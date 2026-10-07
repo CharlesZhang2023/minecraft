@@ -1,4 +1,5 @@
 // Container screens with Minecraft's slot-click semantics.
+import { bound } from '../game/combat';
 import { Screen, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
@@ -20,6 +21,8 @@ export interface Slot {
   get(): ItemStack | null;
   set(s: ItemStack | null): void;
   canPlace?(s: ItemStack): boolean;
+  /** False while the item can't be taken out (cursed with binding). */
+  canTake?(): boolean;
   output?: boolean;
   group: string;
   limit?: number;
@@ -190,6 +193,7 @@ export abstract class ContainerScreen extends Screen {
 
   click(s: Slot, button: number) {
     const cur = s.get();
+    if (cur && s.canTake && !s.canTake()) return;
     if (s.infinite) {
       if (this.cursor) { this.cursor = null; return; }
       if (cur) this.cursor = { ...cur, count: button === 0 ? getItem(cur.id).maxStack : 1 };
@@ -278,6 +282,7 @@ export abstract class ContainerScreen extends Screen {
       }
       return;
     }
+    if (s.canTake && !s.canTake()) return;
     const targets = this.quickTargets(s, st);
     const left = this.insertInto(st, targets);
     if (left <= 0) s.set(null);
@@ -473,7 +478,9 @@ export class InventoryScreen extends ContainerScreen {
   override buildSlots() {
     const armor = this.inv.armor;
     for (let i = 0; i < 4; i++)
-      this.slots.push({ x: 8, y: 8 + i * 18, get: () => armor[i], set: (s) => (armor[i] = s), group: 'armor', limit: 1, canPlace: (s) => getItem(s.id).armor?.slot === i || (i === 0 && s.id === B.PUMPKIN) });
+      this.slots.push({ x: 8, y: 8 + i * 18, get: () => armor[i], set: (s) => (armor[i] = s), group: 'armor', limit: 1, canPlace: (s) => getItem(s.id).armor?.slot === i || (i === 0 && (s.id === B.PUMPKIN || s.id === B2.CARVED_PUMPKIN)), canTake: () => !bound(armor[i], this.player) });
+    // the off hand (1.9)
+    this.slots.push({ x: 77, y: 62, get: () => this.inv.offhand, set: (s) => (this.inv.offhand = s), group: 'offhand' });
     addGridSlots(this, this.grid, 98, 18, 154, 28, false);
     this.addPlayerSlots();
   }
@@ -488,6 +495,8 @@ export class InventoryScreen extends ContainerScreen {
       const slot = getItem(st.id).armor!.slot;
       if (!this.inv.armor[slot]) return ['armor'];
     }
+    // shields shift-click into a free off hand
+    if ((s.group === 'main' || s.group === 'hotbar') && st.id === I7.SHIELD && !this.inv.offhand) return ['offhand'];
     return super.quickTargets(s, st);
   }
   override drawBackground(ctx: Ctx, mx: number, my: number) {

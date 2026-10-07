@@ -1,4 +1,5 @@
 import { enterGateway } from '../game/gateways';
+import { mend } from '../game/mending';
 import { Player } from '../game/player';
 import { Entity } from './entity';
 import type { World } from '../world/world';
@@ -27,6 +28,8 @@ export class ItemEntity extends Entity {
       this.vy += this.vy < 0.06 ? 0.005 : 0;
       this.vx *= 0.99; this.vz *= 0.99;
     } else this.vy -= 0.04;
+    // netherite (and nether stars) don't burn: they bob up through lava
+    if (this.inLava && getItem(this.item.id).fireproof) { this.vy = Math.min(0.1, this.vy + 0.02); this.vx *= 0.9; this.vz *= 0.9; this.move(this.vx, this.vy, this.vz); this.tryPickup(); return; }
     if (this.inLava) {
       this.vy = 0.2;
       this.vx = (Math.random() - 0.5) * 0.2;
@@ -123,7 +126,8 @@ export class XpOrb extends Entity {
       }
       if (this.age > 10 && Math.abs(dx) < 1 && Math.abs(dy) < 1.3 && Math.abs(dz) < 1) {
         const lvl = p.xpLevel;
-        p.addXp(this.value);
+        const left = mend(p, this.value);
+        if (left > 0) p.addXp(left);
         this.game.audio.play('orb', this, 0.1, 0.5 * ((Math.random() - Math.random()) * 0.7 + 1.8));
         if (p.xpLevel > lvl && p.xpLevel % 5 === 0) this.game.audio.play('levelup', null, 0.75, 1);
         this.removed = true;
@@ -219,11 +223,18 @@ export class Arrow extends Entity {
   persist = false;
   pickup = true;
   shake = 0;
-  /** A tipped arrow's effect (id, ticks, amplifier), given to what it hits. */
+  /** A tipped arrow's effect (id, ticks, amplifier), given to what it hits; or a potion key (tipped arrows). */
   effect: [string, number, number] | null = null;
+  tipped = '';
+  /** The item it's drawn as (an arrow, or a trident), and how many more entities it can pass through (piercing). */
+  itemId = 1;
+  pierce = 0;
+  /** Entities it has already gone through (piercing arrows don't hit the same one twice). */
+  pierced: Entity[] = [];
   constructor(world: World, public game: Game, public shooter: Entity | null) {
     super(world);
     this.width = this.height = 0.5;
+    this.itemId = game.interact?.arrowId ?? 1;
   }
   shoot(dx: number, dy: number, dz: number, speed: number, spread: number) {
     const l = Math.hypot(dx, dy, dz);

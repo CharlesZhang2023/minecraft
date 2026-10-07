@@ -118,6 +118,8 @@ export class Client {
   private last = performance.now();
   partial = 0;
   gatewayBeam: { x: number; y: number; z: number; until: number } | null = null;
+  /** Ticks left of the totem of undying's flash. */
+  totemFlash = 0;
   pistons = { list: [] as number[][], renderList: (t: number) => pistonDrawList(this.pistons.list, t) };
   target: BlockHit | null = null;
   targetEntity: Entity | null = null;
@@ -1024,6 +1026,9 @@ export class Client {
       case 'boost': p.rocketBoost = Math.max(p.rocketBoost, e[1] as number); break;
       case 'beam': this.gatewayBeam = { x: e[1] as number, y: e[2] as number, z: e[3] as number, until: this.ticks + (e[4] as number) }; break;
       case 'thunder': this.weather?.strike(e[1] as number); break;
+      // a riptide trident flings its thrower (whose own client moves them)
+      case 'riptide': p.vx += e[1] as number; p.vy += e[2] as number; p.vz += e[3] as number; p.riptideTicks = 20; break;
+      case 'totem': this.totemFlash = 40; this.audio.play('totem.use', null, 1, 1); break;
     }
   }
 

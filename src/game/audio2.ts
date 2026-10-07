@@ -133,5 +133,41 @@ export function moreSounds(add: (name: string, g: Gen) => void, s: Synth, SR: nu
   add('iron_golem.repair', (r) => normalize(env(tone(Math.floor(SR * 0.4), 1200 + r.next() * 200, 1400, 'square'), 0.002, 0.3, 3), 0.3));
   add('throw', (r) => normalize(env(bandpass(noise(Math.floor(SR * 0.2), r), 500, 2500), 0.02, 0.15, 2), 0.35));
   add('shears', (r) => normalize(mixInto(env(highpass(noise(Math.floor(SR * 0.12), r), 3000), 0.001, 0.05, 3), env(highpass(noise(Math.floor(SR * 0.12), r), 3000), 0.001, 0.05, 3), 0.8, Math.floor(SR * 0.06)), 0.4));
+  // ---- 1.9+ combat
+  const whoosh = (r: Random, len: number, lo: number, hi: number, gain: number) => normalize(env(bandpass(noise(Math.floor(SR * len), r), lo, hi), len * 0.3, len * 0.6, 1.5), gain);
+  add('sweep', (r) => whoosh(r, 0.35, 800, 5000, 0.5));
+  add('attack.sweep', (r) => whoosh(r, 0.35, 800, 5000, 0.5));
+  add('attack.strong', (r) => normalize(mixInto(env(lowpass(noise(Math.floor(SR * 0.15), r), 1200), 0.001, 0.12, 3), env(tone(Math.floor(SR * 0.15), 160, 90, 'sine'), 0.001, 0.1, 3), 0.5), 0.6));
+  add('attack.weak', (r) => normalize(env(lowpass(noise(Math.floor(SR * 0.1), r), 800), 0.001, 0.08, 3), 0.35));
+  add('attack.crit', (r) => normalize(mixInto(env(highpass(noise(Math.floor(SR * 0.2), r), 2500), 0.001, 0.15, 3), env(tone(Math.floor(SR * 0.2), 900, 500, 'square'), 0.001, 0.1, 3), 0.3), 0.5));
+  add('shield.block', (r) => normalize(mixInto(env(lowpass(noise(Math.floor(SR * 0.25), r), 900), 0.001, 0.2, 2.5), env(tone(Math.floor(SR * 0.25), 140, 110, 'square'), 0.001, 0.2, 2.5), 0.4), 0.7));
+  add('shield.break', (r) => normalize(mixInto(env(highpass(noise(Math.floor(SR * 0.5), r), 1200), 0.001, 0.4, 2), env(tone(Math.floor(SR * 0.5), 300, 120, 'saw'), 0.001, 0.4, 2), 0.4), 0.7));
+  add('crossbow.loading', (r) => normalize(env(bandpass(noise(Math.floor(SR * 0.6), r), 1500, 6000), 0.4, 0.2, 1), 0.3));
+  add('crossbow.loaded', (r) => normalize(mixInto(env(highpass(noise(Math.floor(SR * 0.15), r), 3000), 0.001, 0.1, 3), env(tone(Math.floor(SR * 0.15), 1200, 900, 'square'), 0.001, 0.08, 3), 0.3), 0.5));
+  add('crossbow.shoot', (r) => normalize(mixInto(env(lowpass(noise(Math.floor(SR * 0.3), r), 2500), 0.001, 0.2, 3), env(tone(Math.floor(SR * 0.3), 400, 150, 'tri'), 0.001, 0.15, 3), 0.6), 0.7));
+  add('trident.throw', (r) => whoosh(r, 0.5, 400, 3000, 0.6));
+  add('trident.hit', (r) => normalize(mixInto(env(tone(Math.floor(SR * 0.4), 1800, 1600, 'sine'), 0.001, 0.35, 2), env(lowpass(noise(Math.floor(SR * 0.4), r), 1500), 0.001, 0.15, 3), 0.5), 0.5));
+  add('trident.return', (r) => normalize(env(tone(Math.floor(SR * 0.6), 600, 1200, 'sine', 0.05, 12), 0.05, 0.5, 1.5), 0.4));
+  add('trident.riptide', (r) => normalize(mixInto(whoosh(r, 0.9, 200, 2500, 0.8), env(tone(Math.floor(SR * 0.9), 120, 400, 'saw'), 0.05, 0.8, 1.5), 0.3), 0.7));
+  add('totem.use', (r) => {
+    const n = Math.floor(SR * 1.6), b = new Float32Array(n);
+    [0, 4, 7, 12, 16].forEach((k, i) => mixInto(b, env(tone(Math.floor(SR * 1.2), 440 * 2 ** (k / 12), 440 * 2 ** (k / 12), 'tri'), 0.01, 1, 2), 0.4, Math.floor(SR * 0.08 * i)));
+    mixInto(b, env(highpass(noise(n, r), 4000), 0.3, 1.2, 1.5), 0.2);
+    return normalize(b, 0.6);
+  });
+  add('bottle.fill', (r) => normalize(env(tone(Math.floor(SR * 0.4), 300, 900, 'sine', 0.2, 30), 0.01, 0.35, 2), 0.4));
+  add('bee.loop', (r) => normalize(env(tone(Math.floor(SR * 0.6), 190 + r.next() * 20, 200, 'saw', 0.03, 30), 0.1, 0.5, 1), 0.15));
+  add('bee.hurt', (r) => normalize(env(tone(Math.floor(SR * 0.25), 420, 300, 'saw', 0.1, 40), 0.005, 0.2, 2), 0.4));
+  add('bee.death', (r) => normalize(env(tone(Math.floor(SR * 0.6), 400, 120, 'saw', 0.1, 30), 0.005, 0.55, 2), 0.4));
+  add('bee.sting', (r) => normalize(env(highpass(noise(Math.floor(SR * 0.15), r), 3000), 0.001, 0.1, 3), 0.4));
+  add('bee.enter', (r) => normalize(env(bandpass(noise(Math.floor(SR * 0.3), r), 300, 1500), 0.05, 0.2, 2), 0.3));
+  add('rabbit.hop', (r) => normalize(env(lowpass(noise(Math.floor(SR * 0.08), r), 600), 0.001, 0.06, 3), 0.25));
+  add('fish.flop', (r) => normalize(env(lowpass(noise(Math.floor(SR * 0.1), r), 900), 0.001, 0.08, 3), 0.35));
+  add('pufferfish.blow_up', (r) => normalize(env(tone(Math.floor(SR * 0.3), 200, 500, 'sine'), 0.01, 0.25, 2), 0.4));
+  add('cat.purr', (r) => normalize(lowpass(env(tone(Math.floor(SR * 1), 28, 26, 'saw', 0.3, 25), 0.1, 0.8, 1), 600), 0.4));
+  add('panda.sneeze', (r) => normalize(mixInto(env(highpass(noise(Math.floor(SR * 0.4), r), 1500), 0.15, 0.2, 2), env(tone(Math.floor(SR * 0.4), 500, 300, 'saw'), 0.15, 0.2, 2), 0.3), 0.5));
+  add('llama.spit', (r) => normalize(env(bandpass(noise(Math.floor(SR * 0.2), r), 1000, 4000), 0.005, 0.15, 3), 0.4));
+  add('turtle.egg_crack', (r) => normalize(env(highpass(noise(Math.floor(SR * 0.1), r), 2500), 0.001, 0.07, 3), 0.4));
+  add('turtle.egg_hatch', (r) => normalize(env(highpass(noise(Math.floor(SR * 0.25), r), 2000), 0.001, 0.2, 2), 0.5));
   void highpass;
 }

@@ -18,7 +18,7 @@ import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball } from '../entity/item';
 import { ThrownPotion } from '../entity/potion';
-import { getItem, I, I6 } from '../game/items';
+import { getItem, I, I6, I7 } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
 import { BLOCKS, TEXTURES, Render, B, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX } from '../world/blocks';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
@@ -580,6 +580,17 @@ export class EntityRenderer {
         if (arms === 'bow') { ra = -Math.PI / 2 + hp; la = -Math.PI / 2 + hp; raY = -0.1 + netHead; laY = 0.1 + netHead + 0.4; }
         // spellcasting (evokers): both arms up, waving
         if (arms === 'cast') { ra = la = c(age * 0.6662) * 0.25; raZ = (Math.PI * 3) / 4; laZ = -(Math.PI * 3) / 4; }
+        // 1.9+ item poses: bows drawn, crossbows charging or aimed, tridents raised, shields up
+        const using = anyE.using as string | undefined;
+        const heldStack = e instanceof Player ? e.inventory.held() : null;
+        if (using === 'bow') { ra = -Math.PI / 2 + hp; la = -Math.PI / 2 + hp; raY = -0.1 + netHead; laY = 0.1 + netHead + 0.4; }
+        else if (using === 'crossbow') { const k = Math.min(1, ((anyE.useTicks as number) ?? 0) / 25); ra = -0.97; raY = -0.8; la = -0.97 + k * 0.4; laY = 0.85 - k * 0.6; }
+        else if (heldStack?.charged || (arms === 'bow' && (anyE.heldItem as number) === I7.CROSSBOW)) { ra = -1.5 + hp; raY = -0.3 + netHead; la = -1.5 + hp; laY = 0.6 + netHead; }
+        else if (using === 'trident') { ra = ra * 0.5 - Math.PI; raY = 0; }
+        if (anyE.blocking) {
+          if (e instanceof Player && e.inventory.offhand?.id === I7.SHIELD && heldStack?.id !== I7.SHIELD) { la = la * 0.5 - 0.9424778; laY = -0.5235988; }
+          else { ra = ra * 0.5 - 0.9424778; raY = 0.5235988; }
+        }
         if (swing > 0) {
           const f1 = Math.sin(Math.sqrt(swing) * Math.PI * 2) * 0.2;
           let f = 1 - swing;
@@ -593,7 +604,7 @@ export class EntityRenderer {
         laZ -= c(age * 0.09) * 0.05 + 0.05;
         ra += Math.sin(age * 0.067) * 0.05;
         la -= Math.sin(age * 0.067) * 0.05;
-        if (anyE.holding && arms !== 'bow' && arms !== 'zombie') ra = ra * 0.5 - Math.PI / 10;
+        if (anyE.holding && arms !== 'bow' && arms !== 'zombie' && !using && !anyE.blocking) ra = ra * 0.5 - Math.PI / 10;
         pose.rightArm = [ra + (sneak ? 0.4 : 0), raY, raZ];
         pose.leftArm = [la + (sneak ? 0.4 : 0), laY, laZ];
         pose.rightLeg = [(c(ls * 0.6662) * 1.4 * lsa) / lf, 0, 0];
@@ -631,6 +642,8 @@ export class EntityRenderer {
           if (e.inventory.armor[1]?.id === I6.ELYTRA) this.drawElytra(e, base, light, overlay);
           const it = e.inventory.held();
           if (it) this.drawHeldThirdPerson(it.id, base, pose.rightArm, light);
+          const oh = e.inventory.offhand;
+          if (oh) this.drawHeldThirdPerson(oh.id, base, pose.leftArm, light, undefined, true);
         }
         break;
       }
@@ -904,13 +917,15 @@ export class EntityRenderer {
     this.drawModel('elytra', 'elytra', base, pose, light, overlay, undefined, 1, offs);
   }
 
-  private drawHeldThirdPerson(id: number, base: Mat4, armRot: [number, number, number], light: [number, number], off?: [number, number, number]) {
+  private drawHeldThirdPerson(id: number, base: Mat4, armRot: [number, number, number], light: [number, number], off?: [number, number, number], left = false) {
     const m = mat4();
-    translate(m, base, -5 / 16 + (off?.[0] ?? 0) / 16, 2 / 16 + (off?.[1] ?? 0) / 16, (off?.[2] ?? 0) / 16);
+    const side = left ? -1 : 1;
+    translate(m, base, (-5 * side) / 16 + (off?.[0] ?? 0) / 16, 2 / 16 + (off?.[1] ?? 0) / 16, (off?.[2] ?? 0) / 16);
     rotateZ(m, m, armRot[2]);
     rotateY(m, m, armRot[1]);
     rotateX(m, m, armRot[0]);
-    translate(m, m, -1 / 16, 7 / 16, 1 / 16);
+    translate(m, m, (-1 * side) / 16, 7 / 16, 1 / 16);
+    if (left) scale(m, m, -1, 1, 1);
     const it = getItem(id);
     if (it.block !== undefined && !it.flatBlock && !it.sprite) {
       // LayerHeldItem (1.8) block transform, in model space, then flip back to y-up
@@ -1307,7 +1322,7 @@ export class EntityRenderer {
     rotateY(m, m, -Math.PI / 2);
     rotateZ(m, m, -Math.PI / 4);
     scale(m, m, 0.7, 0.7, 0.7);
-    this.appendItem(mesh, I.ARROW, m, sky, blk);
+    this.appendItem(mesh, e.itemId || I.ARROW, m, sky, blk);
   }
 
   /** Player model in the inventory screen, drawn into a GUI rectangle. */
@@ -1432,6 +1447,8 @@ export class EntityRenderer {
       const s = Math.sqrt(swing);
       translate(m, m, -0.4 * Math.sin(s * Math.PI), 0.2 * Math.sin(s * Math.PI * 2), -0.2 * Math.sin(swing * Math.PI));
     }
+    // a raised shield comes up toward the middle
+    if (p.blocking && held.id === I7.SHIELD) { translate(m, m, -0.2, 0.18, 0); rotateY(m, m, 30 * DEG); }
     // transformFirstPersonItem
     translate(m, m, 0.56, -0.52, -0.71999997);
     translate(m, m, 0, eq * -0.6, 0);
@@ -1475,7 +1492,41 @@ export class EntityRenderer {
     this.appendItem(dm, held.id, m, sky, blk);
     const glint: [number, number, number, number] | undefined = held.ench ? [0.55, 0.3, 1, 0.22 + Math.sin(performance.now() / 300) * 0.08] : undefined;
     this.r.drawDyn(dm, { cull: false, viewProj: proj, overlay: glint });
+    this.drawOffhand(game, t, proj, sky, blk);
     this.currentVP = this.r.viewProj;
+  }
+
+  /** The off-hand item in first person: the main hand's transform mirrored to the left (a raised shield comes up in front). */
+  private drawOffhand(game: Game, t: number, proj: Mat4, sky: number, blk: number) {
+    const p = game.player!;
+    const off = p.inventory.offhand;
+    if (!off) return;
+    const m = mat4();
+    identity(m);
+    const dyaw = (p.yaw - p.pyaw) * (1 - t), dpitch = (p.pitch - p.ppitch) * (1 - t);
+    rotateX(m, m, dpitch * 0.1 * DEG);
+    rotateY(m, m, dyaw * 0.1 * DEG);
+    scale(m, m, -1, 1, 1);
+    const up = p.blocking && off.id === I7.SHIELD && p.inventory.held()?.id !== I7.SHIELD;
+    translate(m, m, 0.56 - (up ? 0.2 : 0), -0.52 + (up ? 0.18 : 0), -0.72);
+    rotateY(m, m, 45 * DEG);
+    if (up) rotateY(m, m, -30 * DEG);
+    scale(m, m, 0.4, 0.4, 0.4);
+    const it = getItem(off.id);
+    if (it.block !== undefined && !it.flatBlock && !it.sprite) {
+      translate(m, m, 0, 0.1, 0);
+      rotateY(m, m, 45 * DEG);
+      scale(m, m, 0.42, 0.42, 0.42);
+    } else {
+      translate(m, m, 0, 4 / 16 * 1.7 * 0.5, 2 / 16 * 1.7 * 0.5);
+      rotateY(m, m, -135 * DEG);
+      rotateZ(m, m, 25 * DEG);
+      scale(m, m, 1.7 * 0.8, 1.7 * 0.8, 1.7 * 0.8);
+    }
+    const dm = this.handMesh;
+    dm.reset();
+    this.appendItem(dm, off.id, m, sky, blk);
+    this.r.drawDyn(dm, { cull: false, viewProj: proj });
   }
 }
 

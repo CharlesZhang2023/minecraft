@@ -3,7 +3,7 @@ import { getItem, ItemStack, I, I2, I3 } from './items';
 import { Random } from '../noise';
 import { B } from '../world/blocks';
 
-export interface EnchDef { id: string; name: string; max: number; weight: number; applies: (s: ItemStack) => boolean; group?: string }
+export interface EnchDef { id: string; name: string; max: number; weight: number; applies: (s: ItemStack) => boolean; group?: string; /** Only from loot, trading and fishing (never the table). */ treasure?: boolean; curse?: boolean }
 
 const toolType = (s: ItemStack) => getItem(s.id).tool?.type ?? '';
 const digger = (s: ItemStack) => ['pickaxe', 'axe', 'shovel'].includes(toolType(s));
@@ -17,6 +17,9 @@ const helmet = (s: ItemStack) => getItem(s.id).armor?.slot === 0;
 const chest = (s: ItemStack) => getItem(s.id).armor?.slot === 1 && armor(s);
 const boots = (s: ItemStack) => getItem(s.id).armor?.slot === 3;
 const damageable = (s: ItemStack) => !!getItem(s.id).durability;
+const wearable = (s: ItemStack) => getItem(s.id).armor !== undefined || s.id === B.PUMPKIN;
+const trident = (s: ItemStack) => getItem(s.id).name === 'trident';
+const crossbow = (s: ItemStack) => getItem(s.id).name === 'crossbow';
 
 export const ENCHANTS: EnchDef[] = [
   { id: 'protection', name: 'Protection', max: 4, weight: 10, applies: armor, group: 'protection' },
@@ -44,6 +47,20 @@ export const ENCHANTS: EnchDef[] = [
   { id: 'infinity', name: 'Infinity', max: 1, weight: 1, applies: bow },
   { id: 'luck_of_the_sea', name: 'Luck of the Sea', max: 3, weight: 2, applies: rod },
   { id: 'lure', name: 'Lure', max: 3, weight: 2, applies: rod },
+  // 1.9-1.16
+  { id: 'frost_walker', name: 'Frost Walker', max: 2, weight: 2, applies: boots, group: 'boots_fluid', treasure: true },
+  { id: 'mending', name: 'Mending', max: 1, weight: 2, applies: damageable, group: 'infinite', treasure: true },
+  { id: 'binding_curse', name: 'Curse of Binding', max: 1, weight: 1, applies: wearable, treasure: true, curse: true },
+  { id: 'vanishing_curse', name: 'Curse of Vanishing', max: 1, weight: 1, applies: damageable, treasure: true, curse: true },
+  { id: 'sweeping', name: 'Sweeping Edge', max: 3, weight: 2, applies: sword },
+  { id: 'loyalty', name: 'Loyalty', max: 3, weight: 5, applies: trident, group: 'riptide' },
+  { id: 'impaling', name: 'Impaling', max: 5, weight: 2, applies: trident },
+  { id: 'riptide', name: 'Riptide', max: 3, weight: 2, applies: trident, group: 'riptide2' },
+  { id: 'channeling', name: 'Channeling', max: 1, weight: 1, applies: trident, group: 'riptide2' },
+  { id: 'multishot', name: 'Multishot', max: 1, weight: 2, applies: crossbow, group: 'piercing' },
+  { id: 'quick_charge', name: 'Quick Charge', max: 3, weight: 5, applies: crossbow },
+  { id: 'piercing', name: 'Piercing', max: 4, weight: 10, applies: crossbow, group: 'piercing' },
+  { id: 'soul_speed', name: 'Soul Speed', max: 3, weight: 1, applies: boots, treasure: true },
 ];
 export const ENCH_BY_ID = new Map(ENCHANTS.map((e) => [e.id, e]));
 
@@ -54,8 +71,10 @@ export const level = (s: ItemStack | null | undefined, id: string) => (s && s.id
 export const isBook = (s: ItemStack | null | undefined) => !!s && s.id === I3.ENCHANTED_BOOK;
 export const canEnchant = (s: ItemStack | null) => !!s && s.count === 1 && !s.ench && (s.id === I.BOOK || ENCHANTS.some((e) => e.applies(s)));
 /** Two enchantments that can't share an item (Protection types, damage types, Silk Touch/Fortune). */
+const PAIRS = [['depth_strider', 'frost_walker'], ['infinity', 'mending'], ['riptide', 'loyalty'], ['riptide', 'channeling'], ['multishot', 'piercing']];
 export const conflicts = (a: string, b: string) => {
   if (a === b) return false;
+  if (PAIRS.some(([x, y]) => (a === x && b === y) || (a === y && b === x))) return true;
   const ga = ENCH_BY_ID.get(a)?.group, gb = ENCH_BY_ID.get(b)?.group;
   return !!ga && ga === gb;
 };
@@ -73,7 +92,7 @@ export function rollEnchants(s: ItemStack, cost: number, r: Random): Record<stri
   const enchantability = book ? 1 : 10;
   let lvl = cost + 1 + r.int(Math.floor(enchantability / 4) + 1) + r.int(Math.floor(enchantability / 4) + 1);
   lvl = Math.max(1, Math.round(lvl * (1 + (r.next() + r.next() - 1) * 0.15)));
-  const pool = ENCHANTS.filter((e) => book || e.applies(s));
+  const pool = ENCHANTS.filter((e) => !e.treasure && (book || e.applies(s)));
   const out: Record<string, number> = {};
   const pick = () => {
     const avail = pool.filter((e) => !(e.id in out) && !Object.keys(out).some((k) => conflicts(k, e.id)));

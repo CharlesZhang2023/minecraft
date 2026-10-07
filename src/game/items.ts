@@ -14,6 +14,8 @@ export interface ItemDef {
   food?: { hunger: number; saturation: number; stew?: boolean };
   armor?: { slot: 0 | 1 | 2 | 3; points: number; toughness?: number; knockback?: number }; // 0 helmet .. 3 boots
   attack?: number;
+  /** Attacks per second at full strength (1.9 cooldown; default 4). */
+  attackSpeed?: number;
   fuel?: number; // burn ticks in a furnace
   sprite?: string; // item sprite name (else rendered from the block)
   flatBlock?: boolean; // block item rendered as flat sprite (flowers, torches...)
@@ -525,6 +527,8 @@ export interface ItemStack {
   name?: string; // custom name from an anvil
   repair?: number; // anvil prior-work penalty
   fw?: Firework; // firework rockets and stars
+  /** A loaded crossbow: what it's loaded with. */
+  charged?: { id: number; fw?: Firework };
   /** Mods: JSON data of their own (a wand's spells...). Stacks only stack when their tags match. Replace it, don't mutate it. */
   tag?: Record<string, unknown>;
 }

@@ -1,3 +1,13 @@
+/** Combat rules the player calls into (filled in by combat.ts when it loads: importing it here would make a cycle). */
+export const playerHooks = {
+  combatTick: (_p: Player) => {},
+  shieldBlocks: (_g: import('./game').Game, _p: Player, _amount: number, _source: DamageSource, _attacker: Entity | null) => false,
+  useTotem: (_g: import('./game').Game, _p: Player, _source: DamageSource) => false,
+  vanishOnDeath: (_p: Player) => {},
+  soulSpeed: (_p: Player) => 1,
+};
+import { live } from '../mod/hooks';
+import { getItem } from './items';
 import { LivingEntity, DamageSource } from '../entity/living';
 import type { Entity } from '../entity/entity';
 import type { World } from '../world/world';
@@ -37,6 +47,17 @@ export class Player extends LivingEntity {
   /** Parrots riding on the shoulders (variant, health and owner, to put back into the world). */
   shoulderLeft: { variant: number; health: number; ownerName: string } | null = null;
   shoulderRight: { variant: number; health: number; ownerName: string } | null = null;
+  /** 1.9 combat: ticks since the last swing (or since the held item changed), and which item that was. */
+  attackTicks = 0;
+  lastHeldId = 0;
+  /** Holding a shield up (and ticks until an axe-disabled shield works again). */
+  blocking = false;
+  shieldCooldown = 0;
+  /** What's being used with the button held ('bow', 'shield', 'crossbow', 'trident', ''), for poses. */
+  using = '';
+  useTicks = 0;
+  /** Spinning along after a riptide throw (client). */
+  riptideTicks = 0;
   /** Ticks since the player last slept (phantoms come after three days). */
   restTicks = 0;
   sleepTimer = 0;
@@ -113,7 +134,9 @@ export class Player extends LivingEntity {
     this.height = h;
   }
   override isFlying() { return this.flying; }
-  override groundSpeed() { return this.moveSpeed * (this.sprinting ? 1.3 : 1); }
+  override groundSpeed() { return this.moveSpeed * (this.sprinting ? 1.3 : 1) * playerHooks.soulSpeed(this) * (this.blocking || this.using === 'bow' || this.using === 'crossbow' || this.using === 'trident' ? 0.2 : 1); }
+  /** Armour toughness (1.9): diamond 2 a piece, netherite 3. */
+  override armorToughness() { return this.inventory.armor.reduce((t, s) => t + (s ? getItem(s.id).armor?.toughness ?? 0 : 0), 0); }
   override airSpeed() {
     if (this.flying) return 0.05 * (this.sprinting ? 2 : 1);
     return this.sprinting ? 0.026 : 0.02;
@@ -181,6 +204,7 @@ export class Player extends LivingEntity {
       return;
     }
     this.armor = this.inventory.armorPoints();
+    playerHooks.combatTick(this);
     this.livingTick();
     // walking distance for bobbing / hunger
     const dx = this.x - ox, dz = this.z - oz;
@@ -350,6 +374,8 @@ export class Player extends LivingEntity {
       }
       if (epf) amount *= 1 - Math.min(20, epf) / 25;
     }
+    // a raised shield takes hits from the front
+    if (live.game && playerHooks.shieldBlocks(live.game, this, amount, source, attacker ?? null)) return false;
     const before = this.health;
     const r = super.damage(amount, source, attacker);
     if (r && attacker && (source === 'mob' || source === 'player')) {
@@ -368,6 +394,9 @@ export class Player extends LivingEntity {
   }
 
   override die(source: DamageSource, attacker: Entity | null) {
+    // a totem of undying in either hand: not today
+    if (live.game && playerHooks.useTotem(live.game, this, source)) return;
+    playerHooks.vanishOnDeath(this);
     super.die(source, attacker);
     const who = attacker ? (attacker as unknown as { typeName?: string }).typeName ?? 'something' : '';
     const msgs: Record<string, string> = {

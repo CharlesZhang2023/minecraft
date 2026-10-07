@@ -1,5 +1,6 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
 import { buildGolem } from '../entity/overworldmobs';
+import { swingDamage, sweep, shieldBlocks, shieldHand, crossbowLoadTicks, loadCrossbow, fireCrossbow, releaseTrident, ThrownTrident } from './combat';
 import { hiveBroken } from '../entity/bees';
 import { FISH_BUCKETS, releaseFish } from '../entity/animals';
 import type { Game } from './game';
@@ -44,6 +45,9 @@ export class Interaction {
   eating = 0;
   bowTicks = 0;
   usingBow = false;
+  /** A vanilla item used with the button held (1.9+): shield, crossbow (loading), trident (winding up). */
+  usingItem: '' | 'shield' | 'crossbow' | 'trident' = '';
+  useTicks = 0;
   arrowId = I.ARROW;
   private rng = new Random(4321);
   private leftWasDown = false;
@@ -80,7 +84,7 @@ export class Interaction {
     const egg = !!g.target && !g.targetEntity && !p.creative && this.world.getId(g.target.x, g.target.y, g.target.z) === B.DRAGON_EGG;
     if (clicks.includes(0)) {
       if (g.targetEntity) this.attack(g.targetEntity);
-      else if (!g.target) p.swing();
+      else if (!g.target) { p.swing(); p.attackTicks = 0; }
     }
     const eggKey = egg ? `${g.target!.x},${g.target!.y},${g.target!.z}` : '';
     if (egg && (clicks.includes(0) || (left && eggKey !== this.eggKey))) { teleportEgg(g, g.target!.x, g.target!.y, g.target!.z); p.swing(); }
@@ -91,6 +95,7 @@ export class Interaction {
     if (right) {
       if (this.eating > 0) this.continueEating();
       else if (this.usingBow) this.bowTicks++;
+      else if (this.usingItem) this.continueItemUse();
       else if (this.holdUse()) { /* a hold-to-use mod item (wands) */ }
       else if (clicks.includes(2) || this.useDelay === 0) this.use(clicks.includes(2));
     } else this.stopUsing();
@@ -397,6 +402,8 @@ export class Interaction {
       this.useItemInAir(held, item);
     }
     else if (held && item && (item.food || item.name === 'bow')) this.useItemInAir(held, item);
+    // nothing to do with the main hand: a shield in the off hand comes up
+    if (fresh && !this.usingItem && !this.usingBow && this.eating === 0 && shieldHand(p) === 'off' && (!item || (item.block === undefined && !item.food && !item.drink))) this.startItemUse('shield');
   }
 
   /** Context for a mod item's hooks (the held stack). */
@@ -677,7 +684,15 @@ export class Interaction {
       return;
     }
     if (held.id === I.BOW) {
-      if (p.creative || p.inventory.count(I.ARROW) > 0) { this.usingBow = true; this.bowTicks = 0; }
+      if (p.creative || p.inventory.count(I.ARROW) > 0) { this.usingBow = true; this.bowTicks = 0; p.using = 'bow'; }
+      return;
+    }
+    if (held.id === I7.SHIELD) { this.startItemUse('shield'); return; }
+    if (held.id === I7.TRIDENT) { if ((held.damage ?? 0) < (item.durability ?? 250) - 1) this.startItemUse('trident'); return; }
+    if (held.id === I7.CROSSBOW) {
+      // loaded: fire; otherwise start loading (if there's anything to load)
+      if (held.charged) { fireCrossbow(g, p, held, g.eyePos(1), (yaw, pitch) => g.lookVec(yaw, pitch)); this.damageHeld(held.charged === undefined ? 1 : 0); this.useDelay = 10; return; }
+      if (p.creative || p.inventory.offhand?.id === I6.FIREWORK_ROCKET || p.inventory.main.some((s) => s && (s.id === I.ARROW || s.id === I7.SPECTRAL_ARROW || getItem(s.id).name.startsWith('tipped_arrow')))) this.startItemUse('crossbow');
       return;
     }
     if (held.id === I6.FIREWORK_ROCKET) {
@@ -850,9 +865,42 @@ export class Interaction {
     if (p && held && item?.behavior?.useStop) guard(item.mod, 'useStop', () => item.behavior!.useStop!({ ...this.itemCtx(held), ticks: h.ticks }), undefined);
   }
 
+  private startItemUse(kind: 'shield' | 'crossbow' | 'trident') {
+    this.usingItem = kind;
+    this.useTicks = 0;
+    const p = this.player;
+    p.using = kind;
+    p.useTicks = 0;
+    if (kind === 'crossbow') this.game.audio.play('crossbow.loading', p, 0.5, 1);
+  }
+  /** Holding the button: the shield comes up after 5 ticks; a crossbow loads when charged. */
+  private continueItemUse() {
+    const p = this.player, held = p.inventory.held();
+    this.useTicks++;
+    p.useTicks = this.useTicks;
+    if (this.usingItem === 'shield') {
+      if (!shieldHand(p)) { this.stopUsing(); return; }
+      p.blocking = this.useTicks >= 5 && p.shieldCooldown === 0;
+    } else if (this.usingItem === 'crossbow') {
+      if (held?.id !== I7.CROSSBOW) { this.stopUsing(); return; }
+      if (!held.charged && this.useTicks >= crossbowLoadTicks(held)) { loadCrossbow(this.game, p, held); this.usingItem = ''; p.using = ''; this.useDelay = 5; }
+    } else if (this.usingItem === 'trident' && held?.id !== I7.TRIDENT) this.stopUsing();
+  }
+  private releaseItemUse() {
+    const g = this.game, p = this.player, held = p.inventory.held();
+    if (this.usingItem === 'trident' && held?.id === I7.TRIDENT) releaseTrident(g, p, held, this.useTicks, g.eyePos(1), g.lookVec(p.yaw, p.pitch), () => p.inventory.setHeld(null), (n) => this.damageHeld(n));
+    this.usingItem = '';
+    this.useTicks = 0;
+    p.blocking = false;
+    p.using = '';
+    p.useTicks = 0;
+  }
+
   private stopUsing() {
     const p = this.game.player;
     this.endHold();
+    if (this.usingItem && p) this.releaseItemUse();
+    if (p && p.using === 'bow') p.using = '';
     if (this.usingBow && p) this.releaseBow();
     this.eating = 0;
     if (p) p.eatingTicks = 0;
@@ -1084,23 +1132,24 @@ export class Interaction {
     e.hitPart = e === g.targetEntity ? g.targetPart : null;
     const held = p.inventory.held();
     const item = held ? getItem(held.id) : undefined;
-    let dmg = (item?.attack ?? 1) + level(held, 'sharpness') * 1.25 + p.attackBonus();
-    if (e.undead) dmg += level(held, 'smite') * 2.5;
+    // 1.9: the swing's charge scales the damage; a full-charge sword swing on the ground sweeps
+    const sw = swingDamage(p, e, Math.max(0, (item?.attack ?? 1) + p.attackBonus()));
+    p.attackTicks = 0;
+    const { dmg, crit } = sw;
     if (e.arthropod) {
       const bane = level(held, 'bane_of_arthropods');
-      if (bane) { dmg += bane * 2.5; e.addEffect('slowness', 20 + this.rng.int(10 * bane), 3); }
+      if (bane) e.addEffect('slowness', 20 + this.rng.int(10 * bane), 3);
     }
-    dmg = Math.max(0, dmg);
-    const crit = p.fallDistance > 0 && !p.onGround && !p.onLadder && !p.inWater && p.vy < 0;
-    if (crit) dmg *= 1.5;
     const hit = e.damage(dmg, 'player', p);
     if (hit) {
       if (crit) g.particles!.crit(e.x, e.y + e.height * 0.6, e.z);
+      if (sw.sweep) sweep(g, p, e, dmg);
+      g.audio.play(crit ? 'attack.crit' : sw.sweep ? 'attack.sweep' : sw.strength > 0.9 ? 'attack.strong' : 'attack.weak', p, 1, 1);
       const kb = level(held, 'knockback'), fa = level(held, 'fire_aspect');
       if (kb) { const r = (p.yaw * Math.PI) / 180; e.vx -= Math.sin(r) * 0.5 * kb; e.vz += Math.cos(r) * 0.5 * kb; e.vy += 0.1; }
       if (fa) e.fireTicks = Math.max(e.fireTicks, 80 * fa);
       if (held?.ench) for (let k = 0; k < 6; k++) g.particles!.spell(e.x + (Math.random() - 0.5), e.y + e.height * 0.6, e.z + (Math.random() - 0.5), 0x8040ff);
-      if (p.sprinting) {
+      if (p.sprinting && sw.strength > 0.9) {
         const r = (p.yaw * Math.PI) / 180;
         e.vx -= Math.sin(r) * 0.5;
         e.vz += Math.cos(r) * 0.5;
@@ -1118,9 +1167,13 @@ export class Interaction {
     for (const e of g.entities) {
       if (!(e instanceof LivingEntity) || e.dead || e === a.shooter && a.age < 5) continue;
       if (e instanceof Player && e.spectator) continue;
+      if (a.pierced.includes(e)) continue;
       const hb = e.hitBoxes().find((b) => nx > b.x0 - 0.3 && nx < b.x1 + 0.3 && ny > b.y0 - 0.3 && ny < b.y1 + 0.3 && nz > b.z0 - 0.3 && nz < b.z1 + 0.3);
       if (hb) {
         e.hitPart = hb.part ?? null;
+        // a blocking shield stops arrows (and tridents) from the front
+        if (e instanceof Player && shieldBlocks(g, e, 2, 'arrow', a)) { a.vx *= -0.1; a.vy *= -0.1; a.vz *= -0.1; a.pierce = 0; return true; }
+        if (a instanceof ThrownTrident) { if (!a.dealtDamage) a.onHitEntity(e); return true; }
         const speed = Math.hypot(a.vx, a.vy, a.vz);
         let dmg = Math.ceil(speed * a.damageBase);
         if ((a as unknown as { crit?: boolean }).crit) dmg += this.rng.int(Math.floor(dmg / 2) + 2);
@@ -1131,8 +1184,11 @@ export class Interaction {
           e.vz += (a.vz / h) * 0.6 * (0.6 + punch * 0.6);
           if (a.fireTicks > 0) e.fireTicks = Math.max(e.fireTicks, 100);
           if (a.effect) e.addEffect(a.effect[0], a.effect[1], a.effect[2]);
+          // tipped arrows: the potion's effects at an eighth of their time
+          if (a.tipped) for (const [id, dur, amp] of POTION_BY_KEY.get(a.tipped)?.effects ?? []) e.addEffect(id, dur <= 1 ? 1 : Math.max(1, Math.floor(dur / 8)), amp);
           e.vy += 0.1;
           g.audio.play('arrowHit', a, 1, 1.2);
+          if (a.pierce > 0) { a.pierce--; a.pierced.push(e); return false; }
           a.removed = true;
         } else {
           a.vx *= -0.1; a.vy *= -0.1; a.vz *= -0.1;
@@ -1310,7 +1366,15 @@ export class Interaction {
     e.vz += Math.sin(a) * ff;
   }
 
-  swapOffhand() {}
+  /** F: swap what's in the main hand with the off hand. */
+  swapOffhand() {
+    const p = this.player, inv = p.inventory;
+    if (p.spectator) return;
+    if (this.usingItem) this.releaseItemUse();
+    const main = inv.held();
+    inv.setHeld(inv.offhand);
+    inv.offhand = main;
+  }
 
   fallingBlock(x: number, y: number, z: number, id: number) {
     const e = new FallingBlock(this.world, this.game, id);

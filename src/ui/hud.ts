@@ -1,4 +1,5 @@
 import { Events } from '../mod/events';
+import { attackStrength } from '../game/combat';
 import { drawEffectsHud } from './effects';
 // In-game HUD: hotbar, health/food/armor/air, XP bar, crosshair, item names, debug overlay.
 import type { UI } from './ui';
@@ -70,8 +71,8 @@ export class Hud {
     const view = g.view;
     if (view?.hud === 'none') { this.modsAndChat(ctx); return; }
     if (view?.freePointer) { /* the pointer is the crosshair */ }
-    // crosshair (inverted colours)
-    else if (!g.showDebug && g.thirdPerson === 0 && !device.touch) this.crosshair(ctx);
+    // crosshair (inverted colours), with the attack charge under it while a swing recharges (1.9)
+    else if (!g.showDebug && g.thirdPerson === 0 && !device.touch) { this.crosshair(ctx); this.attackIndicator(ctx, cx, Math.floor(H / 2)); }
     else if (!g.showDebug && g.thirdPerson === 0 && !g.touchAim()) {
       ctx.save();
       ctx.globalCompositeOperation = 'difference';
@@ -92,6 +93,14 @@ export class Hud {
     const hx = cx - 91, hy = H - 22;
     const slots = tb ? tb.n : 9, bx = tb ? tb.x : hx;
     this.hotbarFrame(ctx, bx, hy, slots, !!tb);
+    // the off hand: its own slot left of the hotbar when it holds something
+    if (p.inventory.offhand && !tb) {
+      const ox = hx - 29;
+      ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(ox, hy, 24, 22);
+      ctx.fillStyle = 'rgba(92,92,92,0.75)'; ctx.fillRect(ox + 1, hy + 1, 22, 20);
+      ctx.fillStyle = 'rgba(58,58,58,0.8)'; ctx.fillRect(ox + 3, hy + 3, 18, 16);
+      this.ui.drawItem(ctx, p.inventory.offhand, ox + 4, hy + 3);
+    }
     for (let i = 0; i < slots; i++) {
       const s = p.inventory.main[i];
       if (s) {
@@ -249,6 +258,20 @@ export class Hud {
     ctx.fillRect(x - 4 * s, y, 9 * s, s);
     ctx.fillRect(x, y - 4 * s, s, 4 * s);
     ctx.fillRect(x, y + s, s, 4 * s);
+    ctx.restore();
+  }
+
+  /** The attack charge (vanilla's crosshair indicator): a bar under the crosshair until the next swing is ready. */
+  private attackIndicator(ctx: Ctx, cx: number, cy: number) {
+    const p = this.ui.game.player!;
+    const f = attackStrength(p, 0);
+    if (f >= 1) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'difference';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillRect(cx - 8, cy + 9, 16, 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - 8, cy + 9, Math.round(16 * f), 2);
     ctx.restore();
   }
 
