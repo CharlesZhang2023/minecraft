@@ -8,6 +8,8 @@ import type { Client as Game } from '../client/client';
 import { Mat4, mat4, identity, translate, rotateX, rotateY, rotateZ, scale, multiply } from '../math';
 import * as M from './models';
 import { MOB_MODELS, MOB_SKINS } from './mobmodels';
+import { MOB_MODELS2, MOB_SKINS2, MOB_POSES } from './mobmodels2';
+import { EvokerFangs, Guardian } from '../entity/overworldmobs';
 import { Hanging, ItemFrame, Painting } from '../entity/hanging';
 import { ShulkerBullet } from '../entity/endmobs';
 import { Entity } from '../entity/entity';
@@ -64,7 +66,7 @@ export class EntityRenderer {
       horse: M.horseModel(false), donkey: M.horseModel(true), horseArmor: M.horseModel(false, 0.35),
       player: M.playerModel(false), playerSlim: M.playerModel(true), elytra: M.elytraModel(),
     };
-    for (const [k, make] of Object.entries(MOB_MODELS)) defs[k] = make();
+    for (const [k, make] of Object.entries({ ...MOB_MODELS, ...MOB_MODELS2 })) defs[k] = make();
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
@@ -72,7 +74,7 @@ export class EntityRenderer {
       ghast: M.ghastSkin(false), blaze: M.blazeSkin(), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(), wolf: M.wolfSkin('wild'), wolfTame: M.wolfSkin('tame'), wolfAngry: M.wolfSkin('angry'),
       silverfish: M.silverfishSkin(), crystal: M.crystalSkin(), dragon: dragonSkin(), elytra: M.elytraSkin(),
     };
-    for (const [k, make] of Object.entries(MOB_SKINS)) skins[k] = make();
+    for (const [k, make] of Object.entries({ ...MOB_SKINS, ...MOB_SKINS2 })) skins[k] = make();
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     for (const k of ['iron', 'gold', 'diamond']) { const sk = M.horseArmorSkin(k); this.skins.set('horseArmor_' + k, r.makeTexture(sk.data, sk.w)); }
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
@@ -253,6 +255,7 @@ export class EntityRenderer {
       else if (e instanceof EyeOfEnder) this.billboard(dyn, x, y + 0.12, z, 0.4, TEXTURES.indexOf('item/ender_eye'), 0xffffff, 15, 15);
       else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, e.small ? 0.35 : 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
       else if (e instanceof Hanging) this.drawHanging(dyn, e, x, y, z, sky, blk);
+      else if (e instanceof EvokerFangs) this.drawFangs(e, x, y, z, t, sky, blk);
       else if (e instanceof ShulkerBullet) this.billboard(dyn, x, y + 0.15, z, 0.35, TEXTURES.indexOf('item/nether_star'), 0xffffff, 15, 15);
       else if (e instanceof Boat) this.drawBoat(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof Minecart) this.drawMinecart(dyn, e, x, y, z, t, sky, blk);
@@ -268,6 +271,13 @@ export class EntityRenderer {
       const d = e.beam as EnderDragon;
       if (d.dead) continue;
       this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + 1.2 - cam.y, e.lerpZ(t) - cam.z, d.lerpX(t) - cam.x, d.lerpY(t) - 0.5 - cam.y, d.lerpZ(t) - cam.z, e.age + t);
+    }
+    // guardians' lasers: blue while charging, warming to yellow just before they hit
+    for (const e of list) {
+      if (!(e instanceof Guardian) || !e.beamTarget || e.dead || e.removed) continue;
+      const tg = e.beamTarget, k = Math.min(1, e.beam / e.chargeTime());
+      const col = (Math.round(64 + 191 * k) << 16) | (Math.round(64 + 160 * k) << 8) | Math.round(255 - 128 * k);
+      this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + e.height / 2 - cam.y, e.lerpZ(t) - cam.z, tg.lerpX(t) - cam.x, tg.lerpY(t) + tg.height / 2 - cam.y, tg.lerpZ(t) - cam.z, e.age + t, col, 0.06 + 0.06 * k);
     }
     // an End gateway that was just opened or used: a beam straight up and down through it
     const gb = game.gatewayBeam;
@@ -358,21 +368,20 @@ export class EntityRenderer {
   }
 
   /** A camera-facing ribbon between two camera-relative points (end crystal healing beam). */
-  private beam(dyn: DynMesh, ax: number, ay: number, az: number, bx: number, by: number, bz: number, time: number) {
+  private beam(dyn: DynMesh, ax: number, ay: number, az: number, bx: number, by: number, bz: number, time: number, col = 0xffffff, w = 0.28) {
     const dx = bx - ax, dy = by - ay, dz = bz - az;
     const mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
     // side = dir x view
     let sx = dy * mz - dz * my, sy = dz * mx - dx * mz, sz = dx * my - dy * mx;
     const sl = Math.hypot(sx, sy, sz) || 1;
-    const w = 0.28;
     sx = (sx / sl) * w; sy = (sy / sl) * w; sz = (sz / sl) * w;
     const len = Math.hypot(dx, dy, dz);
     const layer = TEXTURES.indexOf('end_beam');
     const v0 = -time * 0.08, v1 = v0 + len * 0.25;
-    dyn.v(ax - sx, ay - sy, az - sz, 0, v0, layer, 0xffffff, 1, 15, 15);
-    dyn.v(ax + sx, ay + sy, az + sz, 1, v0, layer, 0xffffff, 1, 15, 15);
-    dyn.v(bx + sx, by + sy, bz + sz, 1, v1, layer, 0xffffff, 1, 15, 15);
-    dyn.v(bx - sx, by - sy, bz - sz, 0, v1, layer, 0xffffff, 1, 15, 15);
+    dyn.v(ax - sx, ay - sy, az - sz, 0, v0, layer, col, 1, 15, 15);
+    dyn.v(ax + sx, ay + sy, az + sz, 1, v0, layer, col, 1, 15, 15);
+    dyn.v(bx + sx, by + sy, bz + sz, 1, v1, layer, col, 1, 15, 15);
+    dyn.v(bx - sx, by - sy, bz - sz, 0, v1, layer, col, 1, 15, 15);
   }
 
   /** Draw one part of a model with an explicit, fully prepared matrix (already scaled by 1/16). */
@@ -481,7 +490,7 @@ export class EntityRenderer {
     const gl = this.r.gl;
     const anyE = e as unknown as Record<string, unknown>;
     const model = (anyE.model as string) ?? 'biped';
-    const skin = model === 'villager' ? 'villager_' + (anyE.profession as string) : (anyE.skin as string) ?? 'steve';
+    const skin = model === 'villager' && anyE.profession ? 'villager_' + (anyE.profession as string) : (anyE.skin as string) ?? 'steve';
     const bodyYaw = e.pBodyYaw + wrapDelta(e.bodyYaw - e.pBodyYaw) * t;
     const headYaw = e.pHeadYaw + wrapDelta(e.headYaw - e.pHeadYaw) * t;
     const pitch = e.ppitch + (e.pitch - e.ppitch) * t;
@@ -527,6 +536,13 @@ export class EntityRenderer {
     const swing = e.pSwingProgress + (e.swingProgress - e.pSwingProgress) * t;
     const pose: Record<string, [number, number, number]> = {};
     const c = Math.cos;
+    // the mobs whose models come with their own pose (mobmodels2)
+    const gp = MOB_POSES[model];
+    if (gp) {
+      const o = gp({ e: anyE, hp, netHead, ls, lsa, age, t });
+      this.drawModel(model, o.skin ?? skin, base, o.pose, o.fullBright ? [15, 15] : light, overlay, o.skip, 1, o.offs);
+      return;
+    }
     switch (model) {
       case 'horse': this.drawHorse(e as Horse, base, t, light, overlay, hp, netHead, ls, lsa, age); break;
       case 'dragon': this.drawDragon(e as EnderDragon, x, y, z, t, sky, blk); return;
@@ -540,6 +556,8 @@ export class EntityRenderer {
       }
       case 'biped':
       case 'bipedThin':
+      case 'illager':
+      case 'illager_robed':
       case 'piglin': {
         const sneak = e.sneaking;
         pose.head = [hp, netHead, 0];
@@ -553,6 +571,8 @@ export class EntityRenderer {
         const arms = anyE.armsPose as string | undefined;
         if (arms === 'zombie') { ra = la = -Math.PI / 2; raY = -0.1; laY = 0.1; }
         if (arms === 'bow') { ra = -Math.PI / 2 + hp; la = -Math.PI / 2 + hp; raY = -0.1 + netHead; laY = 0.1 + netHead + 0.4; }
+        // spellcasting (evokers): both arms up, waving
+        if (arms === 'cast') { ra = la = c(age * 0.6662) * 0.25; raZ = (Math.PI * 3) / 4; laZ = -(Math.PI * 3) / 4; }
         if (swing > 0) {
           const f1 = Math.sin(Math.sqrt(swing) * Math.PI * 2) * 0.2;
           let f = 1 - swing;
@@ -804,12 +824,17 @@ export class EntityRenderer {
         this.drawModel('bat', 'bat', bm, pose, light, overlay);
         break;
       }
-      case 'villager': {
+      case 'villager':
+      case 'witch': {
         pose.head = [hp, netHead, 0];
         pose.arms = [-0.75, 0, 0];
         pose.rightLeg = [c(ls * 0.6662) * 1.4 * lsa * 0.5, 0, 0];
         pose.leftLeg = [c(ls * 0.6662 + Math.PI) * 1.4 * lsa * 0.5, 0, 0];
-        this.drawModel('villager', skin, base, pose, light, overlay);
+        pose.hat = pose.head;
+        this.drawModel(model, skin, base, pose, light, overlay);
+        // a witch drinking holds the bottle up
+        const held = anyE.heldItem as number | undefined;
+        if (held) this.drawHeldThirdPerson(held, base, [-1.2, 0, 0], light);
         break;
       }
       case 'spider': {
@@ -823,7 +848,7 @@ export class EntityRenderer {
         const dy = [f3, -f3, f4, -f4, f5, -f5, f6, -f6];
         const dz = [f7, -f7, f8, -f8, f9, -f9, f10, -f10];
         for (let i = 0; i < 8; i++) pose['leg' + (i + 1)] = [0, yr[i] + dy[i], zr[i] + dz[i]];
-        this.drawModel('spider', 'spider', base, pose, light, overlay);
+        this.drawModel('spider', skin, base, pose, light, overlay);
         break;
       }
     }
@@ -1241,6 +1266,19 @@ export class EntityRenderer {
     gl.colorMask(false, false, false, false);
     this.r.drawDyn(mesh, { cull: false, alphaCut: -1, fullbright: true });
     gl.colorMask(true, true, true, true);
+  }
+
+  /** Evoker fangs: the jaws rise out of the ground, snap shut and sink back. */
+  private drawFangs(e: EvokerFangs, x: number, y: number, z: number, t: number, sky: number, blk: number) {
+    if (e.warmup >= 0) return;
+    const f = Math.min(20, e.life + t);
+    const open = 1 - Math.min(1, f / 10);
+    const rise = f > 18 ? (f - 18) / 4 : 0;
+    const base = this.entityBase(this.tmp2, x, y - rise * 0.8, z, 90 - e.yaw, 0, 1);
+    const jaw = Math.sin(Math.min(1, (1 - open) * 2) * Math.PI) * 0.6 + 0.2;
+    const pose: Record<string, [number, number, number]> = { upperJaw: [0, 0, Math.PI - jaw], lowerJaw: [0, Math.PI, Math.PI + jaw] };
+    const lift = (1 - Math.min(1, f / 4)) * 12;
+    this.drawModel('fangs', 'fangs', base, pose, [sky, blk], [0, 0, 0, 0], new Set(['base']), 1, { upperJaw: [0, lift, 0], lowerJaw: [0, lift, 0] });
   }
 
   private drawArrow(mesh: DynMesh, e: Arrow, x: number, y: number, z: number, t: number, sky: number, blk: number) {

@@ -219,6 +219,8 @@ export class Arrow extends Entity {
   persist = false;
   pickup = true;
   shake = 0;
+  /** A tipped arrow's effect (id, ticks, amplifier), given to what it hits. */
+  effect: [string, number, number] | null = null;
   constructor(world: World, public game: Game, public shooter: Entity | null) {
     super(world);
     this.width = this.height = 0.5;

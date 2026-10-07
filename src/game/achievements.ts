@@ -91,7 +91,7 @@ export class Achievements {
     if (id === I.IRON_INGOT) this.unlock('acquireIron');
   }
   onKill(type: string, byArrowFrom?: number, byFireball = false) {
-    if (['Zombie', 'Skeleton', 'Creeper', 'Spider', 'Ghast', 'Zombified Piglin', 'Piglin', 'Piglin Brute', 'Hoglin', 'Zoglin', 'Wither Skeleton', 'Magma Cube', 'Blaze', 'Shulker', 'Enderman', 'Slime'].includes(type)) this.unlock('killEnemy');
+    if (['Zombie', 'Skeleton', 'Creeper', 'Spider', 'Ghast', 'Zombified Piglin', 'Piglin', 'Piglin Brute', 'Hoglin', 'Zoglin', 'Wither Skeleton', 'Magma Cube', 'Blaze', 'Shulker', 'Enderman', 'Slime', 'Husk', 'Drowned', 'Stray', 'Zombie Villager', 'Cave Spider', 'Witch', 'Pillager', 'Vindicator', 'Evoker', 'Vex', 'Ravager', 'Guardian', 'Elder Guardian', 'Phantom', 'Endermite'].includes(type)) this.unlock('killEnemy');
     if (type === 'Skeleton' && byArrowFrom !== undefined && byArrowFrom > 50) this.unlock('snipeSkeleton');
     if (type === 'Ghast' && byFireball) this.unlock('ghast');
   }

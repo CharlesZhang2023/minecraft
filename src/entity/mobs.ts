@@ -321,9 +321,12 @@ export abstract class Monster extends Mob {
       this.swing();
       if (t.damage(Math.max(0, this.attackDamage + this.attackBonus()), 'mob', this)) {
         if (this.fireTicks > 0 && rng.next() < 0.3) t.fireTicks = Math.max(t.fireTicks, 40);
+        this.onAttack(t);
       }
     }
   }
+  /** After a melee hit landed (husks' hunger, cave spiders' poison). */
+  onAttack(_t: LivingEntity) {}
 }
 
 export class Zombie extends Monster {
@@ -345,6 +348,18 @@ export class Zombie extends Monster {
     this.attackDamage = 3;
   }
   override eyeHeight() { return 1.74; }
+  /** Ticks with its head under water: at 600 it starts turning (zombie to drowned, husk to zombie), 300 later it has. */
+  drownTicks = 0;
+  /** What it turns into under water (none for drowned). */
+  drownsInto: string | null = 'drowned';
+  override tick() {
+    super.tick();
+    if (this.dead || this.removed || !this.drownsInto || this.noAi) return;
+    const eye = this.world.getId(Math.floor(this.x), Math.floor(this.y + this.eyeHeight()), Math.floor(this.z));
+    if (eye === B.WATER) this.drownTicks++;
+    else if (this.drownTicks < 600) this.drownTicks = 0;
+    if (this.drownTicks >= 900) convertMob(this, this.drownsInto);
+  }
   override drops(): ItemStack[] {
     const out = [stack(I.ROTTEN_FLESH, rng.int(3))].filter((s) => s.count > 0);
     if (rng.int(40) === 0) out.push(stack([I.IRON_INGOT, I3.CARROT, I3.POTATO][rng.int(3)]));
@@ -367,6 +382,8 @@ export class Skeleton extends Monster {
   override canBreathe = true;
   override heldItem = I.BOW;
   private shootTimer = 40;
+  /** Tipped arrows (strays shoot slowness). */
+  arrowEffect: [string, number, number] | null = null;
   private strafeTimer = 0;
   private strafeDir = 1;
   constructor(world: World, game: Game) {
@@ -403,6 +420,7 @@ export class Skeleton extends Monster {
       a.shoot(dx, dy + h * 0.2, dz, 1.6, 14 - this.game.options.difficulty * 4);
       a.pickup = false;
       a.damageBase = 2 + this.game.options.difficulty * 0.11 + rng.next() * 0.25;
+      a.effect = this.arrowEffect;
       this.game.addEntity(a);
       this.game.audio.play('bow', this, 1, 1 / (rng.next() * 0.4 + 0.8));
     }
@@ -1198,6 +1216,16 @@ export class Villager extends Mob {
     return true;
   }
   override despawnCheck() {}
+  override die(source: DamageSource, attacker: Entity | null) {
+    // killed by a zombie on normal (half the time) or hard: it rises as a zombie villager
+    const d = this.game.options.difficulty;
+    const z = attacker && ['Zombie', 'Husk', 'Drowned', 'Zombie Villager'].includes((attacker as unknown as { typeName?: string }).typeName ?? '');
+    if (z && (d >= 3 || (d === 2 && rng.int(2) === 0))) {
+      const zv = convertMob(this, 'zombie_villager') as (Mob & { profession?: string }) | null;
+      if (zv) { zv.profession = this.profession; this.dead = true; return; }
+    }
+    super.die(source, attacker);
+  }
   override extraJSON() { return { profession: this.profession, trades: this.trades }; }
   override loadExtra(d: Record<string, unknown>) { this.profession = (d.profession as string) ?? 'farmer'; this.trades = (d.trades as Trade[]) ?? null; }
 }
@@ -1429,3 +1457,16 @@ export function woolRgb(color: number) {
   return WOOL_RGB[color] ?? [1, 1, 1];
 }
 void idOf;
+
+/** Replace a mob with another kind where it stands (zombies drowning, piglins zombifying, villagers struck...). Keeps its look, health ratio, babyhood and persistence. */
+export function convertMob(m: Mob, kind: string): Mob | null {
+  const n = m.game.interact!.spawnMob(kind, m.x, m.y, m.z, m.baby) as Mob | null;
+  if (!n) return null;
+  n.yaw = n.bodyYaw = n.headYaw = m.yaw;
+  n.baby = m.baby;
+  n.persistentHostile = m.persistentHostile;
+  n.health = Math.max(1, Math.round((m.health / m.maxHealth) * n.maxHealth));
+  m.removed = true;
+  m.game.audio.play('zombie.say', n, 1, 0.6);
+  return n;
+}

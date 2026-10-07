@@ -241,7 +241,8 @@ export class Entity {
           let lvl = metaOf(v);
           if (lvl >= 8) lvl = 0;
           const top = y + 1 - (lvl + 1) / 9;
-          if (b.y1 >= top) {
+          // the box dips below the surface (small mobs can sit wholly inside one water block, under its surface)
+          if (b.y1 >= top || b.y0 <= top) {
             found = true;
             if (push) {
               // flow direction: toward lower-level neighbours

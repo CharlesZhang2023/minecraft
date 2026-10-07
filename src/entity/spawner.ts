@@ -7,6 +7,7 @@ import { Random } from '../noise';
 import { skyDarken } from '../game/env';
 import { BIOME, isOceanBiome } from '../world/biomes';
 import { MOB_TYPES } from './registry';
+import { spawnPhantoms } from './overworldmobs';
 
 export class Spawner {
   private rng = new Random(Date.now() & 0xffff);
@@ -43,6 +44,9 @@ export class Spawner {
     // passive animals: when new chunks come in, occasionally populate them
     if (g.ticks % 20 === 0 && animals < 40 * Math.min(players, 4) && w.dimension === 'overworld') this.populateChunks();
     for (const p of g.playerEntities()) this.spawnerBlocks(p);
+    // insomnia: phantoms find players who haven't slept in three days
+    for (const p of g.playerEntities()) p.restTicks = p.sleeping ? 0 : p.restTicks + 1;
+    if (w.dimension === 'overworld' && g.ticks % 1200 === 0) spawnPhantoms(g, this.rng);
     if (w.dimension === 'overworld' && g.ticks % 40 === 0) this.ambient(mobs);
   }
 
@@ -58,6 +62,17 @@ export class Spawner {
       if (squid < 8 && this.rng.int(2) === 0) {
         const y = 45 + this.rng.int(17);
         if (w.getId(x, y, z) === B.WATER && w.getId(x, y + 1, z) === B.WATER && w.getId(x, y - 1, z) === B.WATER) g.interact!.spawnMob('squid', x + 0.5, y, z + 0.5);
+      } else if (g.options.difficulty > 0 && this.rng.int(3) === 0) {
+        // drowned in dark oceans and rivers (more of them in rivers, vanilla)
+        const biome = g.biomeAt(x, z).id;
+        const river = biome === BIOME.RIVER || biome === BIOME.FROZEN_RIVER;
+        if (!river && !isOceanBiome(biome)) continue;
+        if (this.rng.int(river ? 3 : 15) || mobs.filter((m) => m.typeName === 'Drowned').length >= 6) continue;
+        const y = 30 + this.rng.int(32);
+        if (w.getId(x, y, z) !== B.WATER || w.getId(x, y + 1, z) !== B.WATER || !OPAQUE[w.getId(x, y - 1, z)]) continue;
+        const [sky, blk] = w.getLight(x, y, z);
+        if (Math.max(sky - skyDarken(g.time, g.weather?.rain ?? 0), blk) > 7 || this.nearest(x, y, z) < 24) continue;
+        g.interact!.spawnMob('drowned', x + 0.5, y, z + 0.5);
       } else if (bats < 6) {
         const y = 10 + this.rng.int(50);
         if (w.getId(x, y, z) !== B.AIR || w.getId(x, y + 1, z) !== B.AIR) continue;

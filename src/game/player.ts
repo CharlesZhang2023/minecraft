@@ -34,6 +34,8 @@ export class Player extends LivingEntity {
   spawnX = 0; spawnY = 80; spawnZ = 0;
   difficulty = 2; // 0 peaceful .. 3 hard
   sleeping = false;
+  /** Ticks since the player last slept (phantoms come after three days). */
+  restTicks = 0;
   sleepTimer = 0;
   eatingTicks = 0;
   distWalked = 0;
@@ -433,7 +435,7 @@ export class Player extends LivingEntity {
       xpLevel: this.xpLevel, xpProgress: this.xpProgress, xpTotal: this.xpTotal,
       gameMode: this.gameMode, flying: this.flying, inventory: this.inventory.toJSON(),
       spawn: [this.spawnX, this.spawnY, this.spawnZ], fireTicks: this.fireTicks,
-      effects: [...this.effects.values()], absorption: this.absorption,
+      effects: [...this.effects.values()], absorption: this.absorption, restTicks: this.restTicks,
     };
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -451,6 +453,7 @@ export class Player extends LivingEntity {
     for (const e of d.effects ?? []) this.effects.set(e.id, { ...e });
     this.effectsChanged();
     this.absorption = d.absorption ?? 0;
+    this.restTicks = d.restTicks ?? 0;
     if (this.health <= 0) { this.dead = true; }
   }
 }

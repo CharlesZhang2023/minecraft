@@ -1,4 +1,5 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
+import { buildGolem } from '../entity/overworldmobs';
 import type { Game } from './game';
 import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor } from '../world/blocks';
 import { familyPlacement, doubleSlab, partners, toggled } from './families';
@@ -1010,6 +1011,8 @@ export class Interaction {
     this.initTile(x, y, z, v);
     const def = BLOCKS[idOf(v)];
     if (def.mod && def.behavior?.onPlaced) callBlock(idOf(v), 'onPlaced', () => def.behavior!.onPlaced!({ ...blockCtx(g, x, y, z, v), player: this.player }), undefined);
+    // a pumpkin on iron or snow blocks brings a golem to life
+    if (idOf(v) === B2.CARVED_PUMPKIN || idOf(v) === B.JACK_O_LANTERN) buildGolem(g, x, y, z);
     if (Events.blockPlaced.any) Events.blockPlaced.fire({ game: g, player: this.player, x, y, z, v });
     g.playBlockSound(soundBlock, x, y, z, 'place');
     this.consume(1);
@@ -1121,6 +1124,7 @@ export class Interaction {
           e.vx += (a.vx / h) * 0.6 * (0.6 + punch * 0.6);
           e.vz += (a.vz / h) * 0.6 * (0.6 + punch * 0.6);
           if (a.fireTicks > 0) e.fireTicks = Math.max(e.fireTicks, 100);
+          if (a.effect) e.addEffect(a.effect[0], a.effect[1], a.effect[2]);
           e.vy += 0.1;
           g.audio.play('arrowHit', a, 1, 1.2);
           a.removed = true;
@@ -1140,7 +1144,9 @@ export class Interaction {
       const hb = e.hitBoxes().find((b) => nx > b.x0 - 0.2 && nx < b.x1 + 0.2 && ny > b.y0 - 0.2 && ny < b.y1 + 0.2 && nz > b.z0 - 0.2 && nz < b.z1 + 0.2);
       if (hb) {
         e.hitPart = hb.part ?? null;
-        e.damage(0.01, 'generic', s.shooter);
+        // snowballs hurt blazes (snow golems' one real weapon)
+        const blaze = s.kind === 'snowball' && (e as unknown as { typeName?: string }).typeName === 'Blaze';
+        e.damage(blaze ? 3 : 0.01, 'generic', s.shooter);
         return e;
       }
     }

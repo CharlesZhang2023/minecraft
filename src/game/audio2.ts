@@ -67,5 +67,71 @@ export function moreSounds(add: (name: string, g: Gen) => void, s: Synth, SR: nu
       }
       return normalize(b, 0.6);
     });
+  // ---- mob voices of the 1.4-1.16 mobs: a pitched, formant-filtered buzz (len s, f0 -> f1 Hz, band lo-hi)
+  const voice = (r: Random | { next(): number }, len: number, f0: number, f1: number, lo: number, hi: number, type: 'saw' | 'square' | 'tri' | 'sine' = 'saw', vib = 0.06, rate = 8, gain = 0.6) =>
+    normalize(bandpass(env(tone(Math.floor(SR * len), f0 * (0.95 + r.next() * 0.1), f1 * (0.95 + r.next() * 0.1), type, vib, rate), 0.02, len * 0.85, 1.5), lo, hi), gain);
+  const grunt = (r: Random | { next(): number }, len: number, f0: number, f1: number, cut: number, gain = 0.7) => {
+    const n = Math.floor(SR * len);
+    const b = env(tone(n, f0 * (0.9 + r.next() * 0.2), f1, 'saw', 0.1, 12), 0.01, len * 0.8, 1.6);
+    mixInto(b, env(lowpass(noise(n, r as Random), cut), 0.01, len * 0.6, 2), 0.35);
+    return normalize(lowpass(b, cut), gain);
+  };
+  add('piglin.say', (r) => grunt(r, 0.45, 150, 110, 900));
+  add('piglin.hurt', (r) => grunt(r, 0.3, 220, 140, 1400));
+  add('piglin.death', (r) => grunt(r, 0.9, 170, 60, 800));
+  add('piglin.admire', (r) => voice(r, 0.6, 160, 240, 200, 1500));
+  add('hoglin.say', (r) => grunt(r, 0.6, 80, 60, 500, 0.8));
+  add('hoglin.hurt', (r) => grunt(r, 0.35, 120, 80, 700, 0.8));
+  add('hoglin.death', (r) => grunt(r, 1, 90, 40, 450, 0.8));
+  add('zoglin.say', (r) => grunt(r, 0.6, 70, 50, 400, 0.8));
+  add('strider.say', (r) => voice(r, 0.5, 260, 200, 200, 2000, 'square', 0.15, 14, 0.4));
+  add('strider.hurt', (r) => voice(r, 0.3, 320, 220, 200, 2200, 'square', 0.2, 18, 0.45));
+  add('strider.death', (r) => voice(r, 0.8, 300, 120, 200, 2000, 'square', 0.2, 10, 0.45));
+  add('shulker.say', (r) => normalize(env(lowpass(noise(Math.floor(SR * 0.4), r), 600), 0.05, 0.3, 2), 0.4));
+  add('shulker.hurt', (r) => voice(r, 0.25, 400, 300, 300, 3000, 'tri', 0.1, 20, 0.5));
+  add('shulker.death', (r) => voice(r, 0.7, 380, 150, 300, 3000, 'tri', 0.1, 10, 0.5));
+  add('shulker.shoot', (r) => normalize(env(tone(Math.floor(SR * 0.3), 900 + r.next() * 100, 500, 'sine'), 0.005, 0.25, 2), 0.4));
+  add('shulker.bullet', (r) => normalize(env(highpass(noise(Math.floor(SR * 0.2), r), 2000), 0.005, 0.15, 2), 0.4));
+  add('witch.idle', (r) => voice(r, 0.7, 330, 260, 300, 2500, 'saw', 0.12, 11));
+  add('witch.hurt', (r) => voice(r, 0.3, 420, 300, 300, 2800, 'saw', 0.15, 16));
+  add('witch.throw', (r) => normalize(env(bandpass(noise(Math.floor(SR * 0.25), r), 600, 3000), 0.01, 0.2, 2), 0.4));
+  add('illager.idle', (r) => voice(r, 0.5, 150, 120, 150, 1300, 'saw', 0.05, 7));
+  add('illager.hurt', (r) => voice(r, 0.3, 200, 140, 150, 1600, 'saw', 0.1, 14));
+  add('illager.death', (r) => voice(r, 0.8, 180, 80, 150, 1300, 'saw', 0.08, 8));
+  add('evoker.summon', (r) => normalize(mixInto(voice(r, 1.2, 140, 300, 150, 2000, 'saw', 0.04, 5), env(highpass(noise(Math.floor(SR * 1.2), r), 3000), 0.3, 0.8, 1.5), 0.3), 0.6));
+  add('evoker.fangs', (r) => voice(r, 0.8, 120, 200, 120, 1500, 'saw', 0.05, 6));
+  add('evoker.wololo', (r) => {
+    const n = Math.floor(SR * 1.1), b = new Float32Array(n);
+    [0, 0.27, 0.55, 0.8].forEach((t, i) => mixInto(b, env(tone(Math.floor(SR * 0.3), i % 2 ? 160 : 210, i % 2 ? 150 : 200, 'saw', 0.02, 6), 0.02, 0.26, 1.5), 0.8, Math.floor(SR * t)));
+    return normalize(bandpass(b, 150, 1400), 0.6);
+  });
+  add('evoker.fangs_bite', (r) => normalize(mixInto(env(lowpass(noise(Math.floor(SR * 0.25), r), 1500), 0.002, 0.15, 3), env(tone(Math.floor(SR * 0.2), 200, 90, 'square'), 0.002, 0.12, 3), 0.5), 0.6));
+  add('vex.idle', (r) => voice(r, 0.5, 900, 1100, 600, 5000, 'tri', 0.15, 20, 0.35));
+  add('vex.hurt', (r) => voice(r, 0.3, 1100, 800, 600, 5000, 'tri', 0.2, 24, 0.4));
+  add('vex.death', (r) => voice(r, 0.6, 1000, 400, 600, 5000, 'tri', 0.2, 16, 0.4));
+  add('ravager.idle', (r) => grunt(r, 0.9, 60, 45, 350, 0.9));
+  add('ravager.hurt', (r) => grunt(r, 0.4, 90, 60, 500, 0.9));
+  add('ravager.death', (r) => grunt(r, 1.4, 70, 30, 300, 0.9));
+  add('ravager.roar', (r) => grunt(r, 1.6, 75, 45, 600, 1));
+  add('guardian.idle', (r) => voice(r, 0.6, 500, 420, 300, 3500, 'sine', 0.1, 6, 0.4));
+  add('guardian.hurt', (r) => voice(r, 0.25, 600, 450, 300, 3500, 'tri', 0.15, 20, 0.5));
+  add('guardian.death', (r) => voice(r, 0.9, 520, 200, 300, 3500, 'tri', 0.15, 9, 0.5));
+  add('guardian.attack', (r) => normalize(env(tone(Math.floor(SR * 3), 300 + r.next() * 30, 900, 'sine', 0.01, 30), 0.3, 2.6, 1), 0.35));
+  add('elder_guardian.curse', (r) => {
+    const n = Math.floor(SR * 2), b = env(tone(n, 180, 120, 'saw', 0.08, 4), 0.2, 1.8, 1.2);
+    mixInto(b, env(tone(n, 270, 180, 'saw', 0.08, 4), 0.2, 1.8, 1.2), 0.6);
+    mixInto(b, env(bandpass(noise(n, r), 400, 2500), 0.4, 1.5, 1.5), 0.3);
+    return normalize(bandpass(b, 100, 2500), 0.7);
+  });
+  add('phantom.idle', (r) => voice(r, 0.8, 700, 500, 400, 4000, 'saw', 0.2, 6, 0.4));
+  add('phantom.hurt', (r) => voice(r, 0.3, 800, 600, 400, 4000, 'saw', 0.2, 14, 0.45));
+  add('phantom.death', (r) => voice(r, 1, 750, 250, 400, 4000, 'saw', 0.2, 7, 0.45));
+  add('phantom.swoop', (r) => normalize(env(bandpass(noise(Math.floor(SR * 1), r), 300, 2500), 0.4, 0.5, 1.2), 0.45));
+  add('iron_golem.hurt', (r) => normalize(mixInto(env(tone(Math.floor(SR * 0.35), 220, 180, 'square'), 0.002, 0.3, 2.5), env(highpass(noise(Math.floor(SR * 0.35), r), 2500), 0.002, 0.2, 3), 0.4), 0.5));
+  add('iron_golem.death', (r) => normalize(mixInto(env(tone(Math.floor(SR * 1), 160, 60, 'square'), 0.002, 0.9, 2), env(lowpass(noise(Math.floor(SR * 1), r), 900), 0.002, 0.8, 2), 0.6), 0.6));
+  add('iron_golem.attack', (r) => normalize(mixInto(env(lowpass(noise(Math.floor(SR * 0.3), r), 700), 0.002, 0.2, 2.5), env(tone(Math.floor(SR * 0.3), 90, 50, 'sine'), 0.002, 0.25, 2), 0.7), 0.7));
+  add('iron_golem.repair', (r) => normalize(env(tone(Math.floor(SR * 0.4), 1200 + r.next() * 200, 1400, 'square'), 0.002, 0.3, 3), 0.3));
+  add('throw', (r) => normalize(env(bandpass(noise(Math.floor(SR * 0.2), r), 500, 2500), 0.02, 0.15, 2), 0.35));
+  add('shears', (r) => normalize(mixInto(env(highpass(noise(Math.floor(SR * 0.12), r), 3000), 0.001, 0.05, 3), env(highpass(noise(Math.floor(SR * 0.12), r), 3000), 0.001, 0.05, 3), 0.8, Math.floor(SR * 0.06)), 0.4));
   void highpass;
 }

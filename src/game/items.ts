@@ -432,6 +432,24 @@ export const I8 = {
   /** Bottled dragon's breath makes lingering potions; this is the explorer map pointing to a structure. */
   EXPLORER_MAP_UNUSED: item('unused_item_2', 'Unused'),
 };
+/** Spawn eggs of the overworld mobs of 1.4-1.16 (appended; vanilla egg colours). */
+export const EXTRA_EGGS4: { mob: string; display: string; c1: number; c2: number }[] = [
+  { mob: 'husk', display: 'Husk', c1: 0x797061, c2: 0xe6cc94 },
+  { mob: 'drowned', display: 'Drowned', c1: 0x8ff1d7, c2: 0x799c65 },
+  { mob: 'stray', display: 'Stray', c1: 0x617677, c2: 0xdde6e5 },
+  { mob: 'zombie_villager', display: 'Zombie Villager', c1: 0x563c33, c2: 0x799c65 },
+  { mob: 'cave_spider', display: 'Cave Spider', c1: 0x0c424e, c2: 0xa80e0e },
+  { mob: 'witch', display: 'Witch', c1: 0x340000, c2: 0x51a03e },
+  { mob: 'pillager', display: 'Pillager', c1: 0x532f36, c2: 0x959b9b },
+  { mob: 'vindicator', display: 'Vindicator', c1: 0x959b9b, c2: 0x275e61 },
+  { mob: 'evoker', display: 'Evoker', c1: 0x959b9b, c2: 0x1e1c1a },
+  { mob: 'vex', display: 'Vex', c1: 0x7a90a4, c2: 0xe8edf1 },
+  { mob: 'ravager', display: 'Ravager', c1: 0x757470, c2: 0x5b5049 },
+  { mob: 'guardian', display: 'Guardian', c1: 0x5a8272, c2: 0xf17d30 },
+  { mob: 'elder_guardian', display: 'Elder Guardian', c1: 0xceccba, c2: 0x747693 },
+  { mob: 'phantom', display: 'Phantom', c1: 0x43518a, c2: 0x88ff00 },
+];
+for (const e of EXTRA_EGGS4) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
 
 // block items of the new blocks: sizes and fuel that differ from the defaults
 for (const id of [...BEDS]) { const d = ITEMS.get(id); if (d) d.maxStack = 1; }
