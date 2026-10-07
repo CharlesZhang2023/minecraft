@@ -1,6 +1,6 @@
 // Crafting & smelting recipes.
 import { B, WOOL_COLORS, blockByName } from '../world/blocks';
-import { I, I2, I3, I4, I5, I6, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion, itemByName } from './items';
+import { I, I2, I3, I4, I5, I6, I7, I11, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion, itemByName } from './items';
 import { ITEM_TAGS } from './tags';
 import { registerRecipes116, type Smelt } from './recipes2';
 export { STONECUTTING, SMITHING } from './recipes2';
@@ -173,6 +173,23 @@ S(['##', '##'], { '#': I3.NETHER_BRICK }, B.NETHER_BRICKS);
 S(['###', '###'], { '#': B.NETHER_BRICKS }, B.NETHER_BRICK_FENCE, 6);
 S(['#  ', '## ', '###'], { '#': B.NETHER_BRICKS }, B.NETHER_BRICK_STAIRS, 4);
 
+/** Copying a written book: the book (original or a copy of it) and books and quill, which come out as copies. */
+function bookCopy(items: ItemStack[]): ItemStack | null {
+  const src = items.filter((s) => s.id === I11.WRITTEN_BOOK), blanks = items.filter((s) => s.id === I7.WRITABLE_BOOK);
+  if (src.length !== 1 || !blanks.length || src.length + blanks.length !== items.length) return null;
+  const gen = (src[0].tag?.generation as number | undefined) ?? 0;
+  if (gen >= 2) return null;
+  return { id: I11.WRITTEN_BOOK, count: blanks.length, tag: { ...structuredClone(src[0].tag ?? {}), generation: gen + 1 } };
+}
+/** What stays in the grid when an ingredient is used up (vanilla's container items). */
+export function craftRemainder(s: ItemStack): ItemStack | null {
+  if (s.id === I.MILK_BUCKET || s.id === I.WATER_BUCKET || s.id === I.LAVA_BUCKET) return stack(I.BUCKET);
+  if (s.id === I7.HONEY_BOTTLE || s.id === I7.DRAGON_BREATH) return stack(I3.GLASS_BOTTLE);
+  // the book being copied stays
+  if (s.id === I11.WRITTEN_BOOK) return { ...s, count: 1, tag: structuredClone(s.tag ?? {}) };
+  return null;
+}
+
 export function craft(grid: (ItemStack | null)[], w: number): ItemStack | null {
   // bounding box
   let minX = w, minY = w, maxX = -1, maxY = -1, count = 0;
@@ -204,6 +221,8 @@ export function craft(grid: (ItemStack | null)[], w: number): ItemStack | null {
   const items = grid.filter((s): s is ItemStack => !!s);
   const fw = fireworkCraft(items);
   if (fw) return fw;
+  const copy = bookCopy(items);
+  if (copy) return copy;
   for (const r of shapeless) {
     if (r.ingredients.length !== items.length) continue;
     const used = new Array(items.length).fill(false);

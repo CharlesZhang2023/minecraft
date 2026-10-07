@@ -1,7 +1,7 @@
 // Tags: named sets of blocks and items (vanilla's #logs, #planks, #piglin_loved, #soul_fire_base_blocks...), worked
 // out from the registry's families so new content joins them by itself. Recipes, mobs and game rules ask by name.
 import { B, B2, BLOCKS, BLOCK_COUNT, WOOD, STONE2, SHAPE, Shape, DYE_COLORS, SHULKER_BOXES, CARPETS, BEDS, WOOL_COLORS, isLog } from '../world/blocks';
-import { I, I2, I3, I5, I7, TOOLS, ARMOR, BOATS, DISCS, ITEMS } from './items';
+import { I, I2, I3, I5, I7, TOOLS, ARMOR, BOATS, DISCS, ITEMS, I11 } from './items';
 
 const woods = Object.values(WOOD);
 const shaped = (s: Shape, f: (id: number) => boolean = () => true) => {
@@ -78,7 +78,7 @@ export const ITEM_TAGS: Record<string, number[]> = {
   /** Gold armour piglins respect. */
   piglin_safe_armor: goldArmor,
   creeper_drop_music_discs: DISCS.filter((_, i) => i < 12),
-  lectern_books: [I7.WRITABLE_BOOK],
+  lectern_books: [I7.WRITABLE_BOOK, I11.WRITTEN_BOOK],
   soul_fire_base_blocks: BLOCK_TAGS.soul_fire_base_blocks,
 };
 

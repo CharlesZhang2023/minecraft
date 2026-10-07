@@ -141,6 +141,7 @@ export function paintItems2(k: SpriteKit) {
     });
   sprite('map', ['', '.pppppppppppppp.', '.pPPPPPPPPPPPPp.', '.pPPPPPPPPPPPPp.', '.pPPPPPPPPPPPPp.', '.pPPPPPPPPPPPPp.', '.pPPPPPPPPPPPPp.', '.pPPPPPPPPPPPPp.', '.pPPPPPPPPPPPPp.', '.pPPPPPPPPPPPPp.', '.pPPPPPPPPPPPPp.', '.pppppppppppppp.'], { p: hex('#c8b890'), P: hex('#e8dcb8') }, '#4a3a2a');
   sprite('filled_map', ['', '.pppppppppppppp.', '.pPPgggPPPPbbPp.', '.pPgggggPPbbbPp.', '.pPPggPPPbbbbPp.', '.pPPPPPrPPbbPPp.', '.pPPPPrrrPPPPPp.', '.pggPPPrPPPgggp.', '.pgggPPPPPggggp.', '.pPggPPbbPPggPp.', '.pPPPPbbbbPPPPp.', '.pppppppppppppp.'], { p: hex('#c8b890'), P: hex('#e8dcb8'), g: hex('#6a9a4a'), b: hex('#4a7ab0'), r: hex('#c82a2a') }, '#4a3a2a');
+  define('written_book', () => { const img = newImg(); const s = k.get('book'); if (s) img.set(s); for (let y = 4; y < 11; y++) for (let x = 5; x < 10; x++) if ((x + y) % 3 === 0) set(img, x, y, hex('#e8d890')); return img; });
   define('writable_book', () => { const img = newImg(); const s = k.get('book'); if (s) img.set(s); for (let i = 0; i < 8; i++) set(img, 6 + i, 1 + i, i < 2 ? hex('#2a2a2a') : hex('#f0f0f0')); return img; });
   define('unused_item_1', () => newImg());
   define('unused_item_2', () => newImg());

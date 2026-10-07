@@ -491,6 +491,10 @@ export const I10 = {
   GLOBE_BANNER_PATTERN: item('globe_banner_pattern', 'Banner Pattern', { maxStack: 1 }),
   PIGLIN_BANNER_PATTERN: item('piglin_banner_pattern', 'Banner Pattern', { maxStack: 1, rarity: 'uncommon' }),
 };
+/** A signed book and quill (its pages, title and author are in its tag). */
+export const I11 = {
+  WRITTEN_BOOK: item('written_book', 'Written Book', { maxStack: 16 }),
+};
 
 // block items of the new blocks: sizes and fuel that differ from the defaults
 for (const id of [...BEDS]) { const d = ITEMS.get(id); if (d) d.maxStack = 1; }

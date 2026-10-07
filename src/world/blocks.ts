@@ -758,6 +758,7 @@ export const T2 = {
   mushroomInside: tex('mushroom_block_inside'),
   campfireLog: tex('campfire_log'),
   lecternBase: tex('lectern_base'),
+  lecternBook: tex('lectern_book'),
   stem: tex('pumpkin_stem'),
   itemFrame: tex('item_frame'),
   paintingBack: tex('painting_back'),

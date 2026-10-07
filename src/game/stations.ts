@@ -6,7 +6,7 @@ import type { Game } from './game';
 import type { World } from '../world/world';
 import type { Player } from './player';
 import { B, B2, BLOCKS, OPAQUE, WOOD, SHULKER_BOXES, idOf, metaOf, pack, WATERLOGGED, waterloggable, blockByName, isLog } from '../world/blocks';
-import { I, I3, I7, ItemStack, ItemDef, getItem, stack, POTION_ITEMS, DISCS } from './items';
+import { I, I3, I7, I11, ItemStack, ItemDef, getItem, stack, POTION_ITEMS, DISCS } from './items';
 import { SMELTING } from './recipes';
 import { POT_PLANTS } from '../world/models';
 import { Random } from '../noise';
@@ -101,6 +101,19 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
     case B2.BEACON: if (!w.getTile(x, y, z)) w.setTile(x, y, z, { type: 'beacon', levels: 0, primary: '', secondary: '', beam: 0 } as never); ui.openBeacon?.(x, y, z); return true;
     case B2.GRINDSTONE: ui.openGrindstone?.(x, y, z); return true;
     case B2.LOOM: ui.openLoom?.(x, y, z); return true;
+    case B2.LECTERN: {
+      // a lectern takes a book (and quill or written); with one on it, it opens at its page for anyone
+      const t = w.getTile(x, y, z) as unknown as LecternTile | undefined;
+      if (t?.items[0]) { ui.openLectern?.(x, y, z); return true; }
+      if (held && (held.id === I7.WRITABLE_BOOK || held.id === I11.WRITTEN_BOOK)) {
+        w.set(x, y, z, pack(id, m | 4));
+        w.setTile(x, y, z, { type: 'lectern', items: [{ ...held, count: 1 }], page: 0 } as never);
+        h.consume(1);
+        g.audio.play('dig.cloth', at(x, y, z), 0.6, 1.2);
+        return true;
+      }
+      return false;
+    }
     case B2.CARTOGRAPHY_TABLE: ui.openCartography?.(x, y, z); return true;
     case B2.COMPOSTER: {
       if (m >= 8) {
@@ -230,6 +243,8 @@ function setKeep(w: World, x: number, y: number, z: number, v: number) {
   if (t) w.setTile(x, y, z, t);
 }
 
+/** A lectern's book (one slot, so breaking it drops the book) and the page it's open at. */
+export interface LecternTile { type: 'lectern'; items: (ItemStack | null)[]; page: number }
 export interface CampfireTile { type: 'campfire'; items: (ItemStack | null)[]; cook: number[] }
 function campfireTile(w: World, x: number, y: number, z: number): CampfireTile {
   let t = w.getTile(x, y, z) as CampfireTile | undefined;

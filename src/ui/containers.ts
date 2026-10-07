@@ -5,10 +5,11 @@ import { isShulkerBox } from '../game/stations';
 import { Screen, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, I6, I7, BOATS, POTION_ITEMS, itemByName, HORSE_ARMOR, FIREWORK_DYES, FIREWORK_SHAPES, FireworkExplosion, I9 } from '../game/items';
-import { craft, SMELTING } from '../game/recipes';
+import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, I6, I7, BOATS, POTION_ITEMS, itemByName, HORSE_ARMOR, FIREWORK_DYES, FIREWORK_SHAPES, FireworkExplosion, I9, I11 } from '../game/items';
+import { craft, craftRemainder, SMELTING } from '../game/recipes';
 import { addToSlots } from '../game/inventory';
 import { PATTERNS } from '../game/banners';
+import { GENERATIONS } from './book';
 import { BLOCKS, Render, B, B2, STONE2, WOOD, isLeaves, isSapling, isStairs, isSlab, DYE_COLORS } from '../world/blocks';
 import { FurnaceTile, cooks, cookTime } from '../game/furnace';
 import { enchName, ENCHANTS } from '../game/enchant';
@@ -407,6 +408,11 @@ export function tooltipLines(s: ItemStack): string[] {
   if (s.ench) for (const [k, v] of Object.entries(s.ench)) lines.push('§7' + enchName(k, v));
   for (const l of s.banner ?? []) lines.push(`§7${DYE_COLORS[l.c].split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')} ${PATTERNS[l.p]?.[0] ?? l.p}`);
   if (s.id === I9.OMINOUS_BANNER) lines[0] = '§6§o' + (s.name ?? 'Ominous Banner');
+  if (s.id === I11.WRITTEN_BOOK) {
+    const t = s.tag as { title?: string; author?: string; generation?: number } | undefined;
+    if (t?.title) lines[0] = (s.name ?? t.title);
+    lines.push(`§7by ${t?.author ?? 'Unknown'}`, `§7${GENERATIONS[t?.generation ?? 0] ?? 'Tattered'}`);
+  }
   if (mapIdOf(s) !== null) {
     const d = (globalThis as { game?: { maps?: Map<number, MapData> } }).game?.maps?.get(mapIdOf(s)!);
     lines.push(`§7Id #${mapIdOf(s)}`);
@@ -442,6 +448,8 @@ export function tooltipLines(s: ItemStack): string[] {
 class CraftGrid {
   items: (ItemStack | null)[];
   result: ItemStack | null = null;
+  /** Where remainders go that can't stay in their slot (a stack of honey bottles leaves glass bottles). */
+  spill?: (s: ItemStack) => void;
   constructor(public size: number) {
     this.items = new Array(size * size).fill(null);
   }
@@ -452,14 +460,18 @@ class CraftGrid {
     for (let i = 0; i < this.items.length; i++) {
       const s = this.items[i];
       if (!s) continue;
+      // buckets and bottles are given back (a written book being copied stays where it was)
+      const rest = craftRemainder(s);
       s.count--;
-      if (s.count <= 0) this.items[i] = null;
+      if (s.count <= 0) this.items[i] = rest;
+      else if (rest) this.spill?.(rest);
     }
     this.update();
   }
 }
 
 function addGridSlots(scr: ContainerScreen, g: CraftGrid, x0: number, y0: number, rx: number, ry: number, big = true) {
+  g.spill = (s) => scr.giveBack([s]);
   for (let r = 0; r < g.size; r++)
     for (let c = 0; c < g.size; c++) {
       const i = r * g.size + c;

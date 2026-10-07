@@ -2,8 +2,8 @@
 // (used by hoppers, droppers and comparators).
 import type { Game } from './game';
 import type { World } from '../world/world';
-import { B, BLOCKS, FACING6, idOf, metaOf, pack } from '../world/blocks';
-import { ItemStack, getItem, sameItem, I, I2, I3, I6, stack } from './items';
+import { B, B2, BLOCKS, FACING6, SHULKER_BOXES, idOf, metaOf, pack } from '../world/blocks';
+import { ItemStack, getItem, sameItem, I, I2, I3, I6, stack, DISCS } from './items';
 import { Arrow, Snowball, PrimedTnt, ItemEntity, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
 import { ThrownPotion } from '../entity/potion';
@@ -66,13 +66,45 @@ export function containerAt(w: World, x: number, y: number, z: number): Containe
 /** Comparator reading of a container: -1 if not a container. */
 export function containerLevel(w: World, x: number, y: number, z: number): number {
   const id = w.getId(x, y, z);
-  if (id !== B.CHEST && id !== B.FURNACE && id !== B.LIT_FURNACE && id !== B.HOPPER && id !== B.DISPENSER && id !== B.DROPPER && id !== B.BREWING_STAND) return -1;
+  const special = blockLevel(w, x, y, z, id);
+  if (special !== null) return special;
+  if (id !== B.CHEST && id !== B.FURNACE && id !== B.LIT_FURNACE && id !== B.HOPPER && id !== B.DISPENSER && id !== B.DROPPER && id !== B.BREWING_STAND
+    && id !== B2.BARREL && id !== B2.TRAPPED_CHEST && id !== B2.SMOKER && id !== B2.BLAST_FURNACE && id !== B2.SHULKER_BOX && !SHULKER_BOXES.includes(id)) return -1;
   const t = w.getTile(x, y, z) as { items?: Slots; slots?: Slots } | undefined;
   const slots = t?.items ?? t?.slots;
   if (!slots) return 0;
   let f = 0, any = false;
   for (const s of slots) if (s) { f += s.count / getItem(s.id).maxStack; any = true; }
   return any ? Math.floor(1 + (f / slots.length) * 14) : 0;
+}
+
+/**
+ * What comparators read from blocks that aren't plain containers (vanilla): a cauldron's water, a cake's slices, a
+ * composter's fill, a filled end portal frame, a jukebox's disc, a lectern's page, a hive's honey, an anchor's charges.
+ */
+function blockLevel(w: World, x: number, y: number, z: number, id: number): number | null {
+  const m = metaOf(w.get(x, y, z));
+  const t = w.getTile(x, y, z) as Record<string, unknown> | undefined;
+  switch (id) {
+    case B2.CAULDRON: return m & 3;
+    case B2.CAKE: return (7 - Math.min(6, m)) * 2;
+    case B2.COMPOSTER: return Math.min(8, m);
+    case B.END_PORTAL_FRAME: return m & 4 ? 15 : 0;
+    case B2.RESPAWN_ANCHOR: return Math.floor((Math.min(4, m) * 15) / 4);
+    case B2.BEEHIVE: case B2.BEE_NEST: return Math.min(5, (t?.honey as number) ?? 0);
+    case B2.JUKEBOX: {
+      const d = t?.disc as ItemStack | null | undefined;
+      return d ? Math.max(1, DISCS.indexOf(d.id) + 1) : 0;
+    }
+    case B2.LECTERN: {
+      const book = (t?.items as (ItemStack | null)[] | undefined)?.[0];
+      if (!book) return 0;
+      const n = Math.max(1, ((book.tag?.pages as string[] | undefined) ?? []).length);
+      const page = (t?.page as number) ?? 0;
+      return n <= 1 ? 15 : Math.floor((page / (n - 1)) * 14) + 1;
+    }
+  }
+  return null;
 }
 
 /** Insert up to s.count items; returns the number left over. */

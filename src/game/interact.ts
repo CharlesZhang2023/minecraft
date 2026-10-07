@@ -18,7 +18,7 @@ import { blockIs } from './tags';
 import { angerPiglins } from '../entity/nethermobs';
 import { ItemFrame, Painting } from '../entity/hanging';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, I7, stack, ItemDef, POTION_ITEMS, itemId, I9 } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, I7, stack, ItemDef, POTION_ITEMS, itemId, I9, I11 } from './items';
 import { FireworkRocket } from '../entity/firework';
 import { ThrownPotion } from '../entity/potion';
 import { POTION_BY_KEY } from './potiondata';
@@ -296,7 +296,7 @@ export class Interaction {
       return;
     }
     const spec = BLOCKS[idOf(v)].behavior?.tile;
-    const items = (spec?.contents ? callBlock(idOf(v), 'tile contents', () => spec.contents!(t), []) : (t.items ?? t.slots)) as (ItemStack | null)[] | undefined;
+    const items = (spec?.contents ? callBlock(idOf(v), 'tile contents', () => spec.contents!(t), []) : (t.items ?? t.slots ?? (t.disc ? [t.disc] : undefined))) as (ItemStack | null)[] | undefined;
     if (items) for (const s of items) if (s) this.game.dropItem(x + 0.5, y + 0.5, z + 0.5, s, true);
     this.world.setTile(x, y, z, undefined);
     void v;
@@ -754,6 +754,10 @@ export class Interaction {
       g.playerOf(p)?.event(['boost', r.lifetime]);
       this.consume(1);
       p.swing();
+      return;
+    }
+    if (held.id === I7.WRITABLE_BOOK || held.id === I11.WRITTEN_BOOK) {
+      (g.ui as unknown as { openBook?(slot: number): void }).openBook?.(p.inventory.selected);
       return;
     }
     if (held.id === I7.MAP && g.meta && 'spawnXpAt' in g) {

@@ -465,7 +465,7 @@ function newBlockBoxes(id: number, meta: number, nb: Neighbor | undefined, f: nu
       return [alongZ ? box(7.5, 1, 0, 8.5, 1.5, 16, f[0]) : box(0, 1, 7.5, 16, 1.5, 8.5, f[0])];
     }
     case B2.BELL: return [box(4, 4, 4, 12, 13, 12, f[0]), box(5, 13, 5, 11, 14, 11, f[0]), rotY(box(2, 14, 7, 14, 16, 9, f[0]), meta & 3)];
-    case B2.LECTERN: return [box(0, 0, 0, 16, 2, 16, T2.lecternBase), box(4, 2, 4, 12, 13, 12, f[0]), rotY(box(0, 12, 0, 16, 16, 16, faces), meta & 3)];
+    case B2.LECTERN: return [box(0, 0, 0, 16, 2, 16, T2.lecternBase), box(4, 2, 4, 12, 13, 12, f[0]), rotY(box(0, 12, 0, 16, 16, 16, faces), meta & 3), ...(meta & 4 ? [rotY(box(3, 16, 4, 13, 17, 12, T2.lecternBook), meta & 3)] : [])];
     case B2.SHULKER_BOX: return [box(0, 0, 0, 16, 16, 16, faces)];
     case B2.TRAPPED_CHEST: {
       const b = box(1, 0, 1, 15, 14, 15, [T.chestSide, T.chestSide, T.chestTop, T.chestTop, f[6], T.chestSide]);
