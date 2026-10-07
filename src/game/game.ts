@@ -35,6 +35,7 @@ import { Brewing } from './brewing';
 import { END_PLATFORM } from '../world/endgen';
 import { GENERATOR_VERSION } from '../world/worldgen';
 import { EnderDragon, buildExitPortal } from '../entity/dragon';
+import { tickDragonRespawn } from './endstuff';
 import { tickFurnaces } from './furnace';
 import { tickStations } from './stations';
 import { chestLoot } from './loot';
@@ -701,7 +702,7 @@ export class Game {
     // sub-levels move first: whatever stands on them is carried along when it ticks
     this.sublevels.tick(dim);
     if (w.dimension === 'end' && this.meta?.dragonKilled && this.ticks % 20 === 0) buildExitPortal(this);
-    if (w.dimension === 'end') buildPending(this);
+    if (w.dimension === 'end') { buildPending(this); tickDragonRespawn(this); }
     const list = dim.entities;
     for (let i = list.length - 1; i >= 0; i--) {
       const e = list[i];
@@ -814,7 +815,8 @@ export class Game {
     let bestT = sp.target ? sp.target.t : Math.min(reach, 3.5);
     for (const e of this.entities) {
       if (e === p || e === (p.riding as unknown as Entity)) continue;
-      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat) && !(e instanceof Minecart)) continue; }
+      // things that aren't alive are targets when they can be hit or used (vehicles, frames, armor stands, knots)
+      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && typeof (e as unknown as { attacked?: unknown }).attacked !== 'function') continue; }
       if (e instanceof Player && e.spectator) continue;
       for (const b of e.hitBoxes()) {
         const g = 0.1;

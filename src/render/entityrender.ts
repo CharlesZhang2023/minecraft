@@ -13,6 +13,8 @@ import { MOB_MODELS3, MOB_SKINS3, MOB_POSES3, lazySkin } from './mobmodels3';
 const MOB_POSES = { ...MOB_POSES2, ...MOB_POSES3 };
 import { EvokerFangs, Guardian } from '../entity/overworldmobs';
 import { WitherSkull } from '../entity/wither';
+import { LeashKnot } from '../entity/leash';
+import { ArmorStand } from '../entity/armorstand';
 import { Hanging, ItemFrame, Painting } from '../entity/hanging';
 import { ShulkerBullet } from '../entity/endmobs';
 import { Entity } from '../entity/entity';
@@ -21,7 +23,7 @@ import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball }
 import { ThrownPotion } from '../entity/potion';
 import { getItem, I, I6, I7 } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
-import { BLOCKS, TEXTURES, Render, B, B2, WOOD, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX, Shape, metaOf, idOf } from '../world/blocks';
+import { BLOCKS, TEXTURES, Render, B, B2, WOOD, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX, Shape, metaOf, idOf, OPAQUE } from '../world/blocks';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
 import { poseMat4 } from '../sublevel/pose';
@@ -234,7 +236,10 @@ export class EntityRenderer {
       const x = e.lerpX(t) - cam.x, y = e.lerpY(t) - cam.y, z = e.lerpZ(t) - cam.z;
       if (x * x + y * y + z * z > 96 * 96) continue;
       if (!this.r.boxVisible(x - e.width, y - 0.5, z - e.width, x + e.width, y + e.height + 0.5, z + e.width)) continue;
-      const [sky, blk] = w.getLight(Math.floor(e.x), Math.floor(e.y + e.height * 0.5), Math.floor(e.z));
+      // light at the middle of the entity, or (when that's inside a solid block) the first open cell above it
+      let ly = Math.floor(e.y + e.height * 0.5);
+      for (let k = 0; k < 3 && OPAQUE[w.getId(Math.floor(e.x), ly, Math.floor(e.z))]; k++) ly++;
+      const [sky, blk] = w.getLight(Math.floor(e.x), ly, Math.floor(e.z));
       const mr = modEntityRenderer(e);
       if (mr) { modCtx ??= makeRenderContext(game as unknown as Client, this, dyn, t); guard(mr.mod, 'entity renderer', () => mr.draw(modCtx!, e), undefined); continue; }
       if (e instanceof FireworkRocket) {
@@ -260,6 +265,13 @@ export class EntityRenderer {
       else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, e.small ? 0.35 : 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
       else if (e instanceof Hanging) this.drawHanging(dyn, e, x, y, z, sky, blk);
       else if (e instanceof EvokerFangs) this.drawFangs(e, x, y, z, t, sky, blk);
+      else if (e instanceof ArmorStand) {
+        const base = this.entityBase(this.tmp2, x, y, z, e.yaw, 0, 1);
+        const pose: Record<string, [number, number, number]> = { head: [0, 0, 0], body: [0, 0, 0], rightArm: [-0.17, 0, 0.17], leftArm: [-0.17, 0, -0.17], rightLeg: [0, 0, 0.02], leftLeg: [0, 0, -0.02] };
+        this.drawModel('armor_stand', 'armor_stand', base, pose, [sky, blk], [0, 0, 0, 0]);
+        this.drawArmor(e.armorItems, base, pose, [sky, blk], [0, 0, 0, 0]);
+      }
+      else if (e instanceof LeashKnot) this.blockCube(dyn, B.OAK_PLANKS, x - 0.12, y - 0.12, z - 0.12, 0.25, sky, blk, 0);
       else if (e instanceof ShulkerBullet) this.billboard(dyn, x, y + 0.15, z, 0.35, TEXTURES.indexOf('item/nether_star'), 0xffffff, 15, 15);
       else if (e instanceof Boat) this.drawBoat(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof Minecart) this.drawMinecart(dyn, e, x, y, z, t, sky, blk);
@@ -275,6 +287,13 @@ export class EntityRenderer {
       const d = e.beam as EnderDragon;
       if (d.dead) continue;
       this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + 1.2 - cam.y, e.lerpZ(t) - cam.z, d.lerpX(t) - cam.x, d.lerpY(t) - 0.5 - cam.y, d.lerpZ(t) - cam.z, e.age + t);
+    }
+    // leads: a rope from each leashed mob to whoever holds it (or the fence knot)
+    for (const e of list) {
+      const h = (e as unknown as { leashHolder?: Entity | null }).leashHolder;
+      if (!h || e.removed || h.removed) continue;
+      const hy = h instanceof Player ? h.lerpY(t) + 1.0 : h.lerpY(t) + 0.2;
+      this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + e.height * 0.7 - cam.y, e.lerpZ(t) - cam.z, h.lerpX(t) - cam.x, hy - cam.y, h.lerpZ(t) - cam.z, 0, 0x6a4a2a, 0.03);
     }
     // guardians' lasers: blue while charging, warming to yellow just before they hit
     for (const e of list) {
@@ -1229,7 +1248,7 @@ export class EntityRenderer {
   private horseSkin(h: Horse): string {
     const key = h.skinKey;
     if (!this.skins.has(key)) {
-      const sk = h.kind === 'horse' ? M.horseSkin(h.color, h.markings) : M.donkeySkin(h.kind === 'mule');
+      const sk = h.kind === 'horse' ? M.horseSkin(h.color, h.markings) : h.kind === 'skeleton' || h.kind === 'zombie' ? undeadHorseSkin(h.kind) : M.donkeySkin(h.kind === 'mule');
       this.skins.set(key, this.r.makeTexture(sk.data, sk.w));
     }
     return key;
@@ -1263,7 +1282,7 @@ export class EntityRenderer {
     const skip = new Set<string>();
     if (!h.saddle) skip.add('saddle');
     if (!h.chest) skip.add('bags');
-    const model = h.kind === 'horse' ? 'horse' : 'donkey';
+    const model = h.kind === 'donkey' || h.kind === 'mule' ? 'donkey' : 'horse';
     this.drawModel(model, this.horseSkin(h), b, pose, light, overlay, skip);
     const ar = h.armorItem ? HORSE_ARMOR[h.armorItem.id] : undefined;
     if (ar) this.drawModel('horseArmor', 'horseArmor_' + ar.kind, b, pose, light, overlay, new Set(['saddle', 'bags', 'tail']));
@@ -1622,3 +1641,16 @@ export function faceUV16(f: number, px: number, py: number, pz: number): [number
     default: return [px, 16 - py];
   }
 }
+
+/** Skeleton and zombie horses: a horse's coat redone in bone or rotten green. */
+function undeadHorseSkin(kind: 'skeleton' | 'zombie'): M.Skin {
+  const s = M.horseSkin(3, 0);
+  for (let i = 0; i < s.data.length; i += 4) {
+    if (!s.data[i + 3]) continue;
+    const l = (s.data[i] * 0.3 + s.data[i + 1] * 0.59 + s.data[i + 2] * 0.11) / 255;
+    const [r, g, b] = kind === 'skeleton' ? [200 * (0.55 + l * 0.6), 200 * (0.55 + l * 0.6), 195 * (0.55 + l * 0.6)] : [90 * (0.5 + l), 140 * (0.5 + l), 80 * (0.5 + l)];
+    s.data[i] = Math.min(255, r); s.data[i + 1] = Math.min(255, g); s.data[i + 2] = Math.min(255, b);
+  }
+  return s;
+}
+

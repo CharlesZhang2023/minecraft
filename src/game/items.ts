@@ -472,6 +472,8 @@ export const EXTRA_EGGS5: { mob: string; display: string; c1: number; c2: number
   { mob: 'tropical_fish', display: 'Tropical Fish', c1: 0xef6915, c2: 0xfff9ef },
   { mob: 'bee', display: 'Bee', c1: 0xedc343, c2: 0x43241b },
   { mob: 'wandering_trader', display: 'Wandering Trader', c1: 0x456296, c2: 0xeaa430 },
+  { mob: 'skeleton_horse', display: 'Skeleton Horse', c1: 0x68684f, c2: 0xe5e5d8 },
+  { mob: 'zombie_horse', display: 'Zombie Horse', c1: 0x315234, c2: 0x97c284 },
 ];
 for (const e of EXTRA_EGGS5) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
 export const I9 = {

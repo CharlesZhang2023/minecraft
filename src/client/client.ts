@@ -1156,7 +1156,7 @@ export class Client {
     let best: Entity | null = null, bestPart: string | null = null;
     let bestT = this.target ? this.target.t : Math.min(reach, 3.5);
     for (const e of this.entities) {
-      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat) && !(e instanceof Minecart) && !(e instanceof Hanging)) continue; }
+      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && typeof (e as unknown as { attacked?: unknown }).attacked !== 'function') continue; }
       if (e === (p.riding as unknown as Entity)) continue;
       if (e instanceof Player && e.spectator) continue;
       for (const b of e.hitBoxes()) {
@@ -1480,19 +1480,24 @@ export class Client {
   nameTags(ctx: CanvasRenderingContext2D) {
     const r = this.renderer, cam = this.cam, t = this.partial, gui = this.gui;
     const mul = (m: Float32Array | number[], v: number[]) => [0, 1, 2, 3].map((i) => m[i] * v[0] + m[4 + i] * v[1] + m[8 + i] * v[2] + m[12 + i] * v[3]);
-    for (const e of this.entities) {
-      if (!(e instanceof Player) || e.dead || !e.name || e.spectator) continue;
+    for (const ent of this.entities) {
+      // players, and mobs given a name with a name tag (shown up close)
+      const named = (ent as unknown as { customName?: string }).customName;
+      if (!(ent instanceof Player) && !named) continue;
+      const e = ent as Player;
+      if (e.dead || (!e.name && !named) || e.spectator) continue;
       const x = e.lerpX(t) - cam.x, y = e.lerpY(t) + e.height + 0.45 - cam.y, z = e.lerpZ(t) - cam.z;
-      if (x * x + y * y + z * z > 64 * 64) continue;
+      if (x * x + y * y + z * z > (named ? 16 * 16 : 64 * 64)) continue;
       const c = mul(r.proj as unknown as number[], mul(r.view as unknown as number[], [x, y, z, 1]));
       if (c[3] < 0.1) continue;
       const sx = ((c[0] / c[3] + 1) / 2) * gui.w, sy = ((1 - c[1] / c[3]) / 2) * gui.h;
-      const w = gui.font.width(e.name);
+      const label = named || e.name;
+      const w = gui.font.width(label);
       const d = Math.hypot(x, y, z) || 1;
       const seen = !raycastBlocks(this.world!, cam.x, cam.y, cam.z, x / d, y / d, z / d, d - 0.5);
       ctx.fillStyle = 'rgba(0,0,0,0.25)';
       ctx.fillRect(Math.round(sx - w / 2 - 1), Math.round(sy - 9), w + 2, 9);
-      gui.text(ctx, e.name, Math.round(sx - w / 2), Math.round(sy - 8), seen && !e.sneaking ? '#FFFFFF' : 'rgba(255,255,255,0.35)', false);
+      gui.text(ctx, label, Math.round(sx - w / 2), Math.round(sy - 8), seen && !e.sneaking ? '#FFFFFF' : 'rgba(255,255,255,0.35)', false);
     }
   }
 

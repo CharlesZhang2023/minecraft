@@ -158,6 +158,15 @@ MODELS.bee = build([
   { n: 'legs', p: [1.5, 22, -2], b: [[-5, 0, 0, 7, 2, 0], [-5, 0, 2, 7, 2, 0], [-5, 0, 4, 7, 2, 0]] },
 ]);
 
+MODELS.armor_stand = build([
+  { n: 'head', p: [0, 0, 0], b: [[-1, -7, -1, 2, 7, 2]] },
+  { n: 'body', p: [0, 0, 0], b: [[-6, 0, -1.5, 12, 3, 3], [-3, 3, -1, 2, 7, 2], [1, 3, -1, 2, 7, 2], [-4, 10, -1, 8, 2, 2]] },
+  { n: 'rightArm', p: [-5, 2, 0], b: [[-2, -2, -1, 2, 12, 2]] },
+  { n: 'leftArm', p: [5, 2, 0], b: [[0, -2, -1, 2, 12, 2]] },
+  { n: 'rightLeg', p: [-1.9, 12, 0], b: [[-1, 0, -1, 2, 11, 2]] },
+  { n: 'leftLeg', p: [1.9, 12, 0], b: [[-1, 0, -1, 2, 11, 2]] },
+  { n: 'plate', p: [0, 24, 0], b: [[-6, -1, -6, 12, 1, 12]] },
+]);
 MODELS.wither = build([
   { n: 'head', p: [0, 0, 0], b: [[-4, -4, -4, 8, 8, 8]] },
   { n: 'headL', p: [10, 2, 0], b: [[-3, -3, -3, 6, 6, 6]] },
@@ -370,6 +379,7 @@ export const MOB_SKINS3: Record<string, () => Skin> = {
   bee: () => beeSkin(false, false), bee_angry: () => beeSkin(true, false), bee_nectar: () => beeSkin(false, true), bee_angry_nectar: () => beeSkin(true, true),
   mooshroom: () => mooshroomSkin(false), brown_mooshroom: () => mooshroomSkin(true), wandering_trader: WT,
   wither: () => witherSkin(false), wither_invul: () => witherSkin(true),
+  armor_stand: () => paint(MODELS.armor_stand, 191, (part, i, face, x, y, w, h, r) => (part === 'plate' ? vary(hx('#8a8a8a'), r, 0.05) : vary(face === 'top' ? hx('#b8945f') : hx('#a2824e'), r, 0.06))),
 };
 /** Skins made when first needed (the tropical fish's many colourings). */
 export function lazySkin(name: string): Skin | null {

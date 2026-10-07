@@ -302,6 +302,12 @@ export function strikeLightning(g: Game, x: number, y: number, z: number) {
   }
   for (let i = 0; i < 30; i++) g.particles?.spark(x + (Math.random() - 0.5) * 0.4, by + Math.random() * 12, z + (Math.random() - 0.5) * 0.4, 0, 0, 0, 0xe8f0ff, 6);
 }
+/** A natural bolt may leave a skeleton trap behind (vanilla: by the local difficulty). */
+export function maybeSkeletonTrap(g: Game, x: number, y: number, z: number) {
+  if (g.options.difficulty === 0 || Math.random() > 0.01 * g.options.difficulty) return;
+  const h = g.interact!.spawnMob('skeleton_horse', x, y, z) as (Entity & { trap?: boolean }) | null;
+  if (h) h.trap = true;
+}
 
 /** What lightning does to some mobs (returns true if the mob was replaced): creepers charge, pigs become zombified
  * piglins, villagers witches, mooshrooms change colour. */

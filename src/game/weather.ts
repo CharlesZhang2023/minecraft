@@ -1,5 +1,5 @@
 import type { Game } from './game';
-import { strikeLightning } from './combat';
+import { strikeLightning, maybeSkeletonTrap } from './combat';
 import { Random } from '../noise';
 import { tex, B, OPAQUE, isLeaves } from '../world/blocks';
 import { BIOME } from '../world/biomes';
@@ -65,7 +65,7 @@ export class Weather {
       if (ps.length && this.rng.int(2) === 0) {
         const p = ps[this.rng.int(ps.length)];
         const x = Math.floor(p.x) + this.rng.int(97) - 48, z = Math.floor(p.z) + this.rng.int(97) - 48;
-        if (w.chunkAt(x, z) && this.canRainIn(x, z)) strikeLightning(g, x + 0.5, w.topSolidY(x, z) + 1, z + 0.5);
+        if (w.chunkAt(x, z) && this.canRainIn(x, z)) { strikeLightning(g, x + 0.5, w.topSolidY(x, z) + 1, z + 0.5); maybeSkeletonTrap(g, x + 0.5, w.topSolidY(x, z) + 1, z + 0.5); }
         else for (const sp of g.playersHere()) sp.event(['thunder', d]);
       } else for (const p of g.playersHere()) p.event(['thunder', d]);
     }

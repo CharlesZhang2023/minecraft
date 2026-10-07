@@ -715,7 +715,7 @@ export class HorseScreen extends ContainerScreen {
     if (!this.horse.saddle) this.ui.drawItem(ctx, { id: I5.SADDLE, count: 1 }, L + 8, T + 18);
     if (this.horse.canWearArmor && !this.horse.armorItem) this.ui.drawItem(ctx, { id: I5.IRON_HORSE_ARMOR, count: 1 }, L + 8, T + 36);
     ctx.restore();
-    const name = (this.horse as unknown as { customName?: string }).customName ?? { horse: 'Horse', donkey: 'Donkey', mule: 'Mule' }[this.horse.kind];
+    const name = (this.horse as unknown as { customName?: string }).customName || ({ horse: 'Horse', donkey: 'Donkey', mule: 'Mule', skeleton: 'Skeleton Horse', zombie: 'Zombie Horse' } as Record<string, string>)[this.horse.kind] || 'Horse';
     this.label(ctx, name, 8, 6);
     this.label(ctx, 'Inventory', 8, 72);
   }

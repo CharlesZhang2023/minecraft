@@ -2,12 +2,15 @@
 import { buildGolem } from '../entity/overworldmobs';
 import { BOATS } from './items';
 import { buildWither } from '../entity/wither';
+import { Mob } from '../entity/mobs';
+import { useOnMob, tieToFence } from '../entity/leash';
+import { ArmorStand } from '../entity/armorstand';
 import { hardenConcrete } from './blockrules';
 import { swingDamage, sweep, shieldBlocks, shieldHand, crossbowLoadTicks, loadCrossbow, fireCrossbow, releaseTrident, ThrownTrident } from './combat';
 import { hiveBroken } from '../entity/bees';
 import { FISH_BUCKETS, releaseFish, FLOWER_EFFECTS } from '../entity/animals';
 import type { Game } from './game';
-import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor } from '../world/blocks';
+import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor, isFence } from '../world/blocks';
 import { familyPlacement, doubleSlab, partners, toggled } from './families';
 import { stationUse, stationItemUse, stationTile, isShulkerBox } from './stations';
 import { blockIs } from './tags';
@@ -374,6 +377,7 @@ export class Interaction {
     const g = this.game, p = this.player;
     if (!g.targetEntity || p.spectator || p.dead) return false;
     const e = g.targetEntity as unknown as { interact?: (game: Game, s: ItemStack | null) => boolean };
+    if (g.targetEntity instanceof Mob && useOnMob(g, p, g.targetEntity, p.inventory.held(), (n) => this.consume(n))) { p.swing(); return true; }
     if (!e.interact || !e.interact(g, p.inventory.held())) return false;
     p.swing();
     return true;
@@ -404,6 +408,8 @@ export class Interaction {
       }
       const ib = item?.behavior;
       if (held && ib?.useOnBlock && guard(item!.mod, 'useOnBlock', () => ib.useOnBlock!({ ...this.itemCtx(held), x: t.x, y: t.y, z: t.z, face: t.face, v }), false)) { p.swing(); return; }
+      // a fence ties the mobs on the player's leads
+      if (isFence(id) && tieToFence(g, p, t.x, t.y, t.z)) { p.swing(); return; }
       if (!p.sneaking || !held) {
         if (this.activateBlock(t, id, v)) { p.swing(); this.useDelay = 4; return; }
       }
@@ -545,6 +551,16 @@ export class Interaction {
     const [nx, ny, nz] = FACE_DIRS[t.face];
     const ax = t.x + nx, ay = t.y + ny, az = t.z + nz;
     if (stationItemUse(this.hands(), t.x, t.y, t.z, t.face, held, item)) return true;
+    if (held.id === I7.ARMOR_STAND && t.face === 3) {
+      if (w.getId(ax, ay, az) !== B.AIR || w.getId(ax, ay + 1, az) !== B.AIR) return false;
+      const s = new ArmorStand(w, g);
+      s.setPos(ax + 0.5, ay, az + 0.5);
+      s.yaw = s.pyaw = Math.round((p.yaw + 180) / 45) * 45;
+      g.addEntity(s);
+      g.playBlockSound(B.OAK_PLANKS, ax, ay, az, 'place');
+      this.consume(1);
+      return true;
+    }
     if ((held.id === I7.ITEM_FRAME || held.id === I7.PAINTING) && t.face !== 2 && t.face !== 3) {
       // hung on the clicked wall, in the cell in front of it
       const wallDir = ({ 0: 1, 1: 3, 4: 2, 5: 0 } as Record<number, number>)[t.face];

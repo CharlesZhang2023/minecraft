@@ -1,5 +1,6 @@
 // Mob behaviours.
 import { villagerTick, villagerTrades } from './villagers';
+import { leashTick } from './leash';
 import { LivingEntity, DamageSource } from './living';
 import type { Entity } from './entity';
 import type { World } from '../world/world';
@@ -51,6 +52,10 @@ export abstract class Mob extends LivingEntity {
   lookTimer = 0;
   heldItem = 0;
   holding = false;
+  /** Its name from a name tag (shown over it; a named mob never despawns). */
+  customName = '';
+  /** What its lead is tied to: a player or a fence knot. */
+  leashHolder: Entity | null = null;
 
   constructor(world: World, public game: Game) {
     super(world);
@@ -84,6 +89,7 @@ export abstract class Mob extends LivingEntity {
       this.ai();
       this.followPath();
     }
+    if (this.leashHolder) leashTick(this);
     this.livingTick();
     this.updateRotations();
     // ambient sound
@@ -237,7 +243,7 @@ export abstract class Mob extends LivingEntity {
   drops(_burning: boolean): ItemStack[] { return []; }
 
   despawnCheck() {
-    if (!this.hostile) return;
+    if (!this.hostile || this.customName) return;
     const d = this.playerDistance();
     if (d === Infinity) return;
     if (d > 128) this.removed = true;
@@ -265,7 +271,8 @@ export abstract class Mob extends LivingEntity {
   }
 
   toJSON() {
-    return { type: this.typeName.toLowerCase(), x: this.x, y: this.y, z: this.z, yaw: this.yaw, health: this.health, baby: this.baby, ...(this.noAi ? { noAi: true } : {}), ...this.extraJSON() };
+    const knot = this.leashHolder && (this.leashHolder as unknown as { typeName?: string }).typeName === 'Leash Knot' ? [this.leashHolder.x, this.leashHolder.y, this.leashHolder.z] : undefined;
+    return { type: this.typeName.toLowerCase(), x: this.x, y: this.y, z: this.z, yaw: this.yaw, health: this.health, baby: this.baby, ...(this.noAi ? { noAi: true } : {}), ...(this.customName ? { customName: this.customName } : {}), ...(knot ? { knot } : {}), ...this.extraJSON() };
   }
   extraJSON(): Record<string, unknown> { return {}; }
   load(d: { x: number; y: number; z: number; yaw: number; health: number; baby?: boolean } & Record<string, unknown>) {
@@ -274,6 +281,10 @@ export abstract class Mob extends LivingEntity {
     this.health = d.health;
     this.baby = !!d.baby;
     this.noAi = !!d.noAi;
+    this.customName = (d.customName as string) ?? '';
+    // tied to a fence: find the knot once the world has its entities
+    const knot = d.knot as number[] | undefined;
+    if (knot) setTimeout(() => { const k = this.game.entities.find((e) => (e as unknown as { typeName?: string }).typeName === 'Leash Knot' && Math.abs(e.x - knot[0]) < 0.1 && Math.abs(e.y - knot[1]) < 0.1 && Math.abs(e.z - knot[2]) < 0.1); if (k) this.leashHolder = k; }, 0);
     this.loadExtra(d);
   }
   loadExtra(_d: Record<string, unknown>) {}
