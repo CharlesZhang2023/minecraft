@@ -29,6 +29,7 @@ export enum Render {
 export enum Shape {
   Cube, Stairs, Slab, Fence, Gate, Wall, Pane, Door, Trapdoor, Button, Plate, Sign, WallSign, Log, Leaves, Sapling,
   Flower, Carpet, DoublePlant, Lantern, Chain, Vine, Head, WallHead, Coral, CoralFan, Campfire, Bed,
+  Banner, WallBanner,
 }
 
 export type Tool = 'pickaxe' | 'axe' | 'shovel' | 'hoe' | 'sword' | 'shears' | null;
@@ -706,6 +707,19 @@ export const CORAL = CORAL_KINDS.map((k) => {
     deadFan: reg(`dead_${k}_coral_fan`, `Dead ${K} Coral Fan`, { ...model(Shape.CoralFan), tex: `dead_${k}_coral_fan`, hardness: 0, sound: 'grass', solid: false, needsSupport: true, drop: null }),
   };
 });
+
+/** Banners (1.8): a standing and a wall banner of each colour; their patterns live in the tile (and on the item). */
+export const WALL_BANNERS: number[] = [];
+DYE_COLORS.forEach((c, i) => {
+  const C = title(c);
+  BANNERS.push(reg(`${c}_banner`, `${C} Banner`, { ...model(Shape.Banner), tex: 'oak_planks', hardness: 1, sound: 'wood', solid: false, opaque: false, lightOpacity: 0, burn: [60, 20], drop: null, icon: `${c}_banner_item` }));
+  WALL_BANNERS.push(reg(`${c}_wall_banner`, `${C} Banner`, { ...model(Shape.WallBanner), tex: 'oak_planks', hardness: 1, sound: 'wood', solid: false, opaque: false, lightOpacity: 0, item: false, drop: null }));
+  void i;
+});
+export const isBanner = (id: number) => SHAPE_OF(id) === Shape.Banner || SHAPE_OF(id) === Shape.WallBanner;
+function SHAPE_OF(id: number) { return BLOCKS[id]?.shape; }
+/** A banner block's colour index (DYE_COLORS order). */
+export const bannerColor = (id: number) => { const i = BANNERS.indexOf(id); return i >= 0 ? i : WALL_BANNERS.indexOf(id); };
 
 /** Painting motifs and their sizes in blocks (vanilla's 26); each cell of each motif is a texture of its own. */
 export const PAINTINGS: [string, number, number][] = [

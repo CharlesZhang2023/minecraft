@@ -144,6 +144,8 @@ export function paintItems2(k: SpriteKit) {
   define('writable_book', () => { const img = newImg(); const s = k.get('book'); if (s) img.set(s); for (let i = 0; i < 8; i++) set(img, 6 + i, 1 + i, i < 2 ? hex('#2a2a2a') : hex('#f0f0f0')); return img; });
   define('unused_item_1', () => newImg());
   define('unused_item_2', () => newImg());
+  for (const [n, mark] of [['creeper', '#2a7a2a'], ['skull', '#3a3a3a'], ['flower', '#c84a4a'], ['mojang', '#c82a2a'], ['globe', '#2a6ac8'], ['piglin', '#d88a6a']] as const)
+    sprite(`${n}_banner_pattern`, ['', '...pppppppppp...', '..pPPPPPPPPPPp..', '..pPPPPPPPPPPp..', '..pPPPmmmmPPPp..', '..pPPmPPPPmPPp..', '..pPPmPmmPmPPp..', '..pPPmPmmPmPPp..', '..pPPmPPPPmPPp..', '..pPPPmmmmPPPp..', '..pPPPPPPPPPPp..', '..pPPPPPPPPPPp..', '...pppppppppp...'], { p: hex('#b8a888'), P: hex('#e8e0c8'), m: hex(mark) });
   sprite('ominous_banner', ['.ss.............', '.sWWWWWWWWW.....', '.sWWWWWWWWW.....', '.sWbbWWWbbW.....', '.sWbkbbbkbW.....', '.sWWbbbbbWW.....', '.sWWbkkkbWW.....', '.sWWWbbbWWW.....', '.sWWbbkbbWW.....', '.sWWWbbbWWW.....', '.sWWWWWWWWW.....', '.sWgWgWgWgW.....', '.sWWWWWWWWW.....', '.s..............', '.s..............', '.s..............'], { s: hex('#6a4a2a'), W: hex('#e8e8e0'), b: hex('#1a8a8a'), k: hex('#1a1a1a'), g: hex('#c8a040') });
   sprite('nether_star', ['', '.......w........', '......wWw.......', '......wWw.......', '..ww.wWWWw.ww...', '...wWWWyWWWw....', '....wWyyyWw.....', '.....wWyWw......', '....wWWwWWw.....', '...wWw...wWw....', '..ww.......ww...'], { w: hex('#d8e0f0'), W: hex('#ffffff'), y: hex('#f8f0a0') }, '#4a4a6a');
   // boats in every wood

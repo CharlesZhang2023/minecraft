@@ -214,6 +214,14 @@ export function paintMore(p: Painters) {
     gens[`${c}_stained_glass`] = stainedGlass(DYE[i]);
     gens[`${c}_stained_glass_pane_top`] = () => { const img = newImg(); const col = tone(hex(DYE[i]), 0.8); for (let y = 0; y < S; y++) for (let x = 7; x < 9; x++) set(img, x, y, col, 220); return img; };
     if (c !== 'red') bedSet(`${c}_`, DYE[i]);
+    // the banner as an item: cloth on a crossbar and pole
+    gens[`${c}_banner_item`] = () => {
+      const img = newImg(); const col = hex(DYE[i]), dark = tone(col, 0.8), wood = G('#8a6a3a');
+      for (let x = 3; x < 13; x++) set(img, x, 1, wood);
+      for (let y = 0; y < 16; y++) { set(img, 7, y, wood); set(img, 8, y, wood); }
+      for (let y = 2; y < 14; y++) for (let x = 4; x < 12; x++) if (x !== 7 && x !== 8) set(img, x, y, x === 4 || x === 11 || y === 13 ? dark : col);
+      return img;
+    };
     gens[`${c}_shulker_box`] = shulker(DYE[i]);
   });
   gens.shulker_box = shulker('#8b6a9a');

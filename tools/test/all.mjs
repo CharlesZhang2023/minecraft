@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 
 const NODE = ['registry', 'recipes', 'nether', 'end', 'overworld'];
-const BROWSER = ['families', 'stations', 'nethermobs', 'overworldmobs', 'animals', 'combat', 'progression', 'villages', 'blockrules', 'signs', 'extras', 'endcity'];
+const BROWSER = ['families', 'stations', 'nethermobs', 'overworldmobs', 'animals', 'combat', 'progression', 'villages', 'blockrules', 'signs', 'extras', 'endcity', 'banners'];
 const arg = process.argv[2];
 const pick = !arg ? [...NODE, ...BROWSER] : arg === 'node' ? NODE : arg === 'browser' ? BROWSER : arg.split(',');
 const results = [];

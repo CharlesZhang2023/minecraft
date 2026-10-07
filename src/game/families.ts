@@ -76,6 +76,13 @@ export function familyPlacement(id: number, p: PlaceInfo): Placement | undefined
       if (d < 0) return null;
       return [[x, y, z, logged(pack(blockId(kind + '_wall_sign'), d))]];
     }
+    case Shape.Banner: case Shape.WallBanner: {
+      const color = BLOCKS[id].name.replace(/_(wall_)?banner$/, '');
+      if (face === 3) return [[x, y, z, pack(blockId(color + '_banner'), rot16)]];
+      const d = wallOf(face);
+      if (d < 0) return null;
+      return [[x, y, z, pack(blockId(color + '_wall_banner'), d)]];
+    }
     case Shape.Head: case Shape.WallHead: {
       const base = BLOCKS[id].name.replace('_wall_', '_');
       if (face === 3 || face === 2) return [[x, y, z, pack(blockId(base), rot16)]];
@@ -179,8 +186,8 @@ export function familyCanStay(w: World, x: number, y: number, z: number, v: numb
       if (id === B2.TALL_SEAGRASS) return BLOCKS[below].solid;
       return isSoil(below);
     }
-    case Shape.Sign: return BLOCKS[below].solid;
-    case Shape.WallSign: case Shape.WallHead: return wallSolid(w, x, y, z, meta & 3);
+    case Shape.Sign: case Shape.Banner: return BLOCKS[below].solid;
+    case Shape.WallSign: case Shape.WallHead: case Shape.WallBanner: return wallSolid(w, x, y, z, meta & 3);
     case Shape.Lantern: return meta & 1 ? BLOCKS[above].solid || above === B2.CHAIN : BLOCKS[below].solid;
     case Shape.Coral: return BLOCKS[below].solid;
     case Shape.CoralFan: { const at = meta & 7; return at === 0 ? BLOCKS[below].solid : wallSolid(w, x, y, z, (at - 1) & 3); }

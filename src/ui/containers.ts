@@ -4,10 +4,11 @@ import { isShulkerBox } from '../game/stations';
 import { Screen, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, I6, I7, BOATS, POTION_ITEMS, itemByName, HORSE_ARMOR, FIREWORK_DYES, FIREWORK_SHAPES, FireworkExplosion } from '../game/items';
+import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, I6, I7, BOATS, POTION_ITEMS, itemByName, HORSE_ARMOR, FIREWORK_DYES, FIREWORK_SHAPES, FireworkExplosion, I9 } from '../game/items';
 import { craft, SMELTING } from '../game/recipes';
 import { addToSlots } from '../game/inventory';
-import { BLOCKS, Render, B, B2, STONE2, WOOD, isLeaves, isSapling, isStairs, isSlab } from '../world/blocks';
+import { PATTERNS } from '../game/banners';
+import { BLOCKS, Render, B, B2, STONE2, WOOD, isLeaves, isSapling, isStairs, isSlab, DYE_COLORS } from '../world/blocks';
 import { FurnaceTile, cooks, cookTime } from '../game/furnace';
 import { enchName, ENCHANTS } from '../game/enchant';
 import { drawEffectList } from './effects';
@@ -403,6 +404,8 @@ export function tooltipLines(s: ItemStack): string[] {
     else lines.push('§7No Effects');
   }
   if (s.ench) for (const [k, v] of Object.entries(s.ench)) lines.push('§7' + enchName(k, v));
+  for (const l of s.banner ?? []) lines.push(`§7${DYE_COLORS[l.c].split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')} ${PATTERNS[l.p]?.[0] ?? l.p}`);
+  if (s.id === I9.OMINOUS_BANNER) lines[0] = '§6§o' + (s.name ?? 'Ominous Banner');
   if (s.box) {
     const inside = s.box.filter((x): x is ItemStack => !!x);
     for (const it of inside.slice(0, 5)) lines.push(`§7${getItem(it.id).display} x${it.count}`);

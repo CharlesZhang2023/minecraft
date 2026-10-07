@@ -476,9 +476,20 @@ export const EXTRA_EGGS5: { mob: string; display: string; c1: number; c2: number
   { mob: 'zombie_horse', display: 'Zombie Horse', c1: 0x315234, c2: 0x97c284 },
 ];
 for (const e of EXTRA_EGGS5) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
+/** The white banner (the ominous banner places as one). */
+const BANNERS_FIRST = () => BLOCKS.find((b) => b?.name === 'white_banner')!.id;
 export const I9 = {
-  /** What a patrol captain carries (banners as blocks aren't in the game yet: this one is an item). */
-  OMINOUS_BANNER: item('ominous_banner', 'Ominous Banner', { maxStack: 16, rarity: 'uncommon' }),
+  /** What a patrol captain carries (kept as an item of its own; placed, it's a white banner with the illager design). */
+  OMINOUS_BANNER: item('ominous_banner', 'Ominous Banner', { maxStack: 16, rarity: 'uncommon', block: BANNERS_FIRST() }),
+};
+/** Banner patterns for the loom's special designs (1.14). */
+export const I10 = {
+  CREEPER_BANNER_PATTERN: item('creeper_banner_pattern', 'Banner Pattern', { maxStack: 1, rarity: 'uncommon' }),
+  SKULL_BANNER_PATTERN: item('skull_banner_pattern', 'Banner Pattern', { maxStack: 1, rarity: 'uncommon' }),
+  FLOWER_BANNER_PATTERN: item('flower_banner_pattern', 'Banner Pattern', { maxStack: 1 }),
+  MOJANG_BANNER_PATTERN: item('mojang_banner_pattern', 'Banner Pattern', { maxStack: 1, rarity: 'epic' }),
+  GLOBE_BANNER_PATTERN: item('globe_banner_pattern', 'Banner Pattern', { maxStack: 1 }),
+  PIGLIN_BANNER_PATTERN: item('piglin_banner_pattern', 'Banner Pattern', { maxStack: 1, rarity: 'uncommon' }),
 };
 
 // block items of the new blocks: sizes and fuel that differ from the defaults
@@ -533,6 +544,8 @@ export interface ItemStack {
   name?: string; // custom name from an anvil
   repair?: number; // anvil prior-work penalty
   fw?: Firework; // firework rockets and stars
+  /** A banner's pattern layers (kept on the item; the loom adds them). */
+  banner?: { p: string; c: number }[];
   /** A shulker box's contents (27 slots), kept on the item when it's broken. */
   box?: (ItemStack | null)[];
   /** A lodestone compass: the lodestone it points to. */
@@ -547,8 +560,8 @@ export interface FireworkExplosion { shape: number; colors: number[]; fade?: num
 /** A rocket's flight duration (gunpowder used) and bursts; a star carries its one burst in `ex`. */
 export interface Firework { flight?: number; ex?: FireworkExplosion[] }
 export const stack = (id: number, count = 1, damage = 0): ItemStack => ({ id, count, damage });
-export const cloneStack = (s: ItemStack | null): ItemStack | null => (s ? { ...s, damage: s.damage ?? 0, ...(s.ench ? { ench: { ...s.ench } } : {}), ...(s.tag ? { tag: structuredClone(s.tag) } : {}) } : null);
-export const sameItem = (a: ItemStack | null, b: ItemStack | null) => !!a && !!b && a.id === b.id && (a.damage ?? 0) === (b.damage ?? 0) && JSON.stringify(a.ench ?? null) === JSON.stringify(b.ench ?? null) && (a.name ?? '') === (b.name ?? '') && (a.repair ?? 0) === (b.repair ?? 0) && JSON.stringify(a.fw ?? null) === JSON.stringify(b.fw ?? null) && JSON.stringify(a.tag ?? null) === JSON.stringify(b.tag ?? null);
+export const cloneStack = (s: ItemStack | null): ItemStack | null => (s ? { ...s, damage: s.damage ?? 0, ...(s.ench ? { ench: { ...s.ench } } : {}), ...(s.tag ? { tag: structuredClone(s.tag) } : {}), ...(s.banner ? { banner: s.banner.map((l) => ({ ...l })) } : {}) } : null);
+export const sameItem = (a: ItemStack | null, b: ItemStack | null) => !!a && !!b && a.id === b.id && (a.damage ?? 0) === (b.damage ?? 0) && JSON.stringify(a.ench ?? null) === JSON.stringify(b.ench ?? null) && (a.name ?? '') === (b.name ?? '') && (a.repair ?? 0) === (b.repair ?? 0) && JSON.stringify(a.fw ?? null) === JSON.stringify(b.fw ?? null) && JSON.stringify(a.tag ?? null) === JSON.stringify(b.tag ?? null) && JSON.stringify(a.banner ?? null) === JSON.stringify(b.banner ?? null);
 /** Display name (custom anvil name if set). */
 export const stackName = (s: ItemStack) => s.name ?? getItem(s.id).display;
 export const maxStack = (s: ItemStack) => getItem(s.id).maxStack;
@@ -566,6 +579,7 @@ export function blockDrops(blockId: number, meta: number, tool: ItemDef | undefi
   }
   if (def.behavior?.drops) return def.behavior.drops({ id: blockId, meta, tool, rng, silk });
   if (SHULKER_BOXES.includes(blockId)) return [];
+  if (BLOCKS[blockId].shape === Shape.Banner || BLOCKS[blockId].shape === Shape.WallBanner) return [];
   if (silk && def.item && blockId !== B.SPAWNER && !def.needsSupport) return [stack(blockId)];
   const shears = tool?.tool?.type === 'shears';
   const fam = familyDrops(blockId, meta, def, shears, rng, tool);

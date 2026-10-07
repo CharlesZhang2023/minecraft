@@ -327,6 +327,10 @@ function familyBoxes(id: number, meta: number, nb: Neighbor | undefined, f: numb
     }
     case BS.WallSign:
       return [rotY(box(0, 4, 0, 16, 12, 2, f[0]), meta & 3)];
+    case BS.Banner:
+      return [box(7.4, 0, 7.4, 8.6, 16, 8.6, f[0])];
+    case BS.WallBanner:
+      return [rotY(box(0, 14, 0, 16, 16, 2, f[0]), meta & 3)];
     case BS.Lantern: {
       const hang = meta & 1 ? 1 : 0;
       const t = f[0], side = [4, 3, 12, 10];

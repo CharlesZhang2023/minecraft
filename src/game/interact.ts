@@ -10,14 +10,14 @@ import { swingDamage, sweep, shieldBlocks, shieldHand, crossbowLoadTicks, loadCr
 import { hiveBroken } from '../entity/bees';
 import { FISH_BUCKETS, releaseFish, FLOWER_EFFECTS } from '../entity/animals';
 import type { Game } from './game';
-import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor, isFence } from '../world/blocks';
+import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor, isFence, isBanner, bannerColor, BANNERS } from '../world/blocks';
 import { familyPlacement, doubleSlab, partners, toggled } from './families';
 import { stationUse, stationItemUse, stationTile, isShulkerBox } from './stations';
 import { blockIs } from './tags';
 import { angerPiglins } from '../entity/nethermobs';
 import { ItemFrame, Painting } from '../entity/hanging';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, I7, stack, ItemDef, POTION_ITEMS, itemId } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, I7, stack, ItemDef, POTION_ITEMS, itemId, I9 } from './items';
 import { FireworkRocket } from '../entity/firework';
 import { ThrownPotion } from '../entity/potion';
 import { POTION_BY_KEY } from './potiondata';
@@ -198,6 +198,14 @@ export class Interaction {
     const tool = held ? getItem(held.id) : undefined;
     g.particles!.blockBreak(x, y, z, id, this.tintAt(x, y, z, id));
     g.playBlockSound(id, x, y, z, 'break');
+    // a banner drops as itself with its patterns
+    if (isBanner(id)) {
+      this.removeBlockAndPartner(x, y, z, v);
+      w.setTile(x, y, z, undefined);
+      if (!p.creative) g.dropItem(x + 0.5, y + 0.5, z + 0.5, bannerItem(id, tile));
+      this.broken(x, y, z, v, p);
+      return;
+    }
     // a shulker box keeps what's inside: it drops as itself, contents and all (in creative too, when it has any)
     if (isShulkerBox(id)) {
       const items = (tile as { items?: (ItemStack | null)[] } | undefined)?.items;
@@ -277,6 +285,7 @@ export class Interaction {
 
   dropTileContents(x: number, y: number, z: number, v: number, t = this.world.getTile(x, y, z)) {
     if (!t) return;
+    if (isBanner(idOf(v))) { this.game.dropItem(x + 0.5, y + 0.5, z + 0.5, bannerItem(idOf(v), t)); this.world.setTile(x, y, z, undefined); return; }
     // a shulker box blown up or washed away drops as itself, with what's inside
     if (isShulkerBox(idOf(v))) {
       const items = (t as { items?: (ItemStack | null)[] }).items;
@@ -1049,7 +1058,13 @@ export class Interaction {
           if (!g.ticker!.canStay(bx, by, bz, bv) && !(fam.length > 1)) return false;
           if (!this.noEntities(bx, by, bz, bv)) return false;
         }
-        if (fam.length === 1) return this.setPlaced(fam[0][0], fam[0][1], fam[0][2], fam[0][3], blockId);
+        if (fam.length === 1) {
+          const [fx, fy, fz, fv] = fam[0];
+          if (!this.setPlaced(fx, fy, fz, fv, blockId)) return false;
+          // a banner keeps its patterns (the ominous banner comes with the illagers' design)
+          if (isBanner(idOf(fv))) w.setTile(fx, fy, fz, { type: 'banner', patterns: (held.banner ?? (held.id === I9.OMINOUS_BANNER ? OMINOUS : [])).map((l) => ({ ...l })) } as never);
+          return true;
+        }
         if (!this.setAll(fam)) return false;
         for (const [bx, by, bz, bv] of fam) this.initTile(bx, by, bz, bv);
         if (!g.ticker!.canStay(x, y, z, fam[0][3])) { for (const [bx, by, bz] of fam) w.set(bx, by, bz, B.AIR); return false; }
@@ -1459,4 +1474,13 @@ function chorusHop(g: Game, p: Player, r: Random) {
     return;
   }
 }
+
+/** A banner block (standing or on a wall) as its item, with the patterns from its tile. */
+function bannerItem(id: number, tile: unknown): ItemStack {
+  const pats = (tile as { patterns?: { p: string; c: number }[] } | undefined)?.patterns ?? [];
+  const color = bannerColor(id);
+  return { id: BANNERS[color], count: 1, ...(pats.length ? { banner: pats.map((l) => ({ ...l })) } : {}) };
+}
+/** The illagers' banner: on white, a cyan lozenge, grey stripes and bordure, a black fess (vanilla's eight layers). */
+const OMINOUS = [{ p: 'mr', c: 9 }, { p: 'bs', c: 8 }, { p: 'cs', c: 7 }, { p: 'bo', c: 8 }, { p: 'ms', c: 15 }, { p: 'hh', c: 8 }, { p: 'mc', c: 8 }, { p: 'bo', c: 15 }];
 

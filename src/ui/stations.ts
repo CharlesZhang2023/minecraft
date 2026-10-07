@@ -5,7 +5,9 @@ import { ContainerScreen, Slot, arrow } from './containers';
 import { Screen } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { ItemStack, getItem, stack, I, I3 } from '../game/items';
+import { ItemStack, getItem, stack, I, I3, DYES, itemId } from '../game/items';
+import { BANNERS } from '../world/blocks';
+import { PATTERNS, PATTERN_ITEMS, PLAIN_PATTERNS, bannerPixels, BANNER_W, BANNER_H } from '../game/banners';
 import { BLOCKS } from '../world/blocks';
 import { SMITHING, STONECUTTING } from '../game/recipes';
 import { ENCH_BY_ID } from '../game/enchant';
@@ -267,6 +269,105 @@ export class BeaconScreen extends ContainerScreen {
   }
 }
 void EFFECTS;
+
+/** A pattern's (or a whole banner's) picture, drawn once and kept. */
+const bannerCanvases = new Map<string, HTMLCanvasElement>();
+function bannerCanvas(base: number, layers: { p: string; c: number }[]): HTMLCanvasElement {
+  const key = base + ':' + layers.map((l) => l.p + l.c).join(',');
+  let c = bannerCanvases.get(key);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = BANNER_W; c.height = BANNER_H;
+    const img = new ImageData(BANNER_W, BANNER_H);
+    img.data.set(bannerPixels(base, layers));
+    c.getContext('2d')!.putImageData(img, 0, 0);
+    bannerCanvases.set(key, c);
+  }
+  return c;
+}
+
+/**
+ * The loom (1.14): a banner, a dye and (for the special designs) a banner pattern item; pick a pattern from the grid
+ * and take the banner with that layer added in the dye's colour. Six layers at most; the pattern item isn't used up.
+ */
+export class LoomScreen extends ContainerScreen {
+  title = 'Loom';
+  items: Items = [null, null, null];
+  sel = '';
+  constructor(ui: UI, public x: number, public y: number, public z: number) { super(ui); }
+  /** The patterns on offer: the pattern item's own design, or the plain ones. */
+  offered(): string[] {
+    const [b, d, p] = this.items;
+    if (!b || !d) return [];
+    if (p) { const k = Object.keys(PATTERN_ITEMS).find((k) => itemId(PATTERN_ITEMS[k]) === p.id); return k ? [k] : []; }
+    return PLAIN_PATTERNS;
+  }
+  result(): ItemStack | null {
+    const [b, d] = this.items;
+    if (!b || !d || !this.offered().includes(this.sel)) return null;
+    const layers = b.banner ?? [];
+    if (layers.length >= 6) return null;
+    return { ...b, count: 1, banner: [...layers.map((l) => ({ ...l })), { p: this.sel, c: DYES.indexOf(d.id) }] };
+  }
+  override buildSlots() {
+    const it = this.items;
+    const patternItem = (s: ItemStack) => Object.values(PATTERN_ITEMS).some((n) => itemId(n) === s.id);
+    this.slots.push({ x: 13, y: 26, get: () => it[0], set: (s) => (it[0] = s), group: 'banner', canPlace: (s) => BANNERS.includes(s.id) });
+    this.slots.push({ x: 33, y: 26, get: () => it[1], set: (s) => (it[1] = s), group: 'dye', canPlace: (s) => DYES.includes(s.id) });
+    this.slots.push({ x: 23, y: 45, get: () => it[2], set: (s) => (it[2] = s), group: 'pattern', limit: 1, canPlace: patternItem });
+    this.slots.push({
+      x: 143, y: 57, group: 'out', output: true,
+      get: () => this.result(), set: () => {},
+      onTake: () => { take(it, 0); take(it, 1); this.game.audio.play('dig.cloth', { x: this.x + 0.5, y: this.y + 0.5, z: this.z + 0.5 }, 0.6, 1.2); },
+    });
+    this.addPlayerSlots();
+  }
+  /** Pattern buttons: [x, y, id], seven to a row. */
+  buttons(): [number, number, string][] { return this.offered().map((p, i) => [50 + (i % 7) * 12, 14 + Math.floor(i / 7) * 12, p]); }
+  override quickTargets(s: Slot, st: ItemStack): string[] {
+    if (s.group === 'main' || s.group === 'hotbar') return BANNERS.includes(st.id) ? ['banner'] : DYES.includes(st.id) ? ['dye'] : ['pattern'];
+    return super.quickTargets(s, st);
+  }
+  override drawBackground(ctx: Ctx, mx: number, my: number) {
+    const L = this.left, T = this.top;
+    ctx.fillStyle = '#8b8b8b';
+    ctx.fillRect(L + 49, T + 13, 85, 61);
+    const dye = this.items[1] ? DYES.indexOf(this.items[1].id) : 15;
+    const base = this.items[0] ? BANNERS.indexOf(this.items[0].id) : 0;
+    for (const [bx, by, p] of this.buttons()) {
+      const hover = mx >= L + bx && my >= T + by && mx < L + bx + 11 && my < T + by + 11;
+      ctx.fillStyle = this.sel === p ? '#e0e0e0' : hover ? '#c0c0d8' : '#5a5a5a';
+      ctx.fillRect(L + bx, T + by, 11, 11);
+      ctx.drawImage(bannerCanvas(base, [{ p, c: dye }]), L + bx + 3, T + by + 1, 5, 9);
+    }
+    // the result, large
+    const out = this.result() ?? this.items[0];
+    if (out) ctx.drawImage(bannerCanvas(BANNERS.indexOf(out.id), out.banner ?? []), L + 145, T + 8, 12, 24);
+    arrow(ctx, L + 136, T + 58, 0, 6);
+  }
+  override drawForeground(ctx: Ctx) {
+    this.label(ctx, 'Loom', 8, 4);
+    this.label(ctx, 'Inventory', 8, 74);
+    if ((this.items[0]?.banner?.length ?? 0) >= 6) this.label(ctx, 'Full', 140, 40);
+  }
+  override mouseDown(mx: number, my: number, button: number): boolean {
+    const L = this.left, T = this.top;
+    for (const [bx, by, p] of this.buttons()) {
+      if (mx < L + bx || my < T + by || mx >= L + bx + 11 || my >= T + by + 11) continue;
+      this.sel = p;
+      this.game.audio.play('click', null, 0.4, 1);
+      return true;
+    }
+    return super.mouseDown(mx, my, button);
+  }
+  override syncState() { return { sel: this.sel }; }
+  override applySyncState(s: unknown) { const d = s as { sel?: string } | null; if (d) this.sel = d.sel ?? ''; }
+  override onClose() {
+    this.giveBack(this.items);
+    super.onClose();
+  }
+}
+void PATTERNS;
 
 /** A chest minecart's 27 slots, or a hopper minecart's 5. */
 export class CartScreen extends ContainerScreen {

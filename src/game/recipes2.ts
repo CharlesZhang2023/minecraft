@@ -1,8 +1,8 @@
 // Recipes of the 1.9 - 1.16 content: crafting (wood sets, colours, stone families, the Nether update, the sea, the
 // new workstations), smelting with its blast-furnace and smoker kinds, campfire cooking, stonecutting and 1.16
 // smithing (diamond gear + netherite ingot). recipes.ts calls `registerRecipes116` with its helpers.
-import { B, B2, BLOCKS, BLOCK_COUNT, WOOD, STONE2, CONCRETE, CONCRETE_POWDER, TERRACOTTA_COLORS, GLAZED_TERRACOTTA, STAINED_GLASS, STAINED_PANES, CARPETS, BEDS, SHULKER_BOXES, WOOL_COLORS, SHAPE, Shape, blockByName, CORAL } from '../world/blocks';
-import { I, I2, I3, I5, I6, I7, TOOLS, ARMOR, DYES, BOATS, TIPPED_ARROWS, LINGERING_ITEMS, itemByName, ItemStack } from './items';
+import { B, B2, BLOCKS, BLOCK_COUNT, WOOD, STONE2, CONCRETE, CONCRETE_POWDER, TERRACOTTA_COLORS, GLAZED_TERRACOTTA, STAINED_GLASS, STAINED_PANES, CARPETS, BEDS, SHULKER_BOXES, WOOL_COLORS, SHAPE, Shape, blockByName, CORAL, BANNERS } from '../world/blocks';
+import { I, I2, I3, I5, I6, I7, TOOLS, ARMOR, DYES, BOATS, TIPPED_ARROWS, LINGERING_ITEMS, itemByName, ItemStack, I10 } from './items';
 import { ITEM_TAGS } from './tags';
 
 type Key = Record<string, number | number[]>;
@@ -76,7 +76,13 @@ export function registerRecipes116(k: RecipeKit) {
     if (BEDS[i] !== B.BED) L([I.RED_BED, dye], BEDS[i]);
     smelt(TERRACOTTA_COLORS[i], GLAZED_TERRACOTTA[i], 0.1);
     L([B2.SHULKER_BOX, dye], SHULKER_BOXES[i]);
+    S(['###', '###', ' S '], { '#': WOOL_COLORS[i], S: I.STICK }, BANNERS[i]);
   });
+  // banner patterns for the loom
+  L([I.PAPER, B.OXEYE_DAISY], I10.FLOWER_BANNER_PATTERN);
+  L([I.PAPER, B2.CREEPER_HEAD], I10.CREEPER_BANNER_PATTERN);
+  L([I.PAPER, B2.WITHER_SKELETON_SKULL], I10.SKULL_BANNER_PATTERN);
+  L([I.PAPER, I7.ENCHANTED_GOLDEN_APPLE], I10.MOJANG_BANNER_PATTERN);
   S(['S', 'C', 'S'], { S: I7.SHULKER_SHELL, C: B.CHEST }, B2.SHULKER_BOX);
 
   // ================================================================ stone families

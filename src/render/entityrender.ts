@@ -23,7 +23,8 @@ import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball }
 import { ThrownPotion } from '../entity/potion';
 import { getItem, I, I6, I7 } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
-import { BLOCKS, TEXTURES, Render, B, B2, WOOD, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX, Shape, metaOf, idOf, OPAQUE } from '../world/blocks';
+import { BLOCKS, TEXTURES, Render, B, B2, WOOD, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX, Shape, metaOf, idOf, OPAQUE, isBanner, bannerColor } from '../world/blocks';
+import { bannerPixels } from '../game/banners';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
 import { poseMat4 } from '../sublevel/pose';
@@ -303,6 +304,7 @@ export class EntityRenderer {
       this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + e.height / 2 - cam.y, e.lerpZ(t) - cam.z, tg.lerpX(t) - cam.x, tg.lerpY(t) + tg.height / 2 - cam.y, tg.lerpZ(t) - cam.z, e.age + t, col, 0.06 + 0.06 * k);
     }
     this.drawSignTexts(game, t);
+    this.drawBanners(game);
     // beacon beams (the beacons' tiles keep their colour; 0 is off)
     if (w.dimension === 'overworld' || w.dimension === 'nether' || w.dimension === 'end') {
       const ccx = Math.floor(cam.x) >> 4, ccz = Math.floor(cam.z) >> 4;
@@ -1385,6 +1387,43 @@ export class EntityRenderer {
     }
   }
 
+  /** Banners: the cloth with its patterns (a texture per design), the crossbar and, standing, the upper pole. */
+  private drawBanners(game: Game) {
+    const w = game.world!, cam = this.r.cam;
+    const ccx = Math.floor(cam.x) >> 4, ccz = Math.floor(cam.z) >> 4;
+    for (const c of w.chunks.values()) {
+      if (!c.tiles.size || Math.abs(c.cx - ccx) > 4 || Math.abs(c.cz - ccz) > 4) continue;
+      for (const [i, tl] of c.tiles) {
+        const st = tl as unknown as { type: string; patterns?: { p: string; c: number }[] };
+        if (st.type !== 'banner') continue;
+        const bx = c.cx * 16 + (i & 15), by = i >> 8, bz = c.cz * 16 + ((i >> 4) & 15);
+        if ((bx + 0.5 - cam.x) ** 2 + (by - cam.y) ** 2 + (bz + 0.5 - cam.z) ** 2 > 64 * 64) continue;
+        const v = w.get(bx, by, bz), id = idOf(v);
+        if (!isBanner(id)) continue;
+        const wall = BLOCKS[id].shape === Shape.WallBanner;
+        const layers = st.patterns ?? [];
+        const key = 'banner:' + bannerColor(id) + ':' + layers.map((l) => l.p + l.c).join(',');
+        if (!this.skins.has(key)) {
+          if (this.bannerKeys.length > 200) for (const k of this.bannerKeys.splice(0, 100)) { this.r.gl.deleteTexture(this.skins.get(k)!); this.skins.delete(k); }
+          this.skins.set(key, this.r.makeTexture(bannerSkin(bannerColor(id), layers), 64));
+          this.bannerKeys.push(key);
+        }
+        const yaw = wall ? (metaOf(v) & 3) * 90 : metaOf(v) * 22.5;
+        const m = mat4();
+        identity(m);
+        translate(m, m, bx + 0.5 - cam.x, by + (wall ? 1 : 28 / 16) - cam.y, bz + 0.5 - cam.z);
+        rotateY(m, m, (180 - yaw) * DEG);
+        scale(m, m, -1, -1, 1);
+        // a wall banner hangs from its bar against the wall
+        if (wall) translate(m, m, 0, 0, 6.6 / 16);
+        scale(m, m, 2 / 3, 2 / 3, 2 / 3);
+        const [sky, blk] = w.getLight(bx, by, bz);
+        this.drawModel('banner', key, m, {}, [sky, blk], [0, 0, 0, 0], wall ? new Set(['pole']) : undefined);
+      }
+    }
+  }
+  private bannerKeys: string[] = [];
+
   /** Evoker fangs: the jaws rise out of the ground, snap shut and sink back. */
   private drawFangs(e: EvokerFangs, x: number, y: number, z: number, t: number, sky: number, blk: number) {
     if (e.warmup >= 0) return;
@@ -1653,5 +1692,23 @@ function undeadHorseSkin(kind: 'skeleton' | 'zombie'): M.Skin {
     s.data[i] = Math.min(255, r); s.data[i + 1] = Math.min(255, g); s.data[i + 2] = Math.min(255, b);
   }
   return s;
+}
+
+/** A banner's 64 x 64 skin: the cloth front and back (its design), and wood for the bar and pole. */
+function bannerSkin(base: number, layers: { p: string; c: number }[]): HTMLCanvasElement {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const ctx = cv.getContext('2d')!;
+  ctx.fillStyle = '#7a5a32';
+  ctx.fillRect(0, 42, 44, 4);
+  ctx.fillRect(44, 0, 8, 44);
+  ctx.fillStyle = '#5e4424';
+  for (let y = 0; y < 44; y += 3) ctx.fillRect(44 + (y % 7), y, 1, 2);
+  const img = new ImageData(20, 40);
+  img.data.set(bannerPixels(base, layers));
+  ctx.putImageData(img, 0, 0);
+  // the back shows the design the other way round
+  ctx.save(); ctx.translate(40, 0); ctx.scale(-1, 1); ctx.drawImage(cv, 0, 0, 20, 40, 0, 0, 20, 40); ctx.restore();
+  return cv;
 }
 
