@@ -5,7 +5,7 @@
 import type { Game } from './game';
 import type { World } from '../world/world';
 import type { Player } from './player';
-import { B, B2, BLOCKS, OPAQUE, WOOD, idOf, metaOf, pack, WATERLOGGED, waterloggable, blockByName, isLog } from '../world/blocks';
+import { B, B2, BLOCKS, OPAQUE, WOOD, SHULKER_BOXES, idOf, metaOf, pack, WATERLOGGED, waterloggable, blockByName, isLog } from '../world/blocks';
 import { I, I3, I7, ItemStack, ItemDef, getItem, stack, POTION_ITEMS, DISCS } from './items';
 import { SMELTING } from './recipes';
 import { POT_PLANTS } from '../world/models';
@@ -43,12 +43,21 @@ function compostChance(id: number): number {
 }
 
 /** Right-click on one of the new blocks. Returns true if it did something. */
+export const isShulkerBox = (id: number) => id === B2.SHULKER_BOX || SHULKER_BOXES.includes(id);
 export function stationUse(h: Hands, x: number, y: number, z: number, v: number, held: ItemStack | null): boolean {
   const g = h.game, w = h.world, p = h.player;
   const id = idOf(v), m = metaOf(v);
+  // the dyed shulker boxes open like the plain one
+  if (SHULKER_BOXES.includes(id)) return stationUse(h, x, y, z, pack(B2.SHULKER_BOX, m), held) && (w.getId(x, y, z) === id || true);
   const ui = g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>;
   switch (id) {
     case B2.SMOKER: case B2.BLAST_FURNACE: g.ui.openFurnace(x, y, z); return true;
+    case B2.SHULKER_BOX:
+      // a shulker box opens upward: something solid on top keeps it shut
+      if (OPAQUE[w.getId(x, y + 1, z)]) return true;
+      g.ui.openChest(x, y, z);
+      g.audio.play('shulker.open', at(x, y, z), 0.5, 1);
+      return true;
     case B2.RESPAWN_ANCHOR: {
       // glowstone charges it (four charges); used in the Nether it sets the spawn point, anywhere else it explodes
       if (held?.id === B.GLOWSTONE && m < 4) {
@@ -257,7 +266,7 @@ export function playNote(g: Game, w: World, x: number, y: number, z: number, not
 /** Tile entities the new blocks get when placed. */
 export function stationTile(w: World, x: number, y: number, z: number, id: number) {
   if (id === B2.SMOKER || id === B2.BLAST_FURNACE) w.setTile(x, y, z, { type: 'furnace', kind: id === B2.SMOKER ? 'smoker' : 'blast', slots: [null, null, null], burn: 0, burnMax: 0, cook: 0 } as never);
-  else if (id === B2.BARREL || id === B2.TRAPPED_CHEST) w.setTile(x, y, z, { type: 'chest', items: new Array(27).fill(null) } as never);
+  else if (id === B2.BARREL || id === B2.TRAPPED_CHEST || isShulkerBox(id)) w.setTile(x, y, z, { type: 'chest', items: new Array(27).fill(null) } as never);
   else if (id === B2.JUKEBOX) w.setTile(x, y, z, { type: 'jukebox', disc: null } as never);
   else if (id === B2.CAMPFIRE || id === B2.SOUL_CAMPFIRE) campfireTile(w, x, y, z);
   else if (id === B2.DAYLIGHT_DETECTOR) w.setTile(x, y, z, { type: 'daylight', power: 0 } as never);

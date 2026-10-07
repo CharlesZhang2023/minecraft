@@ -2,9 +2,11 @@
 // block into its cut shapes) and the grindstone (strip enchantments for experience, or combine worn tools). Like
 // every container screen they run twice, on the player's client and as the server's twin fed the same clicks.
 import { ContainerScreen, Slot, arrow } from './containers';
+import { Screen } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { ItemStack, getItem, stack, I, I3 } from '../game/items';
+import { BLOCKS } from '../world/blocks';
 import { SMITHING, STONECUTTING } from '../game/recipes';
 import { ENCH_BY_ID } from '../game/enchant';
 import { BEACON_POWERS, BEACON_PAYMENT, type BeaconTile } from '../game/beacon';
@@ -283,4 +285,65 @@ export class CartScreen extends ContainerScreen {
     this.label(ctx, 'Inventory', 8, 72);
   }
 }
+
+/** Editing a sign: four lines of up to 15 characters; Enter or the arrows move between lines, Done saves. */
+export class SignScreen extends Screen {
+  override twin = true;
+  lines = ['', '', '', ''];
+  line = 0;
+  private blink = 0;
+  constructor(ui: UI, public x: number, public y: number, public z: number) { super(ui); }
+  override init() {
+    const t = this.game.world!.getTile(this.x, this.y, this.z) as unknown as { type: string; lines?: string[] } | undefined;
+    if (t?.type === 'sign' && t.lines) this.lines = t.lines.slice(0, 4).concat(['', '', '', '']).slice(0, 4);
+  }
+  override tick() { this.blink++; }
+  override render(ctx: Ctx, mx: number, my: number) {
+    const g = this.gui, cx = Math.floor(g.w / 2), top = Math.floor(g.h / 2) - 60;
+    ctx.fillStyle = 'rgba(16,16,16,0.6)';
+    ctx.fillRect(0, 0, g.w, g.h);
+    g.textCenter(ctx, 'Edit Sign Message', cx, top - 20);
+    // the board
+    ctx.fillStyle = '#9a7a4a';
+    ctx.fillRect(cx - 50, top, 100, 52);
+    ctx.fillStyle = '#7a5a32';
+    ctx.fillRect(cx - 50, top + 51, 100, 1);
+    ctx.fillRect(cx - 2, top + 52, 4, 30);
+    this.lines.forEach((l, i) => {
+      const cur = i === this.line && Math.floor(this.blink / 6) % 2 === 0;
+      g.textCenter(ctx, cur ? `> ${l} <` : l, cx, top + 4 + i * 12, '#000000', false);
+    });
+    const b = this.done();
+    const hover = mx >= b.x && my >= b.y && mx < b.x + b.w && my < b.y + b.h;
+    g.button(ctx, b.x, b.y, b.w, b.h, 'Done', hover, true);
+    super.render(ctx, mx, my);
+  }
+  private done() { return { x: Math.floor(this.gui.w / 2) - 50, y: Math.floor(this.gui.h / 2) + 40, w: 100, h: 20 }; }
+  override mouseDown(mx: number, my: number, button: number): boolean {
+    const b = this.done();
+    if (mx >= b.x && my >= b.y && mx < b.x + b.w && my < b.y + b.h) { this.close(); return true; }
+    return super.mouseDown(mx, my, button);
+  }
+  override key(e: KeyboardEvent): boolean {
+    if (e.code === 'Escape') { this.close(); return true; }
+    if (e.code === 'Enter' || e.code === 'ArrowDown' || e.code === 'Tab') { this.line = (this.line + 1) & 3; return true; }
+    if (e.code === 'ArrowUp') { this.line = (this.line + 3) & 3; return true; }
+    if (e.code === 'Backspace') { this.lines[this.line] = this.lines[this.line].slice(0, -1); return true; }
+    return e.key.length === 1;
+  }
+  override char(ch: string) {
+    const l = this.lines[this.line];
+    if (ch >= ' ' && ch !== '§' && l.length < 15 && this.gui.font.width(l + ch) <= 90) this.lines[this.line] = l + ch;
+  }
+  override onClose() {
+    // the server's copy writes the sign (and every client sees it with the chunk's tiles)
+    const w = this.game.world!;
+    if (w.getId(this.x, this.y, this.z) && BLOCKS_IS_SIGN(w.getId(this.x, this.y, this.z))) {
+      w.setTile(this.x, this.y, this.z, { type: 'sign', lines: this.lines.slice() } as never);
+      const c = w.chunkAt(this.x, this.z);
+      if (c) c.modified = true;
+    }
+  }
+}
+const BLOCKS_IS_SIGN = (id: number) => /_sign$/.test(BLOCKS[id]?.name ?? '');
 

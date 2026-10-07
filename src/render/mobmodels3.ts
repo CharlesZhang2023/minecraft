@@ -166,7 +166,9 @@ MODELS.wither = build([
   { n: 'spine', p: [0, 7, 0], b: [[-1.5, 0, -1.5, 3, 10, 3], [-4.5, 1.5, 0.5, 9, 2, 2], [-4.5, 4, 0.5, 9, 2, 2], [-4.5, 6.5, 0.5, 9, 2, 2]], r: [0.2, 0, 0] },
   { n: 'tail', p: [0, 16.8, 2], b: [[-1.5, 0, -1.5, 3, 7, 3]], r: [0.5, 0, 0] },
 ]);
-export const MOB_MODELS3: Record<string, () => ModelDef> = Object.fromEntries(Object.entries(MODELS).map(([k, b]) => [k, () => b.def]));
+/** Sign text: a sheet in front of the board (14 x 8 sixteenths), its texture is the text (front half only). */
+const signText = (): ModelDef => ({ texW: 28, texH: 8, parts: [{ name: 'text', px: 0, py: 0, pz: 0, boxes: [{ x: -7, y: 0, z: 0, w: 14, h: 8, d: 0, u: 0, v: 0 }] }] });
+export const MOB_MODELS3: Record<string, () => ModelDef> = { ...Object.fromEntries(Object.entries(MODELS).map(([k, b]) => [k, () => b.def])), signText };
 
 // ------------------------------------------------------------------ skins
 const EYE = hx('#1a1a1a');

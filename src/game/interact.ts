@@ -9,7 +9,7 @@ import { FISH_BUCKETS, releaseFish } from '../entity/animals';
 import type { Game } from './game';
 import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor } from '../world/blocks';
 import { familyPlacement, doubleSlab, partners, toggled } from './families';
-import { stationUse, stationItemUse, stationTile } from './stations';
+import { stationUse, stationItemUse, stationTile, isShulkerBox } from './stations';
 import { blockIs } from './tags';
 import { angerPiglins } from '../entity/nethermobs';
 import { ItemFrame, Painting } from '../entity/hanging';
@@ -195,6 +195,16 @@ export class Interaction {
     const tool = held ? getItem(held.id) : undefined;
     g.particles!.blockBreak(x, y, z, id, this.tintAt(x, y, z, id));
     g.playBlockSound(id, x, y, z, 'break');
+    // a shulker box keeps what's inside: it drops as itself, contents and all (in creative too, when it has any)
+    if (isShulkerBox(id)) {
+      const items = (tile as { items?: (ItemStack | null)[] } | undefined)?.items;
+      const full = !!items?.some((s) => s);
+      this.removeBlockAndPartner(x, y, z, v);
+      w.setTile(x, y, z, undefined);
+      if (!p.creative || full) g.dropItem(x + 0.5, y + 0.5, z + 0.5, { id, count: 1, ...(full ? { box: items!.map((s) => (s ? { ...s } : null)) } : {}) });
+      this.broken(x, y, z, v, p);
+      return;
+    }
     this.removeBlockAndPartner(x, y, z, v);
     if (!p.creative) {
       const silk = level(held, 'silk_touch') > 0;
@@ -264,6 +274,14 @@ export class Interaction {
 
   dropTileContents(x: number, y: number, z: number, v: number, t = this.world.getTile(x, y, z)) {
     if (!t) return;
+    // a shulker box blown up or washed away drops as itself, with what's inside
+    if (isShulkerBox(idOf(v))) {
+      const items = (t as { items?: (ItemStack | null)[] }).items;
+      const full = !!items?.some((s) => s);
+      this.game.dropItem(x + 0.5, y + 0.5, z + 0.5, { id: idOf(v), count: 1, ...(full ? { box: items!.map((s) => (s ? { ...s } : null)) } : {}) });
+      this.world.setTile(x, y, z, undefined);
+      return;
+    }
     const spec = BLOCKS[idOf(v)].behavior?.tile;
     const items = (spec?.contents ? callBlock(idOf(v), 'tile contents', () => spec.contents!(t), []) : (t.items ?? t.slots)) as (ItemStack | null)[] | undefined;
     if (items) for (const s of items) if (s) this.game.dropItem(x + 0.5, y + 0.5, z + 0.5, s, true);
@@ -425,7 +443,7 @@ export class Interaction {
     }
     if (isButton(id)) { g.redstone.pressButton(t.x, t.y, t.z); return true; }
     if (blockIs('guarded_by_piglins', id) && w.dimension === 'nether' && !OPAQUE[w.getId(t.x, t.y + 1, t.z)]) angerPiglins(g, this.player, t.x, t.y, t.z);
-    if (id >= B2.CRIMSON_NYLIUM && stationUse(this.hands(), t.x, t.y, t.z, v, this.player.inventory.held())) return true;
+    if ((id >= B2.CRIMSON_NYLIUM || isShulkerBox(id)) && stationUse(this.hands(), t.x, t.y, t.z, v, this.player.inventory.held())) return true;
     switch (id) {
       case B.CRAFTING_TABLE: g.ui.openCrafting(); return true;
       case B.ENCHANTING_TABLE: g.ui.openEnchant(t.x, t.y, t.z); return true;
@@ -1063,7 +1081,10 @@ export class Interaction {
     if (!this.noEntities(x, y, z, v)) return false;
     // tile entities
     if (blockId === B.CHEST) w.setTile(x, y, z, undefined);
-    return this.setPlaced(x, y, z, v, blockId);
+    const placed = this.setPlaced(x, y, z, v, blockId);
+    // a shulker box item brings its contents back
+    if (placed && held.box && isShulkerBox(blockId)) w.setTile(x, y, z, { type: 'chest', items: held.box.map((s) => (s ? { ...s } : null)) } as never);
+    return placed;
   }
 
   private setPlaced(x: number, y: number, z: number, v: number, soundBlock: number): boolean {
@@ -1073,6 +1094,8 @@ export class Interaction {
     const def = BLOCKS[idOf(v)];
     if (def.mod && def.behavior?.onPlaced) callBlock(idOf(v), 'onPlaced', () => def.behavior!.onPlaced!({ ...blockCtx(g, x, y, z, v), player: this.player }), undefined);
     hardenConcrete(w, x, y, z);
+    // a placed sign asks for its words
+    if (/_sign$/.test(def.name)) (g.ui as unknown as { openSign?(x: number, y: number, z: number): void }).openSign?.(x, y, z);
     // a pumpkin on iron or snow blocks brings a golem to life
     if (idOf(v) === B2.CARVED_PUMPKIN || idOf(v) === B.JACK_O_LANTERN) buildGolem(g, x, y, z);
     // three wither skeleton skulls on a T of soul sand: the Wither
@@ -1088,7 +1111,7 @@ export class Interaction {
     const g = this.game, w = this.world;
     const id = idOf(v);
     if (id === B.CHEST) w.setTile(x, y, z, { type: 'chest', items: new Array(27).fill(null) });
-    if (id >= B2.CRIMSON_NYLIUM) stationTile(w, x, y, z, id);
+    if (id >= B2.CRIMSON_NYLIUM || isShulkerBox(id)) stationTile(w, x, y, z, id);
     if (id === B.FURNACE) w.setTile(x, y, z, { type: 'furnace', slots: [null, null, null], burn: 0, burnMax: 0, cook: 0 });
     if (id === B.HOPPER) w.setTile(x, y, z, { type: 'hopper', items: [null, null, null, null, null], cooldown: 0 });
     if (id === B.DISPENSER || id === B.DROPPER) w.setTile(x, y, z, { type: id === B.DISPENSER ? 'dispenser' : 'dropper', items: new Array(9).fill(null) });

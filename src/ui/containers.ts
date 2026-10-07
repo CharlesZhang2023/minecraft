@@ -1,5 +1,6 @@
 // Container screens with Minecraft's slot-click semantics.
 import { bound } from '../game/combat';
+import { isShulkerBox } from '../game/stations';
 import { Screen, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
@@ -402,6 +403,11 @@ export function tooltipLines(s: ItemStack): string[] {
     else lines.push('§7No Effects');
   }
   if (s.ench) for (const [k, v] of Object.entries(s.ench)) lines.push('§7' + enchName(k, v));
+  if (s.box) {
+    const inside = s.box.filter((x): x is ItemStack => !!x);
+    for (const it of inside.slice(0, 5)) lines.push(`§7${getItem(it.id).display} x${it.count}`);
+    if (inside.length > 5) lines.push(`§7§oand ${inside.length - 5} more...`);
+  }
   if (s.id === I6.FIREWORK_ROCKET) lines.push(`§7Flight Duration: ${s.fw?.flight ?? 1}`);
   for (const e of s.fw?.ex ?? []) {
     const pad = s.id === I6.FIREWORK_ROCKET ? '  ' : '';
@@ -609,10 +615,12 @@ export class ChestScreen extends ContainerScreen {
       (this.game as unknown as { redstone?: { update(x: number, y: number, z: number): void } }).redstone?.update(this.x, this.y, this.z);
     }
     const items = t.items;
+    // nothing goes into a shulker box that is itself a shulker box
+    const shulker = isShulkerBox(w.getId(this.x, this.y, this.z));
     for (let r = 0; r < 3; r++)
       for (let c = 0; c < 9; c++) {
         const i = r * 9 + c;
-        this.slots.push({ x: 8 + c * 18, y: 18 + r * 18, get: () => items[i], set: (s) => (items[i] = s), group: 'chest' });
+        this.slots.push({ x: 8 + c * 18, y: 18 + r * 18, get: () => items[i], set: (s) => (items[i] = s), group: 'chest', canPlace: shulker ? (s) => !isShulkerBox(s.id) : undefined });
       }
     this.addPlayerSlots();
   }

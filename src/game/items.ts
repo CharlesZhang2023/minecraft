@@ -531,6 +531,8 @@ export interface ItemStack {
   name?: string; // custom name from an anvil
   repair?: number; // anvil prior-work penalty
   fw?: Firework; // firework rockets and stars
+  /** A shulker box's contents (27 slots), kept on the item when it's broken. */
+  box?: (ItemStack | null)[];
   /** A lodestone compass: the lodestone it points to. */
   lodestone?: { x: number; y: number; z: number; dim: string };
   /** A loaded crossbow: what it's loaded with. */
@@ -561,6 +563,7 @@ export function blockDrops(blockId: number, meta: number, tool: ItemDef | undefi
     if (!tool?.tool || tool.tool.type !== def.tool || tool.tool.level < def.harvestLevel) return [];
   }
   if (def.behavior?.drops) return def.behavior.drops({ id: blockId, meta, tool, rng, silk });
+  if (SHULKER_BOXES.includes(blockId)) return [];
   if (silk && def.item && blockId !== B.SPAWNER && !def.needsSupport) return [stack(blockId)];
   const shears = tool?.tool?.type === 'shears';
   const fam = familyDrops(blockId, meta, def, shears, rng, tool);
@@ -650,6 +653,8 @@ function familyDrops(id: number, meta: number, def: BlockDef, shears: boolean, r
     case B2.FLOWER_POT: { const out = [stack(B2.FLOWER_POT)]; const pl = POT_PLANT_IDS[meta]; if (pl) out.push(stack(pl)); return out; }
     case B2.SEA_PICKLE: return [stack(id, (meta & 3) + 1)];
     case B2.TURTLE_EGG: return [];
+    // shulker boxes drop through their tile (with their contents)
+    case B2.SHULKER_BOX: return [];
     case B2.CHORUS_PLANT: return rng.int(2) ? [stack(I7.CHORUS_FRUIT)] : [];
     case B2.CHORUS_FLOWER: return [stack(id)];
     case B2.KELP: case B2.KELP_PLANT: return [stack(B2.KELP)];

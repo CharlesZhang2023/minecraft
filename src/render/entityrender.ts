@@ -21,7 +21,7 @@ import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball }
 import { ThrownPotion } from '../entity/potion';
 import { getItem, I, I6, I7 } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
-import { BLOCKS, TEXTURES, Render, B, B2, WOOD, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX } from '../world/blocks';
+import { BLOCKS, TEXTURES, Render, B, B2, WOOD, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX, Shape, metaOf, idOf } from '../world/blocks';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
 import { poseMat4 } from '../sublevel/pose';
@@ -283,6 +283,7 @@ export class EntityRenderer {
       const col = (Math.round(64 + 191 * k) << 16) | (Math.round(64 + 160 * k) << 8) | Math.round(255 - 128 * k);
       this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + e.height / 2 - cam.y, e.lerpZ(t) - cam.z, tg.lerpX(t) - cam.x, tg.lerpY(t) + tg.height / 2 - cam.y, tg.lerpZ(t) - cam.z, e.age + t, col, 0.06 + 0.06 * k);
     }
+    this.drawSignTexts(game, t);
     // beacon beams (the beacons' tiles keep their colour; 0 is off)
     if (w.dimension === 'overworld' || w.dimension === 'nether' || w.dimension === 'end') {
       const ccx = Math.floor(cam.x) >> 4, ccz = Math.floor(cam.z) >> 4;
@@ -1314,6 +1315,54 @@ export class EntityRenderer {
     gl.colorMask(false, false, false, false);
     this.r.drawDyn(mesh, { cull: false, alphaCut: -1, fullbright: true });
     gl.colorMask(true, true, true, true);
+  }
+
+  /** The words on signs within 24 blocks: each sign's text as a texture on a sheet just in front of its board. */
+  private signTextures = new Map<string, WebGLTexture>();
+  private drawSignTexts(game: Game, t: number) {
+    const w = game.world!, cam = this.r.cam;
+    void t;
+    const ccx = Math.floor(cam.x) >> 4, ccz = Math.floor(cam.z) >> 4;
+    for (const c of w.chunks.values()) {
+      if (!c.tiles.size || Math.abs(c.cx - ccx) > 2 || Math.abs(c.cz - ccz) > 2) continue;
+      for (const [i, tl] of c.tiles) {
+        const st = tl as unknown as { type: string; lines?: string[] };
+        if (st.type !== 'sign' || !st.lines?.some((l) => l)) continue;
+        const bx = c.cx * 16 + (i & 15), by = i >> 8, bz = c.cz * 16 + ((i >> 4) & 15);
+        if ((bx + 0.5 - cam.x) ** 2 + (by - cam.y) ** 2 + (bz + 0.5 - cam.z) ** 2 > 24 * 24) continue;
+        const v = w.get(bx, by, bz), def = BLOCKS[idOf(v)];
+        const wall = def?.shape === Shape.WallSign;
+        if (!def || (!wall && def.shape !== Shape.Sign)) continue;
+        const key = 'sign:' + st.lines.join('\n');
+        let tex = this.signTextures.get(key);
+        if (!tex) {
+          if (this.signTextures.size > 200) this.signTextures.clear();
+          const cv = document.createElement('canvas');
+          cv.width = 224; cv.height = 64;
+          const ctx = cv.getContext('2d')!;
+          ctx.imageSmoothingEnabled = false;
+          ctx.save();
+          ctx.scale(1, 1.6);
+          st.lines.slice(0, 4).forEach((l, k) => game.ui.gui.font.drawCentered(ctx as never, l, 56, 1 + k * 10, '#000000', false));
+          ctx.restore();
+          tex = this.r.makeTexture(cv, 224);
+          this.signTextures.set(key, tex);
+          this.skins.set(key, tex);
+        }
+        // the board faces: wall signs by their wall, standing ones by their quarter turn (as their model is drawn)
+        const quarter = wall ? metaOf(v) & 3 : Math.round(metaOf(v) / 4) & 3;
+        const top = wall ? 12 / 16 : 17 / 16;
+        const m = mat4();
+        identity(m);
+        translate(m, m, bx + 0.5 - cam.x, by + top - cam.y, bz + 0.5 - cam.z);
+        rotateY(m, m, (180 - quarter * 90) * DEG);
+        scale(m, m, -1, -1, 1);
+        // the sheet sits a hair in front of the board's face
+        translate(m, m, 0, 0.5 / 16, wall ? 5.9 / 16 : -1.1 / 16);
+        const [sky, blk] = w.getLight(bx, by, bz);
+        this.drawModel('signText', key, m, {}, [sky, blk], [0, 0, 0, 0]);
+      }
+    }
   }
 
   /** Evoker fangs: the jaws rise out of the ground, snap shut and sink back. */

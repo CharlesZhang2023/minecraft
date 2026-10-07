@@ -137,6 +137,7 @@ ok(cat.fleeing, 'a creeper near a cat runs away instead of swelling');
 
 // foxes pick up items in their mouths
 const fox = await mods((g, p, { items }) => {
+  for (const e of g.entities) if (e.item) e.removed = true;
   const f = g.interact.spawnMob('fox', p.x - 3, p.y, p.z + 3);
   const it = g.dropItem(f.x + 0.5, f.y + 0.2, f.z, items.stack(items.I.EMERALD, 1));
   it.pickupDelay = 0;
