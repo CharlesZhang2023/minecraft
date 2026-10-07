@@ -83,7 +83,9 @@ fn cloudDensity(w: vec3f) -> f32 {
   let shape = noise3(vec3f(p.x, w.y / 2048.0, p.z)).r;
   // rounded bottoms, wispy tops
   let profile = smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.4, h);
-  let cover = mix(CLOUD_COVER, 0.95, F.rain * 0.85);
+  // some parts of the sky are clearer than others
+  let region = noise3(vec3f(p.x * 0.25, 0.37, p.z * 0.25)).g;
+  let cover = mix(CLOUD_COVER * mix(0.55, 1.25, region), 0.95, F.rain * 0.85);
   var d = (shape * profile - (1.0 - cover)) / max(cover, 0.05);
   if (d <= 0.0) { return 0.0; }
   let detail = noise3(p * 7.0 + vec3f(0.0, h * 0.3, 0.0)).g;

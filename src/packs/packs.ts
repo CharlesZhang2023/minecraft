@@ -37,11 +37,27 @@ class Packs {
     try { await this.loadResources(); } catch (e) { console.error('resource packs', e); this.status = '§c' + (e as Error).message; }
   }
 
-  /** Once the client exists: the chosen shader pack. */
+  /** Once the client exists: the chosen shader pack (and newer versions of packs in use, in the background). */
   async attach(client: Client) {
     this.client = client;
     this.options = client.options;
     await this.applyShader();
+    void this.updateInUse();
+  }
+
+  /** Packs in use that came from the repository follow it: a newer version there is downloaded and used. */
+  private async updateInUse() {
+    try {
+      for (const kind of ['shader', 'resource'] as const) {
+        const stale = (await this.listing(kind, true)).filter((l) => l.active && l.update && l.repo);
+        for (const l of stale) await this.install(l.repo!);
+        if (!stale.length) continue;
+        if (kind === 'shader') await this.applyShader();
+        else await this.applyResources();
+      }
+    } catch (e) {
+      console.warn('pack update', e);
+    }
   }
 
   private keep(p: PackPackage) {

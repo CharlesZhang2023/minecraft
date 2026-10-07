@@ -139,7 +139,7 @@ interface ActivePack {
 /** Textures a shader pack draws with, sized to the screen. */
 interface PackFrame {
   w: number; h: number; key: string;
-  scene: GPUTexture; opaqueColor: GPUTexture; opaqueDepth: GPUTexture;
+  scene: GPUTexture; opaqueColor: GPUTexture; opaqueDepth: GPUTexture; lodDepth: GPUTexture;
   targets: Map<string, GPUTexture>; history: Map<string, GPUTexture>;
   packBG: GPUBindGroup; passBG: GPUBindGroup; inputs: Map<string, GPUBindGroup>;
 }
@@ -558,6 +558,11 @@ export class GPURenderer extends Renderer {
       this.sceneOpen = true;
       this.shadowDone = false;
       this.transDone = false;
+      {
+        // no distant terrain until it's drawn (and copied) this frame
+        this.encoder.beginRenderPass({ colorAttachments: [], depthStencilAttachment: { view: this.pf!.lodDepth.createView(), depthLoadOp: 'clear', depthStoreOp: 'store', depthClearValue: 1 } }).end();
+        this.lodCopied = false;
+      }
     }
     this.openPass(env.fogColor, true);
   }
@@ -776,8 +781,21 @@ export class GPURenderer extends Renderer {
     };
     each(false);
     each(true);
+    // a shader pack's passes need to know how far distant terrain is: its depth, kept before it's cleared
+    if (this.pf && this.sceneOpen && this.pass) {
+      this.pass.end();
+      this.pass = null;
+      this.encoder!.copyTextureToTexture({ texture: this.depthTex! }, { texture: this.pf.lodDepth }, [this.pf.w, this.pf.h]);
+      const inv = mat4();
+      invert(inv, this.lodViewProj);
+      this.device.queue.writeBuffer(this.frameBuf!, 176 * 4, inv);
+      this.lodCopied = true;
+      this.openPass(null, true);
+      return;
+    }
     this.clearDepth();
   }
+  private lodCopied = false;
 
   drawDyn(mesh: DynMesh, o: DynOpts = {}) {
     if (mesh.count === 0 || !this.pass || !this.atlasBG) return;
@@ -900,7 +918,7 @@ export class GPURenderer extends Renderer {
   private dropPack() {
     this.pack = null;
     for (const k of [...this.pipelines.keys()]) if (k.endsWith('|pack')) this.pipelines.delete(k);
-    if (this.pf) for (const t of [this.pf.scene, this.pf.opaqueColor, this.pf.opaqueDepth, ...this.pf.targets.values(), ...this.pf.history.values()]) this.discard(t);
+    if (this.pf) for (const t of [this.pf.scene, this.pf.opaqueColor, this.pf.opaqueDepth, this.pf.lodDepth, ...this.pf.targets.values(), ...this.pf.history.values()]) this.discard(t);
     this.pf = null;
   }
 
@@ -962,7 +980,7 @@ export class GPURenderer extends Renderer {
     ] });
     const passLayout = d.createBindGroupLayout({ label: 'pack passes', entries: [
       { binding: 0, visibility: VF, buffer: { type: 'uniform' } }, smp(1), smp(2), tex(3, 'depth'), tex(4, 'depth'), tex(5, 'depth'), smp(6, 'comparison'),
-      tex(7, 'float'), smp(8), tex(9, 'float', '3d'), tex(10, 'uint'),
+      tex(7, 'float'), smp(8), tex(9, 'float', '3d'), tex(10, 'uint'), tex(11, 'depth'),
     ] });
     const layouts = {
       array: d.createPipelineLayout({ bindGroupLayouts: [this.bglScene, this.bglTex.array, this.bglDraw, bgl] }),
@@ -1043,12 +1061,13 @@ export class GPURenderer extends Renderer {
     this.packResources(pk);
     const key = `${w}x${h}|${this.depthGen}|${this.materialsTex!.width}|${this.shadowTex!.width}|${this.noiseTex3!.width}`;
     if (this.pf?.key === key) return;
-    if (this.pf) for (const t of [this.pf.scene, this.pf.opaqueColor, this.pf.opaqueDepth, ...this.pf.targets.values(), ...this.pf.history.values()]) this.discard(t);
+    if (this.pf) for (const t of [this.pf.scene, this.pf.opaqueColor, this.pf.opaqueDepth, this.pf.lodDepth, ...this.pf.targets.values(), ...this.pf.history.values()]) this.discard(t);
     const U = GPUTextureUsage;
     const make = (label: string, ww: number, hh: number, format: GPUTextureFormat, usage: number) => d.createTexture({ label, size: [Math.max(1, ww), Math.max(1, hh)], format, usage });
     const scene = make('scene', w, h, HDR, U.RENDER_ATTACHMENT | U.TEXTURE_BINDING | U.COPY_SRC);
     const opaqueColor = make('opaque scene', w, h, HDR, U.TEXTURE_BINDING | U.COPY_DST);
     const opaqueDepth = make('opaque depth', w, h, DEPTH, U.TEXTURE_BINDING | U.COPY_DST);
+    const lodDepth = make('distant terrain depth', w, h, DEPTH, U.TEXTURE_BINDING | U.COPY_DST | U.RENDER_ATTACHMENT);
     const targets = new Map<string, GPUTexture>(), history = new Map<string, GPUTexture>();
     const named = new Map<string, GPUTexture>([['scene', scene]]);
     for (const p of pk.passes) {
@@ -1060,10 +1079,10 @@ export class GPURenderer extends Renderer {
     const group = (layout: GPUBindGroupLayout, res: GPUBindingResource[]) => d.createBindGroup({ layout, entries: res.map((resource, binding) => ({ binding, resource })) });
     const frame = { buffer: this.frameBuf! };
     const packBG = group(pk.bgl, [frame, this.shadowTex!.createView(), this.cmpSampler!, this.noiseTex2!.createView(), this.repeatLinearClampless(), this.noiseTex3!.createView({ dimension: '3d' }), this.linearClamp!, this.materialsTex!.createView(), opaqueColor.createView(), opaqueDepth.createView()]);
-    const passBG = group(pk.passLayout, [frame, this.linearClamp!, this.nearest, this.depthTex!.createView(), opaqueDepth.createView(), this.shadowTex!.createView(), this.cmpSampler!, this.noiseTex2!.createView(), this.repeatLinearClampless(), this.noiseTex3!.createView({ dimension: '3d' }), this.materialsTex!.createView()]);
+    const passBG = group(pk.passLayout, [frame, this.linearClamp!, this.nearest, this.depthTex!.createView(), opaqueDepth.createView(), this.shadowTex!.createView(), this.cmpSampler!, this.noiseTex2!.createView(), this.repeatLinearClampless(), this.noiseTex3!.createView({ dimension: '3d' }), this.materialsTex!.createView(), lodDepth.createView()]);
     const inputs = new Map<string, GPUBindGroup>();
     for (const p of [...pk.passes, pk.final]) inputs.set(p.def.name, group(p.bgl, p.inputs.map((n) => named.get(n)!.createView())));
-    this.pf = { w, h, key, scene, opaqueColor, opaqueDepth, targets, history, packBG, passBG, inputs };
+    this.pf = { w, h, key, scene, opaqueColor, opaqueDepth, lodDepth, targets, history, packBG, passBG, inputs };
     // the shadow pass binds the same, but not the shadow map it draws into
     this.shadowPassBG = group(pk.bgl, [frame, this.dummyDepth!.createView(), this.cmpSampler!, this.noiseTex2!.createView(), this.repeatLinearClampless(), this.noiseTex3!.createView({ dimension: '3d' }), this.linearClamp!, this.materialsTex!.createView(), opaqueColor.createView(), opaqueDepth.createView()]);
   }
@@ -1124,6 +1143,8 @@ export class GPURenderer extends Renderer {
     f[164] = pk.shadow.res; f[165] = strength; f[166] = env.ambient; f[167] = env.flicker;
     f.set(env.skyLightCol, 168); f[171] = env.ticks ?? 0;
     f.set(env.ambientCol, 172); f[175] = env.moonPhase;
+    // (distant terrain's projection is only known when it's drawn: written then, see lodPass)
+    f.set(this.invViewProj, 176);
     this.device.queue.writeBuffer(this.frameBuf!, 0, f);
     this.prevVP.set(this.viewProj);
     this.prevCam = [cam.x, cam.y, cam.z];

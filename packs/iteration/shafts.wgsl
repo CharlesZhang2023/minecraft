@@ -2,11 +2,7 @@
 // toward the light: shadows of trees and hills cut through it.
 @fragment fn fs(i: PassIn) -> @location(0) vec4f {
   if (F.dimension > 0.5 || F.lightStrength <= 0.0) { return vec4f(0.0); }
-  var end = 72.0;
-  if (textureSampleLevel(sceneTex, nearestSamp, i.uv, 0.0).a > 0.5) {
-    let d = sceneDepth(i.uv);
-    if (d < 0.99999) { end = min(end, length(fromScreen(i.uv, d))); }
-  }
+  let end = min(72.0, sceneDistance(i.uv));
   let dir = normalize(fromScreen(i.uv, 1.0));
   let STEPS = 14;
   let dt = end / f32(STEPS);

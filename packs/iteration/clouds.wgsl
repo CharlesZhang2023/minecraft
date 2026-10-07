@@ -1,13 +1,11 @@
 // Iteration: volumetric clouds, marched through the cloud layer: light from the sun (dimmed by the cloud between),
 // light from the sky, forward-scattering silver linings. rgb = light added, a = how much of what's behind remains.
 @fragment fn fs(i: PassIn) -> @location(0) vec4f {
-  if (F.dimension > 0.5) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+  // (no clouds in the Nether and the End, nor seen from under water)
+  if (F.dimension > 0.5 || F.eyeInWater > 0.5) { return vec4f(0.0, 0.0, 0.0, 1.0); }
   let dir = normalize(fromScreen(i.uv, 1.0));
-  var maxT = 1e5;
-  if (textureSampleLevel(sceneTex, nearestSamp, i.uv, 0.0).a > 0.5) {
-    let d = sceneDepth(i.uv);
-    maxT = select(length(fromScreen(i.uv, d)), 1200.0, d >= 0.99999);
-  }
+  // the world or distant terrain stops the ray where it is
+  let maxT = sceneDistance(i.uv);
   let cam = F.camPos;
   if (abs(dir.y) < 1e-4) { return vec4f(0.0, 0.0, 0.0, 1.0); }
   let ta = (CLOUD_LO - cam.y) / dir.y;

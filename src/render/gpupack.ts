@@ -32,9 +32,10 @@ struct Frame {
   shadowRes: f32, lightStrength: f32, ambient: f32, flicker: f32,  // lightStrength: the shadow light's (moon is weaker)
   skyLightCol: vec3f, ticks: f32,
   ambientCol: vec3f, moonPhase: f32,
+  lodInvViewProj: mat4x4f,           // distant terrain's depth -> camera-relative position (see sceneDistance)
 };
 `;
-export const FRAME_FLOATS = 176;
+export const FRAME_FLOATS = 192;
 
 /** Library functions, for world shaders and passes alike. */
 const HELPERS = /* wgsl */ `
@@ -222,6 +223,7 @@ const PASS_BINDINGS = /* wgsl */ `
 @group(0) @binding(8) var repeatSamp: sampler;
 @group(0) @binding(9) var noise3D: texture_3d<f32>;
 @group(0) @binding(10) var materials: texture_2d<u32>;
+@group(0) @binding(11) var lodDepth: texture_depth_2d;     // distant terrain (drawn with a depth of its own)
 struct PassIn { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 @vertex fn vs(@builtin(vertex_index) vi: u32) -> PassIn {
   var o: PassIn;
@@ -233,6 +235,15 @@ struct PassIn { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 /** Depth buffer values at a uv. */
 fn sceneDepth(uv: vec2f) -> f32 { return textureLoad(depthTex, vec2i(clamp(uv, vec2f(0.0), vec2f(0.9999)) * F.screen.xy), 0); }
 fn opaqueDepthAt(uv: vec2f) -> f32 { return textureLoad(depthOpaque, vec2i(clamp(uv, vec2f(0.0), vec2f(0.9999)) * F.screen.xy), 0); }
+/** How far away what's seen at a uv is (the world or distant terrain), or 1e6 for the sky. */
+fn sceneDistance(uv: vec2f) -> f32 {
+  let d = sceneDepth(uv);
+  if (d < 0.99999) { return length(fromScreen(uv, d)); }
+  let l = textureLoad(lodDepth, vec2i(clamp(uv, vec2f(0.0), vec2f(0.9999)) * F.screen.xy), 0);
+  if (l >= 0.99999) { return 1e6; }
+  let w = F.lodInvViewProj * vec4f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, l * 2.0 - 1.0, 1.0);
+  return length(w.xyz / w.w);
+}
 `;
 
 /** WGSL constants for a pack's settings. */
