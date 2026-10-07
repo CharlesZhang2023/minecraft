@@ -560,6 +560,7 @@ export class EntityRenderer {
     }
     let tilt: [number, number] | undefined;
     if (e instanceof Player && e.swimming && !e.gliding) tilt = [-90 - pitch, 0];
+    else if (anyE.sleeping && (e instanceof Player || anyE.typeName === 'Villager')) tilt = [-90, 0];
     else if (e instanceof Player && e.gliding) {
       // vanilla RenderPlayer: swing level over the first second, then bank by the angle between look and motion
       const f = e.glideTicks + t, k = Math.min(1, (f * f) / 100);

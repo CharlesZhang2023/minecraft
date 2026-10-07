@@ -2,8 +2,8 @@
 // (novice to master) reached by trading, each opening two new trades from vanilla's tables; restocking at the
 // workstation; farmers who harvest and replant. Unemployed villagers look for work; nitwits never do.
 import type { Villager, Trade } from './mobs';
-import { B, B2, BLOCKS, idOf, metaOf, pack } from '../world/blocks';
-import { I, I3, itemId, getItem, stack, TOOLS, ARMOR } from '../game/items';
+import { B, B2, BLOCKS, HORIZ, Shape, idOf, metaOf, pack } from '../world/blocks';
+import { I, I3, itemId, getItem, stack, TOOLS, ARMOR, type ItemStack } from '../game/items';
 import { ENCHANTS, rollEnchants } from '../game/enchant';
 import { Random } from '../noise';
 
@@ -225,6 +225,147 @@ export function villagerTick(v: Villager) {
   if (v.jobSite && (day === 2000 || day === 9000) && v.trades) for (const t of v.trades) t.uses = 0;
   // farmers bring in ripe crops and replant
   if (v.profession === 'farmer' && v.age % 40 === 0) farm(v);
+  villageLife(v);
+}
+
+// ------------------------------------------------------------------ village life (1.14): beds, food, babies, golems
+const FOOD_VALUE: Record<string, number> = { bread: 4, carrot: 1, potato: 1, beetroot: 1 };
+const night = (v: Villager) => { const d = v.game.time % 24000; return d >= 12000 && d < 23500; };
+const isBedId = (id: number) => id === B.BED || BLOCKS[id]?.shape === Shape.Bed;
+/** Beds other villagers already call home. */
+function claimedBeds(v: Villager): Set<string> {
+  const out = new Set<string>();
+  for (const e of v.game.entities) { const o = e as unknown as Villager; if (o !== v && o.typeName === 'Villager' && o.home) out.add(`${o.home.x},${o.home.y},${o.home.z}`); }
+  return out;
+}
+/** The nearest free bed head within reach (or null). */
+function freeBed(v: Villager, r = 24): { x: number; y: number; z: number } | null {
+  const w = v.world, x0 = Math.floor(v.x), y0 = Math.floor(v.y), z0 = Math.floor(v.z), taken = claimedBeds(v);
+  let best: { x: number; y: number; z: number } | null = null, bd = 1e9;
+  for (let dx = -r; dx <= r; dx++) for (let dy = -4; dy <= 4; dy++) for (let dz = -r; dz <= r; dz++) {
+    const val = w.get(x0 + dx, y0 + dy, z0 + dz);
+    if (!isBedId(idOf(val)) || !(metaOf(val) & 8) || taken.has(`${x0 + dx},${y0 + dy},${z0 + dz}`)) continue;
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d < bd) { bd = d; best = { x: x0 + dx, y: y0 + dy, z: z0 + dz }; }
+  }
+  return best;
+}
+export function wakeVillager(v: Villager) {
+  v.sleeping = false;
+  v.setPos(v.x, v.y + 0.45, v.z);
+}
+/** Bed, food, babies and golems: what a villager does besides its job (once a tick; most of it now and then). */
+function villageLife(v: Villager) {
+  const g = v.game, w = v.world;
+  // a home: claim a free bed, lose it if the bed goes
+  if (v.age % 200 === (v.id % 200)) {
+    if (v.home && w.chunkAt(v.home.x, v.home.z) && !isBedId(w.getId(v.home.x, v.home.y, v.home.z))) v.home = null;
+    if (!v.home) v.home = freeBed(v);
+  }
+  // seeing a golem now and then keeps them from summoning another
+  if (v.age % 40 === 0 && g.entities.some((e) => (e as unknown as { typeName?: string }).typeName === 'Iron Golem' && e.distanceTo(v) < 16)) v.sawGolem = g.ticks;
+  if (v.sleeping) return;
+  // food lying about is picked up
+  if (v.age % 10 === 0 && v.food < 48) for (const e of g.entities) {
+    const it = (e as unknown as { item?: ItemStack }).item;
+    if (!it || e.removed || e.distanceTo(v) > 1.6) continue;
+    const val = FOOD_VALUE[getItem(it.id).name];
+    if (!val) continue;
+    v.food += val * it.count;
+    e.removed = true;
+    g.audio.play('pop', v, 0.3, 1.6);
+  }
+  // farmers share: a well-fed farmer gives some to a hungry neighbour
+  if (v.profession === 'farmer' && v.food >= 24 && v.age % 100 === 0) {
+    const n = g.entities.find((e) => { const o = e as unknown as Villager; return o !== v && o.typeName === 'Villager' && !o.baby && o.food < 12 && e.distanceTo(v) < 5; }) as Villager | undefined;
+    if (n) { v.food -= 4; n.food += 4; v.lookTarget = { x: n.x, y: n.y + 1.6, z: n.z }; v.lookTimer = 30; }
+  }
+  // breeding: two willing adults (twelve food each) near a free bed make a baby
+  if (v.age % 100 === 50 && v.food >= 12 && v.breedCooldown === 0 && !night(v)) {
+    const mate = g.entities.find((e) => { const o = e as unknown as Villager; return o !== v && o.typeName === 'Villager' && !o.baby && !o.sleeping && o.food >= 12 && o.breedCooldown === 0 && e.distanceTo(v) < 6; }) as Villager | undefined;
+    if (mate && freeBed(v, 24)) {
+      v.food -= 12; mate.food -= 12;
+      v.breedCooldown = mate.breedCooldown = 6000;
+      const baby = g.interact!.spawnMob('villager', (v.x + mate.x) / 2, v.y, (v.z + mate.z) / 2, true);
+      for (let i = 0; i < 7; i++) g.particles?.heart(v.x + Math.random() - 0.5, v.y + 2, v.z + Math.random() - 0.5);
+      void baby;
+    }
+  }
+  // golems: three villagers together (or in a panic) who haven't seen one in half a minute summon one
+  if (v.age % 100 === 25 && g.ticks - v.sawGolem > 600) {
+    const near = g.entities.filter((e) => { const o = e as unknown as Villager; return o.typeName === 'Villager' && !o.baby && !o.sleeping && e.distanceTo(v) < 10 && g.ticks - o.sawGolem > 600; }) as unknown as Villager[];
+    if (near.length >= 3 && (v.panicTicks > 0 || Math.random() < 0.3)) {
+      const spot = golemSpot(v);
+      if (spot) {
+        g.interact!.spawnMob('iron_golem', spot[0] + 0.5, spot[1], spot[2] + 0.5);
+        for (const o of near) o.sawGolem = g.ticks;
+      }
+    }
+  }
+}
+/** Somewhere within 8 blocks with ground under it and room for a golem. */
+function golemSpot(v: Villager): [number, number, number] | null {
+  const w = v.world;
+  for (let k = 0; k < 10; k++) {
+    const x = Math.floor(v.x) + Math.floor(Math.random() * 17) - 8, z = Math.floor(v.z) + Math.floor(Math.random() * 17) - 8;
+    for (let y = Math.floor(v.y) + 6; y >= Math.floor(v.y) - 6; y--) {
+      if (BLOCKS[w.getId(x, y - 1, z)]?.solid && !BLOCKS[w.getId(x, y, z)]?.solid && !BLOCKS[w.getId(x, y + 1, z)]?.solid && !BLOCKS[w.getId(x, y + 2, z)]?.solid && w.getId(x, y, z) !== B.WATER) return [x, y, z];
+    }
+  }
+  return null;
+}
+
+/**
+ * The day of a villager (vanilla's schedule): to its job site in working hours, to the bell in the afternoon,
+ * home to bed at night, where it sleeps until morning. Returns true while it's busy with that (no wandering).
+ */
+export function villagerSchedule(v: Villager): boolean {
+  const g = v.game, w = v.world, day = g.time % 24000;
+  if (v.sleeping) {
+    const bedOk = v.home && isBedId(w.getId(v.home.x, v.home.y, v.home.z));
+    if (!night(v) || !bedOk || v.panicTicks > 0) { wakeVillager(v); return false; }
+    v.vx = v.vz = 0;
+    v.path = null;
+    // keep lying along the bed
+    v.yaw = v.bodyYaw = v.headYaw = [180, 270, 0, 90][metaOf(w.get(v.home!.x, v.home!.y, v.home!.z)) & 3];
+    v.lookTarget = null;
+    return true;
+  }
+  if (night(v) && v.home && !v.baby) {
+    const h = v.home;
+    const d = Math.hypot(v.x - (h.x + 0.5), v.z - (h.z + 0.5));
+    if (d < 1.6 && Math.abs(v.y - h.y) < 1.5) {
+      // lie down on it: head on the pillow, along the bed
+      const meta = metaOf(w.get(h.x, h.y, h.z));
+      const [dx, dz] = HORIZ[meta & 3];
+      v.sleeping = true;
+      v.path = null;
+      v.setPos(h.x + 0.5 - dx * 0.9, h.y + 0.5625, h.z + 0.5 - dz * 0.9);
+      v.yaw = v.bodyYaw = v.headYaw = [180, 270, 0, 90][meta & 3];
+      return true;
+    }
+    if (!v.path || v.age % 60 === 0) v.setPathTo(h.x, h.y, h.z, 0.05);
+    return true;
+  }
+  // work hours: back to the job site now and then
+  if (day >= 2000 && day < 9000 && v.jobSite && !v.path && Math.random() < 0.01 && Math.hypot(v.x - v.jobSite.x, v.z - v.jobSite.z) > 4) {
+    v.setPathTo(v.jobSite.x, v.jobSite.y, v.jobSite.z, 0.04);
+    return true;
+  }
+  // the afternoon: gather round the bell
+  if (day >= 9000 && day < 11000 && !v.path && Math.random() < 0.005) {
+    const bell = findBell(v);
+    if (bell && Math.hypot(v.x - bell[0], v.z - bell[2]) > 5) { v.setPathTo(bell[0] + Math.floor(Math.random() * 5) - 2, bell[1], bell[2] + Math.floor(Math.random() * 5) - 2, 0.04); return true; }
+  }
+  return !!v.path && night(v);
+}
+function findBell(v: Villager): [number, number, number] | null {
+  const w = v.world, x0 = Math.floor(v.x), y0 = Math.floor(v.y), z0 = Math.floor(v.z);
+  for (let r = 0; r <= 32; r += 2) for (let dx = -r; dx <= r; dx += 2) for (const dz of [-r, r]) for (let dy = -4; dy <= 4; dy++) {
+    if (w.getId(x0 + dx, y0 + dy, z0 + dz) === B2.BELL) return [x0 + dx, y0 + dy, z0 + dz];
+    if (w.getId(x0 + dz, y0 + dy, z0 + dx) === B2.BELL) return [x0 + dz, y0 + dy, z0 + dx];
+  }
+  return null;
 }
 function farm(v: Villager) {
   const w = v.world, x0 = Math.floor(v.x), y0 = Math.floor(v.y), z0 = Math.floor(v.z);
@@ -234,6 +375,7 @@ function farm(v: Villager) {
     const ripe = (cid === B.WHEAT || cid === B.CARROTS || cid === B.POTATOES) && metaOf(val) >= 7 || cid === B2.BEETROOTS && metaOf(val) >= 3;
     if (!ripe) continue;
     w.set(x, y, z, pack(cid, 0));
+    v.food += cid === B.WHEAT ? 0 : 1;
     v.game.particles?.blockBreak(x + 0.5, y + 0.3, z + 0.5, cid);
     v.game.audio.play('dig.grass', { x: x + 0.5, y, z: z + 0.5 }, 0.6, 1);
     return;

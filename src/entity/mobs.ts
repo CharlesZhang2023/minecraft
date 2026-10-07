@@ -1,6 +1,6 @@
 // Mob behaviours.
 import { advanceNear } from '../game/advancements';
-import { villagerTick, villagerTrades } from './villagers';
+import { villagerTick, villagerTrades, villagerSchedule, wakeVillager } from './villagers';
 import { leashTick } from './leash';
 import { LivingEntity, DamageSource } from './living';
 import type { Entity } from './entity';
@@ -1199,6 +1199,13 @@ export class Villager extends Mob {
   level = 1;
   /** The workstation it has claimed. */
   jobSite: { x: number; y: number; z: number } | null = null;
+  /** The bed it has claimed (its head), where it sleeps at night. */
+  home: { x: number; y: number; z: number } | null = null;
+  sleeping = false;
+  /** Food points carried (bread 4, a carrot, potato or beetroot 1): twelve make it willing to breed. */
+  food = 0;
+  /** When it last saw an iron golem (game ticks): villagers who haven't for a while summon one. */
+  sawGolem = 0;
   constructor(world: World, game: Game) {
     super(world, game);
     this.width = 0.6; this.height = 1.95;
@@ -1216,10 +1223,12 @@ export class Villager extends Mob {
       if (!this.path || rng.int(20) === 0) this.setPathTo(this.x + rng.int(11) - 5, this.y, this.z + rng.int(11) - 5, 0.06);
       return;
     }
+    // asleep, or on the way to bed, work or the bell
+    if (villagerSchedule(this)) return;
     if (p && !p.dead && this.distanceTo(p) < 8 && rng.int(40) === 0) { this.lookTarget = { x: p.x, y: p.y + p.eyeHeight(), z: p.z }; this.lookTimer = 60; }
     this.wander(0.035, 200);
   }
-  override onDamaged() { this.panicTicks = 60; this.path = null; }
+  override onDamaged() { this.panicTicks = 60; this.path = null; if (this.sleeping) wakeVillager(this); }
   /** Its trades (vanilla 1.16 tables by profession and level, see villagers.ts). */
   ensureTrades(): Trade[] { return villagerTrades(this); }
   useLabel() { return this.baby || this.dead || !this.profession || this.profession === 'nitwit' ? null : 'Trade'; }
@@ -1250,13 +1259,16 @@ export class Villager extends Mob {
     if (!this.dead) villagerTick(this);
     this.skin = 'villager_' + (this.profession || 'unemployed');
   }
-  override extraJSON() { return { profession: this.profession, trades: this.trades, tradeXp: this.tradeXp, level: this.level, jobSite: this.jobSite }; }
+  override extraJSON() { return { profession: this.profession, trades: this.trades, tradeXp: this.tradeXp, level: this.level, jobSite: this.jobSite, home: this.home, food: this.food, sleeping: this.sleeping }; }
   override loadExtra(d: Record<string, unknown>) {
     this.profession = (d.profession as string) ?? '';
     this.trades = (d.trades as Trade[]) ?? null;
     this.tradeXp = (d.tradeXp as number) ?? 0;
     this.level = (d.level as number) ?? 1;
     this.jobSite = (d.jobSite as Villager['jobSite']) ?? null;
+    this.home = (d.home as Villager['home']) ?? null;
+    this.food = (d.food as number) ?? 0;
+    this.sleeping = !!d.sleeping;
     // villagers saved with the old trades keep them (and their old professions take the new names)
     if (this.trades && d.level === undefined) this.level = 1;
   }
