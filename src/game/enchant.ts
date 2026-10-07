@@ -1,5 +1,5 @@
 // Enchantments: 1.8 selection weights and levels, enchanted books, and anvil combination costs.
-import { getItem, ItemStack, I, I2, I3 } from './items';
+import { getItem, ItemStack, I, I2, I3, itemId } from './items';
 import { Random } from '../noise';
 import { B } from '../world/blocks';
 
@@ -126,7 +126,7 @@ export function randomBook(r: Random): ItemStack {
 // ------------------------------------------------------------------ anvil
 function repairMaterial(s: ItemStack): number | undefined {
   const mats: Record<string, number> = {
-    wooden: B.OAK_PLANKS, stone: B.COBBLESTONE, iron: I.IRON_INGOT, golden: I.GOLD_INGOT, diamond: I.DIAMOND, leather: I.LEATHER, elytra: I.LEATHER,
+    wooden: B.OAK_PLANKS, stone: B.COBBLESTONE, iron: I.IRON_INGOT, golden: I.GOLD_INGOT, diamond: I.DIAMOND, leather: I.LEATHER, elytra: itemId('phantom_membrane'), netherite: itemId('netherite_ingot'), chainmail: I.IRON_INGOT, turtle: itemId('scute'), shield: B.OAK_PLANKS, trident: 0,
   };
   return mats[getItem(s.id).name.split('_')[0]];
 }

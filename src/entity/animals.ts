@@ -14,6 +14,9 @@ import { B, B2, BLOCKS, OPAQUE, WOOD, idOf, metaOf, pack, isLeaves } from '../wo
 import { BIOME } from '../world/biomes';
 import { I, I2, I3, I7, ItemStack, stack, itemId, getItem, TOOLS, DYES } from '../game/items';
 import { Random } from '../noise';
+import { WorldGen } from '../world/worldgen';
+import { OVERWORLD_STRUCTURES } from '../world/structures/overworld';
+import { nearestStart } from '../world/structure';
 
 const rng = aiRng;
 const tn = (e: Entity | null | undefined) => (e as unknown as { typeName?: string } | null)?.typeName ?? '';
@@ -844,7 +847,23 @@ export class Dolphin extends GoalMob {
 /** The nearest shipwreck, ocean ruin or buried treasure to lead a player to (by the generator; null if none known). */
 let TREASURE: ((game: Game, x: number, z: number) => { x: number; y: number; z: number } | null) | null = null;
 export function setTreasureFinder(f: typeof TREASURE) { TREASURE = f; }
-const treasureNear = (game: Game, x: number, z: number) => TREASURE?.(game, x, z) ?? null;
+const treasureNear = (game: Game, x: number, z: number) => (TREASURE ?? findTreasure)(game, x, z);
+/** By default: ask the overworld generator (a copy of it on this thread) for the nearest shipwreck, ruin or buried treasure. */
+let gen: WorldGen | null = null;
+function findTreasure(game: Game, x: number, z: number): { x: number; y: number; z: number } | null {
+  const seed = game.meta?.seed;
+  if (seed === undefined || game.world?.dimension !== 'overworld') return null;
+  if (!gen || gen.seed !== seed) gen = new WorldGen(seed);
+  let best: { x: number; y: number; z: number } | null = null, bd = Infinity;
+  for (const t of OVERWORLD_STRUCTURES) {
+    if (t.name !== 'shipwreck' && t.name !== 'ocean_ruin' && t.name !== 'buried_treasure') continue;
+    const s = nearestStart(t, gen, x, z, t.name === 'buried_treasure' ? 40 : 8);
+    if (!s) continue;
+    const d = Math.hypot(s.x - x, s.z - z);
+    if (d < bd) { bd = d; best = { x: s.x, y: s.y, z: s.z }; }
+  }
+  return best;
+}
 
 // ------------------------------------------------------------------ fish
 /** Fish: swim in small schools, flop and die on land; scooped up in a water bucket. */

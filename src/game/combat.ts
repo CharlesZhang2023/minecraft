@@ -47,6 +47,11 @@ export function combatTick(p: Player) {
   p.attackTicks++;
   if (p.shieldCooldown > 0) p.shieldCooldown--;
   if (!p.clientSide && p.onGround) frostWalk(p);
+  // a turtle shell: ten seconds of water breathing, counting down only once the head is under water
+  if (!p.clientSide && p.inventory.armor[0]?.id === I7.TURTLE_HELMET) {
+    const head = p.world.getId(Math.floor(p.x), Math.floor(p.y + p.eyeHeight()), Math.floor(p.z));
+    if (head !== B.WATER && head !== B2.BUBBLE_COLUMN) p.addEffect('water_breathing', 200, 0);
+  }
 }
 
 // ------------------------------------------------------------------ melee

@@ -5,7 +5,7 @@ import { buildWither } from '../entity/wither';
 import { hardenConcrete } from './blockrules';
 import { swingDamage, sweep, shieldBlocks, shieldHand, crossbowLoadTicks, loadCrossbow, fireCrossbow, releaseTrident, ThrownTrident } from './combat';
 import { hiveBroken } from '../entity/bees';
-import { FISH_BUCKETS, releaseFish } from '../entity/animals';
+import { FISH_BUCKETS, releaseFish, FLOWER_EFFECTS } from '../entity/animals';
 import type { Game } from './game';
 import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor } from '../world/blocks';
 import { familyPlacement, doubleSlab, partners, toggled } from './families';
@@ -14,7 +14,7 @@ import { blockIs } from './tags';
 import { angerPiglins } from '../entity/nethermobs';
 import { ItemFrame, Painting } from '../entity/hanging';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, I7, stack, ItemDef, POTION_ITEMS } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, I7, stack, ItemDef, POTION_ITEMS, itemId } from './items';
 import { FireworkRocket } from '../entity/firework';
 import { ThrownPotion } from '../entity/potion';
 import { POTION_BY_KEY } from './potiondata';
@@ -844,6 +844,11 @@ export class Interaction {
       if (held.id === I.CHICKEN && this.rng.next() < 0.3) p.addEffect('hunger', 600, 0);
       if (held.id === I.SPIDER_EYE) p.addEffect('poison', 100, 0);
       if (held.id === I3.PUFFERFISH) { p.addEffect('poison', 1200, 3); p.addEffect('hunger', 300, 2); }
+      // 1.9+ foods: the enchanted golden apple, chorus fruit's random hop, suspicious stew's flower effect
+      if (held.id === I7.ENCHANTED_GOLDEN_APPLE) { p.addEffect('regeneration', 400, 1); p.addEffect('absorption', 2400, 3); p.addEffect('resistance', 6000, 0); p.addEffect('fire_resistance', 6000, 0); }
+      if (held.id === itemId('chorus_fruit')) chorusHop(g, p, this.rng);
+      const stew = (held as ItemStack & { stewEffect?: number }).stewEffect;
+      if (stew && FLOWER_EFFECTS[stew]) { const [eff, sec] = FLOWER_EFFECTS[stew]; p.addEffect(eff, Math.max(1, Math.round(sec * 20)), 0); }
       if (!p.creative) {
         if (item.food.stew) p.inventory.setHeld(stack(I.BOWL));
         else this.consume(1);
@@ -855,6 +860,13 @@ export class Interaction {
 
   private finishDrinking(held: ItemStack, item: ItemDef) {
     const p = this.player;
+    // honey: food that cures poison, and leaves the bottle
+    if (held.id === I7.HONEY_BOTTLE) {
+      p.eat(6, 1.2);
+      p.removeEffect('poison');
+      if (!p.creative) { held.count--; if (held.count <= 0) p.inventory.setHeld(stack(I3.GLASS_BOTTLE)); else if (p.inventory.add(stack(I3.GLASS_BOTTLE)) > 0) this.game.dropItem(p.x, p.y + 1, p.z, stack(I3.GLASS_BOTTLE)); }
+      return;
+    }
     if (held.id === I.MILK_BUCKET) {
       p.clearEffects();
       if (!p.creative) p.inventory.setHeld(stack(I.BUCKET));
@@ -1415,3 +1427,20 @@ export class Interaction {
     this.game.addEntity(e);
   }
 }
+
+/** Chorus fruit: a hop to a random safe spot within 8 blocks (vanilla tries 16 times). */
+function chorusHop(g: Game, p: Player, r: Random) {
+  const w = g.world!;
+  for (let i = 0; i < 16; i++) {
+    const x = Math.floor(p.x + (r.next() - 0.5) * 16), z = Math.floor(p.z + (r.next() - 0.5) * 16);
+    let y = Math.min(255, Math.floor(p.y + r.int(16) - 8));
+    while (y > 1 && !BLOCKS[w.getId(x, y - 1, z)].solid) y--;
+    if (BLOCKS[w.getId(x, y, z)].solid || BLOCKS[w.getId(x, y + 1, z)].solid || BLOCKS[w.getId(x, y, z)].fluid) continue;
+    g.audio.play('enderman.teleport', p, 1, 1);
+    p.setPos(x + 0.5, y, z + 0.5);
+    p.fallDistance = 0;
+    (g.playerOf(p) as unknown as { teleported?(): void } | null)?.teleported?.();
+    return;
+  }
+}
+
