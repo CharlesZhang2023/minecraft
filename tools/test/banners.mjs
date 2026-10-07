@@ -94,6 +94,27 @@ await wait(1000);
 await t.shot('banners');
 await t.look(null);
 
+// a banner on a shield; patterned banners and shields show their designs in the inventory
+const shield = await t.page.evaluate(async () => {
+  const { craft } = await import('/src/game/recipes.ts');
+  const { I7, stack } = await import('/src/game/items.ts');
+  const { BANNERS } = await import('/src/world/blocks.ts');
+  const layers = [{ p: 'cr', c: 15 }, { p: 'mc', c: 4 }];
+  const out = craft([stack(I7.SHIELD), { id: BANNERS[11], count: 1, banner: layers }, null, null], 2);
+  await window.sim((g, p) => {
+    p.inventory.main[0] = out;
+    p.inventory.main[1] = { id: BANNERS[11], count: 1, banner: layers };
+    p.inventory.main[2] = { id: BANNERS[14], count: 1, banner: [{ p: 'flo', c: 0 }, { p: 'bo', c: 15 }] };
+  });
+  return { base: out?.tag?.shieldBase, layers: out?.banner?.length };
+});
+ok(shield.base === 11 && shield.layers === 2, 'a banner crafted onto a shield gives it its colour and patterns');
+await wait(500);
+await t.page.keyboard.press('KeyE');
+await wait(500);
+await t.shot('banner-icons');
+await t.page.keyboard.press('Escape');
+
 ok(t.errors.length === 0, 'no page errors ' + t.errors.slice(0, 3).join(' | '));
 await t.close();
 console.log(fails.length ? `${fails.length} failed` : 'all passed');

@@ -6,7 +6,8 @@ import { Gui, Ctx } from './gui';
 import { Hud, drawDurability } from './hud';
 import { Chat } from './chat';
 import { Screen } from './screen';
-import { ItemStack, starTint } from '../game/items';
+import { ItemStack, starTint, I7 } from '../game/items';
+import { BANNERS } from '../world/blocks';
 import * as Menus from './menus';
 import * as Containers from './containers';
 import { TradeScreen } from './trade';
@@ -14,6 +15,7 @@ import { EnchantScreen } from './enchant';
 import { HopperScreen, DispenserScreen, BrewingScreen, AnvilScreen } from './devices';
 import { BookScreen } from './book';
 import { AdvancementsScreen } from './advancements';
+import { bannerCanvas } from './stations';
 import { SmithingScreen, StonecutterScreen, BeaconScreen, GrindstoneScreen, CartScreen, SignScreen, LoomScreen, CartographyScreen } from './stations';
 import type { Villager } from '../entity/mobs';
 import { TouchControls } from './touch';
@@ -324,6 +326,10 @@ export class UI {
       ctx.drawImage(icon, -8, -12, 16, 16);
       ctx.restore();
     } else ctx.drawImage(icon, x, y, 16, 16);
+    // a patterned banner shows its design on the cloth; a decorated shield on its face (the banner's upper part)
+    const shieldBase = s.tag?.shieldBase as number | undefined;
+    if (s.banner?.length && BANNERS.includes(s.id)) ctx.drawImage(bannerCanvas(BANNERS.indexOf(s.id), s.banner), x + 4, y + 2, 8, 12);
+    else if (shieldBase !== undefined && s.id === I7.SHIELD) ctx.drawImage(bannerCanvas(shieldBase, s.banner ?? []), 0, 0, 20, 22, x + 4, y + 3, 8, 8);
     drawDurability(ctx, s, x, y);
     if (s.count > 1) {
       const t = String(s.count);

@@ -274,7 +274,7 @@ void EFFECTS;
 
 /** A pattern's (or a whole banner's) picture, drawn once and kept. */
 const bannerCanvases = new Map<string, HTMLCanvasElement>();
-function bannerCanvas(base: number, layers: { p: string; c: number }[]): HTMLCanvasElement {
+export function bannerCanvas(base: number, layers: { p: string; c: number }[]): HTMLCanvasElement {
   const key = base + ':' + layers.map((l) => l.p + l.c).join(',');
   let c = bannerCanvases.get(key);
   if (!c) {

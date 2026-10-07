@@ -1,5 +1,5 @@
 // Crafting & smelting recipes.
-import { B, WOOL_COLORS, blockByName } from '../world/blocks';
+import { B, WOOL_COLORS, BANNERS, blockByName } from '../world/blocks';
 import { I, I2, I3, I4, I5, I6, I7, I11, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion, itemByName } from './items';
 import { ITEM_TAGS } from './tags';
 import { registerRecipes116, type Smelt } from './recipes2';
@@ -201,6 +201,13 @@ function bookCopy(items: ItemStack[]): ItemStack | null {
   if (gen >= 2) return null;
   return { id: I11.WRITTEN_BOOK, count: blanks.length, tag: { ...structuredClone(src[0].tag ?? {}), generation: gen + 1 } };
 }
+/** A banner on a plain shield (1.9): the shield takes its colour and patterns. */
+function shieldDecoration(items: ItemStack[]): ItemStack | null {
+  if (items.length !== 2) return null;
+  const shield = items.find((s) => s.id === I7.SHIELD), banner = items.find((s) => BANNERS.includes(s.id));
+  if (!shield || !banner || shield.tag?.shieldBase !== undefined) return null;
+  return { ...shield, count: 1, tag: { ...structuredClone(shield.tag ?? {}), shieldBase: BANNERS.indexOf(banner.id) }, ...(banner.banner?.length ? { banner: banner.banner.map((l) => ({ ...l })) } : {}) };
+}
 /** What stays in the grid when an ingredient is used up (vanilla's container items). */
 export function craftRemainder(s: ItemStack): ItemStack | null {
   if (s.id === I.MILK_BUCKET || s.id === I.WATER_BUCKET || s.id === I.LAVA_BUCKET) return stack(I.BUCKET);
@@ -243,6 +250,8 @@ export function craft(grid: (ItemStack | null)[], w: number): ItemStack | null {
   if (fw) return fw;
   const copy = bookCopy(items);
   if (copy) return copy;
+  const sh = shieldDecoration(items);
+  if (sh) return sh;
   for (const r of shapeless) {
     if (r.ingredients.length !== items.length) continue;
     const used = new Array(items.length).fill(false);
