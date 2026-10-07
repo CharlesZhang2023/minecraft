@@ -3,7 +3,7 @@
 // Lighting is computed statelessly from a 3x3 chunk neighbourhood: light travels at most 15 blocks,
 // so a 48x48 region around the centre chunk contains every light source that can reach it.
 import {
-  B, BLOCKS, OPAQUE, LIGHT_OPACITY, LIGHT_EMIT, RENDER, Render, T, idOf, metaOf, HORIZ, HORIZ_TO_FACE, isLog, isLeaves, BlockDef, cropTexture, isFacing6Cube,
+  B, B2, BLOCKS, OPAQUE, LIGHT_OPACITY, STATE_LIGHT, RENDER, Render, T, T2, idOf, metaOf, HORIZ, HORIZ_TO_FACE, isPillar, isLeaves, BlockDef, cropTexture, isFacing6Cube, SHAPE, Shape, WATERLOGGED, isFire,
 } from './blocks';
 import { BIOMES } from './biomes';
 import { modelBoxes, facing6CubeFaces } from './models';
@@ -213,7 +213,7 @@ function computeLight(hasSky: boolean) {
   for (let i = 0; i < RSIZE; i++) {
     const v = rb[i];
     if (v === 0) continue;
-    const e = LIGHT_EMIT[v & 0xfff];
+    const e = STATE_LIGHT[v];
     if (e) { blk[i] = e; queue[qt] = i; qt = (qt + 1) & QMASK; }
   }
   propagate(blk, 0, qt);
@@ -225,8 +225,9 @@ function fluidCornerHeight(i: number, fluid: number, cx: number, cz: number): nu
   for (let j = 0; j < 4; j++) {
     const dx = cx - (j & 1) - 0, dz = cz - ((j >> 1) & 1);
     const n = i + (dx) + (dz) * R;
-    if ((rb[n + RA] & 0xfff) === fluid) return 1;
-    const v = rb[n];
+    if (sameFluid(n + RA, fluid)) return 1;
+    let v = rb[n];
+    if (fluid === B.WATER && WATERLOGGED[v]) v = B.WATER;
     const id = v & 0xfff;
     if (id === fluid) {
       let l = v >>> 12;
@@ -344,6 +345,7 @@ export function buildChunk(chunks: Uint16Array[], biomes: Uint8Array[], hasSky =
           case Render.Model: meshModel(i, v, id, def, x, y, z, col); break;
           case Render.Rail: meshRail(i, v, def, x, y, z); break;
         }
+        if (WATERLOGGED[v] && id !== B.WATER) meshLiquid(i, B.WATER, B.WATER, x, y, z);
       }
   }
   opaqueSections[16] = opaqueBuf.verts >> 2;
@@ -363,7 +365,8 @@ function meshCube(i: number, v: number, id: number, def: BlockDef, x: number, y:
   for (let f = 0; f < 6; f++) { faceTex[f] = def.faces[f]; faceRot[f] = 0; }
   if (isFacing6Cube(id)) facing6CubeFaces(id, meta, faceTex, faceRot);
   else if (def.faces.length > 6) faceTex[HORIZ_TO_FACE[meta & 3]] = def.faces[6];
-  if (isLog(id) && meta) {
+  if (id >= B2.CRIMSON_NYLIUM) cubeStateFaces(id, meta);
+  if (isPillar(id) && meta) {
     const top = def.faces[3];
     const side = def.faces[0];
     for (let f = 0; f < 6; f++) faceTex[f] = side;
@@ -395,6 +398,16 @@ function meshCube(i: number, v: number, id: number, def: BlockDef, x: number, y:
     } else if (def.tint !== 'none') c = tint;
     emitCubeFace(buf, i, x, y, z, f, tex | masked, c, faceRot[f]);
   }
+}
+
+/** Cube faces that follow the block's state (lit smokers, charged anchors, melting frosted ice). */
+function cubeStateFaces(id: number, meta: number) {
+  if ((id === B2.SMOKER || id === B2.BLAST_FURNACE) && meta & 4) faceTex[HORIZ_TO_FACE[meta & 3]] = id === B2.SMOKER ? T2.smokerOn : T2.blastOn;
+  else if (id === B2.RESPAWN_ANCHOR) {
+    const c = Math.min(4, meta);
+    for (const f of [0, 1, 4, 5]) faceTex[f] = T2.respawnAnchorSide[c];
+    if (c) faceTex[3] = T2.respawnAnchorTop;
+  } else if (id === B2.FROSTED_ICE) for (let f = 0; f < 6; f++) faceTex[f] = T2.frostedIce[Math.min(3, meta)];
 }
 
 const ls = [0, 0, 0, 0], lb = [0, 0, 0, 0], la = [0, 0, 0, 0];
@@ -430,11 +443,14 @@ function emitCubeFace(buf: Buf, i: number, x: number, y: number, z: number, f: n
 }
 
 // ------------------------------------------------------------------ liquids
+/** Is the cell the same fluid (waterlogged blocks count as water)? */
+const sameFluid = (n: number, id: number) => (rb[n] & 0xfff) === id || (id === B.WATER && WATERLOGGED[rb[n]] === 1);
+
 function meshLiquid(i: number, v: number, id: number, x: number, y: number, z: number) {
   const water = id === B.WATER;
   const buf = water ? transBuf : opaqueBuf;
   const def = BLOCKS[id];
-  const aboveSame = (rb[i + RA] & 0xfff) === id;
+  const aboveSame = sameFluid(i + RA, id);
   let h00 = 1, h10 = 1, h11 = 1, h01 = 1;
   if (!aboveSame) {
     h00 = fluidCornerHeight(i, id, 0, 0);
@@ -465,7 +481,7 @@ function meshLiquid(i: number, v: number, id: number, x: number, y: number, z: n
     if (f === 3) continue;
     const n = i + FACE_OFF[f];
     const nid = rb[n] & 0xfff;
-    if (nid === id || OPAQUE[nid]) continue;
+    if (sameFluid(n, id) || OPAQUE[nid]) continue;
     if (f === 2 && y === 0) continue;
     const ns = Math.max(sky[n], 0), nb = blk[n];
     const verts = FACE_VERTS[f];
@@ -492,18 +508,20 @@ const CROSS_UV = [[0, 16], [16, 16], [16, 0], [0, 0]];
 
 function meshCross(i: number, id: number, def: BlockDef, x: number, y: number, z: number, col: number) {
   let ox = 0, oz = 0;
-  if (id === B.TALL_GRASS || id === B.FERN || (id >= B.DANDELION && id <= B.ALLIUM)) {
+  if (id === B.TALL_GRASS || id === B.FERN || SHAPE[id] === Shape.Flower) {
     const h = hashPos(x, 0, z);
     ox = ((h & 15) / 15 - 0.5) * 0.4;
     oz = (((h >> 4) & 15) / 15 - 0.5) * 0.4;
   }
   const s = sky[i], b = blk[i];
   const c = tintFor(def, col);
-  const tex = def.faces[0];
+  const meta = rb[i] >>> 12;
+  // the top half of a two-block plant, the stage of a bush
+  const tex = SHAPE[id] === Shape.DoublePlant && meta & 8 ? def.faces[3] : id === B2.SWEET_BERRY_BUSH ? T2.berries[meta & 3] : def.faces[0];
   const d = 0.45;
   const x0 = x + 0.5 - d + ox, x1 = x + 0.5 + d + ox, z0 = z + 0.5 - d + oz, z1 = z + 0.5 + d + oz;
   const buf = opaqueBuf;
-  if (id === B.FIRE) {
+  if (isFire(id)) {
     // fire: faces on each side plus the cross
     const e = 0.02;
     quadBoth(buf, [[x + e, y, z], [x + e, y, z + 1], [x + e, y + 1.3, z + 1], [x + e, y + 1.3, z]], CROSS_UV, tex, s, 15, c, 1);
@@ -622,7 +640,7 @@ function meshModel(i: number, v: number, id: number, def: BlockDef, x: number, y
           default: u = px * 16; vv = 16 - py * 16;
         }
         for (let r = 0; r < rot; r++) { const t = u; u = 16 - vv; vv = t; }
-        buf.v(x + px, y + py, z + pz, u, vv, bx.tex[f], s, b, id === B.LILY_PAD ? tint : id === B.REDSTONE_WIRE ? wireColor(v >>> 12) : WHITE, SHADE[f]);
+        buf.v(x + px, y + py, z + pz, u, vv, bx.tex[f], s, b, id === B.REDSTONE_WIRE ? wireColor(v >>> 12) : tint, SHADE[f]);
       }
     }
   }

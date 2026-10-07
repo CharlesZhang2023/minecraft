@@ -1,6 +1,7 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
 import type { Game } from './game';
-import { B, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail } from '../world/blocks';
+import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor } from '../world/blocks';
+import { familyPlacement, doubleSlab, partners, toggled } from './families';
 import { collisionShapes } from '../world/models';
 import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, stack, ItemDef, POTION_ITEMS } from './items';
 import { FireworkRocket } from '../entity/firework';
@@ -222,10 +223,9 @@ export class Interaction {
     const w = this.world;
     const id = idOf(v), meta = metaOf(v);
     const changes: [number, number, number, number][] = [[x, y, z, B.AIR]];
-    if (id === B.OAK_DOOR) {
-      const oy = meta & 8 ? y - 1 : y + 1;
-      if (w.getId(x, oy, z) === B.OAK_DOOR) changes.push([x, oy, z, B.AIR]);
-    } else if (isPiston(id) && meta & 8) {
+    const fam = partners(w, x, y, z, v);
+    if (fam.length) for (const [px, py, pz] of fam) changes.push([px, py, pz, B.AIR]);
+    else if (isPiston(id) && meta & 8) {
       const [dx, dy, dz] = FACING6[meta & 7];
       if (w.getId(x + dx, y + dy, z + dz) === B.PISTON_HEAD) changes.push([x + dx, y + dy, z + dz, B.AIR]);
     } else if (id === B.PISTON_HEAD) {
@@ -235,10 +235,6 @@ export class Interaction {
         changes.push([x - dx, y - dy, z - dz, B.AIR]);
         if (!this.player.creative) this.game.dropItem(x - dx + 0.5, y - dy + 0.5, z - dz + 0.5, stack(idOf(bv)));
       }
-    } else if (id === B.BED) {
-      const [dx, dz] = HORIZ[meta & 3];
-      const ox = meta & 8 ? x - dx : x + dx, oz = meta & 8 ? z - dz : z + dz;
-      if (w.getId(ox, y, oz) === B.BED) changes.push([ox, y, oz, B.AIR]);
     }
     if (changes.length === 1) w.set(x, y, z, B.AIR);
     else this.setAll(changes);
@@ -398,6 +394,11 @@ export class Interaction {
     const meta = metaOf(v);
     const beh = BLOCKS[id].behavior;
     if (beh?.onUse) return callBlock(id, 'onUse', () => beh.onUse!(playerBlockCtx(g, this.player, t.x, t.y, t.z, t.face, this.player.inventory.held())), false);
+    if (isHandOperated(id)) {
+      this.swing(t.x, t.y, t.z);
+      return true;
+    }
+    if (isButton(id)) { g.redstone.pressButton(t.x, t.y, t.z); return true; }
     switch (id) {
       case B.CRAFTING_TABLE: g.ui.openCrafting(); return true;
       case B.ENCHANTING_TABLE: g.ui.openEnchant(t.x, t.y, t.z); return true;
@@ -443,6 +444,31 @@ export class Interaction {
       }
     }
     return false;
+  }
+
+  /** Open or close a door, trapdoor or fence gate (both halves of a door). */
+  swing(x: number, y: number, z: number, open?: boolean) {
+    const w = this.world, g = this.game;
+    const v = w.get(x, y, z), id = idOf(v);
+    if (isDoor(id)) {
+      const lowerY = metaOf(v) & 8 ? y - 1 : y;
+      const lower = w.get(x, lowerY, z);
+      if (open !== undefined && ((metaOf(lower) & 4) !== 0) === open) return;
+      const nm = metaOf(lower) ^ 4;
+      this.setAll([[x, lowerY, z, pack(id, nm)], [x, lowerY + 1, z, pack(id, (nm & 7) | 8)]]);
+    } else {
+      const nv = open !== undefined ? this.openState(v, open) : toggled(v, this.playerFacing());
+      if (nv === null || nv === v) return;
+      w.set(x, y, z, nv);
+    }
+    const iron = BLOCKS[id].material === 'iron';
+    g.audio.play('door', { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, 1, (iron ? 0.7 : 0.9) + Math.random() * 0.1);
+  }
+  /** A trapdoor or gate set open or shut (redstone). */
+  private openState(v: number, open: boolean): number | null {
+    const id = idOf(v), m = metaOf(v);
+    const flag = isTrapdoor(id) ? 8 : 4;
+    return pack(id, open ? m | flag : m & ~flag);
   }
 
   private sleep(x: number, y: number, z: number): boolean {
@@ -859,8 +885,8 @@ export class Interaction {
     const fracY = t.hy - Math.floor(t.hy);
     // slab merging
     if (isSlab(blockId) && tid === blockId) {
-      const m = metaOf(tv);
-      if ((face === 3 && m === 0) || (face === 2 && m === 1)) return this.setPlaced(x, y, z, this.doubleSlab(blockId), blockId);
+      const m = metaOf(tv) & 7;
+      if ((face === 3 && m === 0) || (face === 2 && m === 1)) return this.setPlaced(x, y, z, doubleSlab(blockId, tv), blockId);
     }
     if (BLOCKS[tid].replaceable && tid !== B.WATER && tid !== B.LAVA || tid === B.SNOW) {
       face = 3;
@@ -868,15 +894,32 @@ export class Interaction {
       const [dx, dy, dz] = FACE_DIRS[face];
       x += dx; y += dy; z += dz;
       const cv = w.get(x, y, z);
-      if (isSlab(blockId) && idOf(cv) === blockId) return this.setPlaced(x, y, z, this.doubleSlab(blockId), blockId);
+      if (isSlab(blockId) && idOf(cv) === blockId && (metaOf(cv) & 7) !== 2) return this.setPlaced(x, y, z, doubleSlab(blockId, cv), blockId);
     }
     if (y < 0 || y >= 256) return false;
     const cur = w.getId(x, y, z);
     if (!BLOCKS[cur].replaceable && cur !== B.AIR) return false;
-    if (cur === blockId && blockId !== B.SNOW) return false;
+    if (cur === blockId && blockId !== B.SNOW && blockId !== B2.VINE) return false;
     let meta = 0;
     const facing = this.playerFacing();
     const pdef = BLOCKS[blockId];
+    if (!pdef.mod) {
+      const fam = familyPlacement(blockId, { world: w, x, y, z, face, facing, yaw: p.yaw, hitY: fracY, replaced: w.get(x, y, z) });
+      if (fam !== undefined) {
+        if (!fam) return false;
+        for (const [bx, by, bz, bv] of fam) {
+          if (!g.ticker!.canStay(bx, by, bz, bv) && !(fam.length > 1)) return false;
+          if (!this.noEntities(bx, by, bz, bv)) return false;
+        }
+        if (fam.length === 1) return this.setPlaced(fam[0][0], fam[0][1], fam[0][2], fam[0][3], blockId);
+        if (!this.setAll(fam)) return false;
+        for (const [bx, by, bz, bv] of fam) this.initTile(bx, by, bz, bv);
+        if (!g.ticker!.canStay(x, y, z, fam[0][3])) { for (const [bx, by, bz] of fam) w.set(bx, by, bz, B.AIR); return false; }
+        g.playBlockSound(blockId, x, y, z, 'place');
+        this.consume(1);
+        return true;
+      }
+    }
     if (pdef.behavior?.placementMeta) {
       const m = callBlock(blockId, 'placementMeta', () => pdef.behavior!.placementMeta!({ game: g, world: w, player: p, x, y, z, face, facing, facing6: this.facingFromEntity(x, y, z), hitY: fracY, held }), null);
       if (m === null) return false;
@@ -884,12 +927,12 @@ export class Interaction {
     } else if (pdef.mod) {
       // a mod cube with a front face turns it toward the player
       if (pdef.faces.length > 6) meta = (facing + 2) & 3;
-    } else if (isLog(blockId)) meta = face === 0 || face === 1 ? 1 : face === 4 || face === 5 ? 2 : 0;
+    } else if (isPillar(blockId)) meta = face === 0 || face === 1 ? 1 : face === 4 || face === 5 ? 2 : 0;
     else if (isOriented(blockId)) meta = (facing + 2) & 3;
     else if (isStairs(blockId)) meta = facing | (face === 2 || (face !== 3 && fracY > 0.5) ? 4 : 0);
     else if (isSlab(blockId)) meta = face === 2 || (face !== 3 && fracY > 0.5) ? 1 : 0;
     else if (isLeaves(blockId)) meta = 1;
-    else if (blockId === B.TORCH || blockId === B.LADDER || blockId === B.REDSTONE_TORCH || blockId === B.LEVER || blockId === B.STONE_BUTTON) {
+    else if (blockId === B.TORCH || blockId === B.LADDER || blockId === B.REDSTONE_TORCH || blockId === B.LEVER || blockId === B.STONE_BUTTON || blockId === B2.SOUL_TORCH) {
       const wallDir: Record<number, number> = { 0: 1, 1: 3, 4: 2, 5: 0 };
       const wallMounted = blockId !== B.LADDER;
       if (face === 3 && wallMounted) meta = 0;
@@ -929,10 +972,6 @@ export class Interaction {
     // tile entities
     if (blockId === B.CHEST) w.setTile(x, y, z, undefined);
     return this.setPlaced(x, y, z, v, blockId);
-  }
-
-  private doubleSlab(slab: number) {
-    return slab === B.STONE_SLAB ? B.DOUBLE_STONE_SLAB : slab === B.OAK_SLAB ? B.OAK_PLANKS : B.COBBLESTONE;
   }
 
   private setPlaced(x: number, y: number, z: number, v: number, soundBlock: number): boolean {

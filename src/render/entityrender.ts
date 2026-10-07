@@ -893,7 +893,7 @@ export class EntityRenderer {
       let layer: number;
       let img: Uint8ClampedArray;
       if (it.sprite) { layer = TEXTURES.indexOf('item/' + it.sprite); img = getTexture('item/' + it.sprite); }
-      else { layer = BLOCKS[it.block!].faces[0]; img = getTexture(TEXTURES[layer]); }
+      else { layer = BLOCKS[it.block!].icon ?? BLOCKS[it.block!].faces[0]; img = getTexture(TEXTURES[layer]); }
       if (layer < 0) layer = 0;
       const tintFlag = !it.sprite && BLOCKS[it.block!].tint !== 'none' ? 10 : 0;
       const d = 1 / 32;

@@ -2,6 +2,7 @@
 import { TEXTURES, WOOL_COLORS, BLOCKS } from '../world/blocks';
 import { Random } from '../noise';
 import { S, Img, RGB, newImg, hex, set, get, rngFor, shade, mix, blobField, paletteNoise, art, copy, voronoi } from './pixels';
+import { paintMore, soulFireFrame } from './textures2';
 
 type Gen = (r: Random) => Img;
 const gens: Record<string, Gen> = {};
@@ -11,6 +12,11 @@ const cache: Record<string, Img> = {};
 export function registerTexture(name: string, gen: (r: Random) => Img) {
   gens[name] = gen;
   delete cache[name];
+}
+
+/** Is there a painter for this texture (tests: every block texture must have one)? */
+export function hasTexture(name: string): boolean {
+  return !!gens[name];
 }
 
 export function getTexture(name: string): Img {
@@ -487,6 +493,7 @@ export function animatedFrame(name: string, frame: number): Img {
     case 'fire': return fireFrame(frame);
     case 'nether_portal': return portalFrame(frame);
     case 'end_portal': return endPortalFrame(frame);
+    case 'soul_fire': return soulFireFrame(frame);
   }
   return getTexture(name);
 }
@@ -1782,3 +1789,7 @@ gens.ender_chest_front = (r) => {
 export function buildBlockTextures(): Img[] {
   return TEXTURES.map((n) => copy(getTexture(n)));
 }
+
+// ---------------------------------------------------------------- 1.9 - 1.16 blocks (textures2.ts)
+paintMore({ gens, planks, logSide, logTop, leavesGen, sapling, ore, metalBlock, speckled, brickPattern, cropStages });
+ANIMATED.soul_fire = { frames: 16, speed: 1 };

@@ -1,7 +1,8 @@
 // Scheduled & random block updates: fluids, gravity, plants, leaf decay, fire...
 import type { Game } from './game';
 import type { World, Chunk } from '../world/world';
-import { B, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston } from '../world/blocks';
+import { B, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston, isFire } from '../world/blocks';
+import { familyCanStay } from './families';
 import { WorldGen, Setter } from '../world/worldgen';
 import { Random } from '../noise';
 import { FallingBlock } from '../entity/item';
@@ -79,7 +80,7 @@ export class BlockTicker {
       if (!portalCanStay(w, x, y, z)) w.set(x, y, z, B.AIR);
       return;
     }
-    if (id === B.FIRE) { this.schedule(x, y, z, 1); return; }
+    if (isFire(id)) { this.schedule(x, y, z, 1); return; }
     if (!this.canStay(x, y, z, v)) {
       this.game.interact!.breakBlockNaturally(x, y, z, true);
       return;
@@ -97,6 +98,8 @@ export class BlockTicker {
     const def = BLOCKS[id];
     const cs = def.behavior?.canStay;
     if (cs) return callBlock(id, 'canStay', () => cs(blockCtx(this.game, x, y, z, v)), true);
+    const fam = familyCanStay(w, x, y, z, v);
+    if (fam !== undefined) return fam;
     if (id === B.REDSTONE_WIRE || id === B.STONE_PRESSURE_PLATE) return OPAQUE[below] === 1;
     if (isRail(id)) return railCanStay(w, x, y, z, v);
     if (id === B.LEVER || id === B.STONE_BUTTON) {

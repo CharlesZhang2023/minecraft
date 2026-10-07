@@ -1,5 +1,5 @@
 // Box models for non-cube blocks. Shared by the mesher (rendering), physics (collision) and raycasting.
-import { B, BLOCKS, OPAQUE, REDSTONE, Render, T, idOf, metaOf, isStairs, isSlab, isFence, HORIZ, FACING6, FACING6_TO_FACE } from './blocks';
+import { B, B2, BLOCKS, OPAQUE, REDSTONE, Render, T, T2, idOf, metaOf, isStairs, isFence, HORIZ, FACING6, FACING6_TO_FACE, SHAPE, Shape as BS, BED_TEX, SHULKER_BOXES, WOOD } from './blocks';
 
 export interface Box {
   x0: number; y0: number; z0: number;
@@ -165,7 +165,7 @@ export function facing6CubeFaces(id: number, meta: number, tex: Int32Array, rot:
 
 const wireComp = (v: number) => {
   const id = idOf(v);
-  return id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH || id === B.REDSTONE_BLOCK || id === B.DETECTOR_RAIL || REDSTONE[id] === 1;
+  return id === B.REDSTONE_WIRE || id === B.LEVER || SHAPE[id] === BS.Button || SHAPE[id] === BS.Plate || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH || id === B.REDSTONE_BLOCK || id === B.DETECTOR_RAIL || id === B2.TARGET || id === B2.DAYLIGHT_DETECTOR || REDSTONE[id] === 1;
 };
 
 /** Which horizontal sides (N,E,S,W) a redstone wire connects to (including up/down steps). */
@@ -185,14 +185,295 @@ export function wireClimbs(nb: Neighbor): boolean[] {
   return HORIZ.map(([dx, dz]) => OPAQUE[idOf(nb(dx, 0, dz))] === 1 && idOf(nb(dx, 1, dz)) === B.REDSTONE_WIRE);
 }
 
-const connectsFence = (self: number, v: number) => {
+const wooden = (id: number) => BLOCKS[id].material === 'wood' || BLOCKS[id].material === 'nether_wood';
+/** A fence gate in direction `dir` (HORIZ) lines up with a fence or wall there (its axis runs across `dir`). */
+const gateAligned = (v: number, dir: number) => SHAPE[idOf(v)] === BS.Gate && ((metaOf(v) & 1) !== (dir & 1));
+/** Does a fence connect toward its neighbour v in direction dir: same kind of fence, a gate, or a solid block? */
+const connectsFence = (self: number, v: number, dir = 0) => {
   const id = idOf(v);
-  return id === self || OPAQUE[id] === 1;
+  if (OPAQUE[id] === 1) return true;
+  if (SHAPE[id] === BS.Fence) return id === self || (wooden(self) && wooden(id));
+  return gateAligned(v, dir);
 };
 const connectsPane = (v: number) => {
   const id = idOf(v);
-  return id === B.GLASS_PANE || id === B.GLASS || id === B.IRON_BARS || OPAQUE[id] === 1;
+  return SHAPE[id] === BS.Pane || SHAPE[id] === BS.Wall || id === B.GLASS || OPAQUE[id] === 1 || BLOCKS[id].name.endsWith('stained_glass');
 };
+const connectsWall = (v: number, dir: number) => {
+  const id = idOf(v);
+  return SHAPE[id] === BS.Wall || SHAPE[id] === BS.Pane || OPAQUE[id] === 1 || gateAligned(v, dir);
+};
+
+/** Stair shapes: straight, outer corner left/right, inner corner left/right (vanilla's rules). */
+export const enum StairShape { Straight, OuterLeft, OuterRight, InnerLeft, InnerRight }
+export function stairShape(meta: number, nb: Neighbor | undefined): StairShape {
+  if (!nb) return StairShape.Straight;
+  const facing = meta & 3, half = meta & 4;
+  const ccw = (facing + 3) & 3;
+  const stairAt = (dir: number) => { const [dx, dz] = HORIZ[dir]; const v = nb(dx, 0, dz); return isStairs(idOf(v)) && (metaOf(v) & 4) === half ? metaOf(v) & 3 : -1; };
+  // a different stair (or none) at dir: this one may turn toward it
+  const differs = (dir: number) => stairAt(dir) !== facing;
+  const behind = stairAt(facing);
+  if (behind >= 0 && (behind & 1) !== (facing & 1) && differs((behind + 2) & 3)) return behind === ccw ? StairShape.OuterLeft : StairShape.OuterRight;
+  const front = stairAt((facing + 2) & 3);
+  if (front >= 0 && (front & 1) !== (facing & 1) && differs(front)) return front === ccw ? StairShape.InnerLeft : StairShape.InnerRight;
+  return StairShape.Straight;
+}
+
+/** Boxes of the block families (shape-driven), or null for the shapes models leave to the per-block cases. */
+function familyBoxes(id: number, meta: number, nb: Neighbor | undefined, f: number[]): Box[] | null {
+  const faces = [f[0], f[1], f[2], f[3], f[4], f[5]];
+  switch (SHAPE[id]) {
+    case BS.Slab: {
+      if (meta === 2) return [box(0, 0, 0, 16, 16, 16, faces)];
+      const top = meta === 1;
+      return [box(0, top ? 8 : 0, 0, 16, top ? 16 : 8, 16, faces)];
+    }
+    case BS.Stairs: {
+      const facing = meta & 3, up = (meta & 4) !== 0;
+      const y0 = up ? 0 : 8, y1 = up ? 8 : 16;
+      const out = [up ? box(0, 8, 0, 16, 16, 16, faces) : box(0, 0, 0, 16, 8, 16, faces)];
+      const parts: number[][] = [];
+      switch (stairShape(meta, nb)) {
+        case StairShape.Straight: parts.push([0, 0, 16, 8]); break;
+        case StairShape.OuterLeft: parts.push([0, 0, 8, 8]); break;
+        case StairShape.OuterRight: parts.push([8, 0, 16, 8]); break;
+        case StairShape.InnerLeft: parts.push([0, 0, 16, 8], [0, 8, 8, 16]); break;
+        case StairShape.InnerRight: parts.push([0, 0, 16, 8], [8, 8, 16, 16]); break;
+      }
+      for (const [x0, z0, x1, z1] of parts) out.push(rotY(box(x0, y0, z0, x1, y1, z1, faces), facing));
+      // the rotation turned the side textures with it: stone-like stairs keep top/bottom straight
+      for (const b of out) b.rot = undefined;
+      return out;
+    }
+    case BS.Fence: {
+      const t = f[0];
+      const boxes = [box(6, 0, 6, 10, 16, 10, t)];
+      if (nb) {
+        const dirs: [number, number, number, number, number, number][] = [[0, -1, 7, 0, 9, 6], [1, 0, 10, 7, 16, 9], [0, 1, 7, 10, 9, 16], [-1, 0, 0, 7, 6, 9]];
+        dirs.forEach(([dx, dz, x0, z0, x1, z1], d) => {
+          if (connectsFence(id, nb(dx, 0, dz), d)) { boxes.push(box(x0, 12, z0, x1, 15, z1, t)); boxes.push(box(x0, 6, z0, x1, 9, z1, t)); }
+        });
+      }
+      return boxes;
+    }
+    case BS.Wall: {
+      const t = f[0];
+      const conn = [false, false, false, false];
+      if (nb) HORIZ.forEach(([dx, dz], d) => (conn[d] = connectsWall(nb(dx, 0, dz), d)));
+      const above = nb ? idOf(nb(0, 1, 0)) : 0;
+      const tall = OPAQUE[above] === 1 || SHAPE[above] === BS.Wall;
+      const h = tall ? 16 : 14;
+      const straight = (conn[0] && conn[2] && !conn[1] && !conn[3]) || (conn[1] && conn[3] && !conn[0] && !conn[2]);
+      const boxes: Box[] = [];
+      if (!straight || above !== 0) boxes.push(box(4, 0, 4, 12, 16, 12, t));
+      if (conn[0]) boxes.push(box(5, 0, 0, 11, h, straight ? 8 : 4, t));
+      if (conn[2]) boxes.push(box(5, 0, straight ? 8 : 12, 11, h, 16, t));
+      if (conn[1]) boxes.push(box(straight ? 8 : 12, 0, 5, 16, h, 11, t));
+      if (conn[3]) boxes.push(box(0, 0, 5, straight ? 8 : 4, h, 11, t));
+      if (!boxes.length) boxes.push(box(4, 0, 4, 12, 16, 12, t));
+      return boxes;
+    }
+    case BS.Gate: {
+      const facing = meta & 3, open = (meta & 4) !== 0;
+      const t = f[0];
+      // a gate between two walls sits lower, like the walls' sides
+      let dy = 0;
+      if (nb) { const [lx, lz] = HORIZ[(facing + 1) & 3]; if (SHAPE[idOf(nb(lx, 0, lz))] === BS.Wall || SHAPE[idOf(nb(-lx, 0, -lz))] === BS.Wall) dy = -3; }
+      const b = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => box(x0, y0 + dy, z0, x1, y1 + dy, z1, t);
+      const out = [b(0, 5, 7, 2, 16, 9), b(14, 5, 7, 16, 16, 9)];
+      if (!open) out.push(b(2, 6, 7, 14, 9, 9), b(2, 12, 7, 14, 15, 9), b(6, 9, 7, 10, 12, 9));
+      else out.push(b(0, 6, 1, 2, 9, 7), b(0, 12, 1, 2, 15, 7), b(0, 9, 1, 2, 12, 3), b(14, 6, 1, 16, 9, 7), b(14, 12, 1, 16, 15, 7), b(14, 9, 1, 16, 12, 3));
+      return out.map((x) => rotY(x, facing));
+    }
+    case BS.Pane: {
+      const t = f[0], e = id === B.IRON_BARS ? T.ironBarsTop : id === B.GLASS_PANE ? T.glassPaneTop : f[3];
+      const conn = [false, false, false, false];
+      if (nb) HORIZ.forEach(([dx, dz], i) => (conn[i] = connectsPane(nb(dx, 0, dz))));
+      if (!conn.some((c) => c)) conn.fill(true);
+      const tx = [t, t, e, e, t, t];
+      const boxes: Box[] = [box(7, 0, 7, 9, 16, 9, tx)];
+      if (conn[0]) boxes.push(box(7, 0, 0, 9, 16, 7, tx, { skip: 1 << 5 }));
+      if (conn[2]) boxes.push(box(7, 0, 9, 9, 16, 16, tx, { skip: 1 << 4 }));
+      if (conn[1]) boxes.push(box(9, 0, 7, 16, 16, 9, tx, { skip: 1 << 0 }));
+      if (conn[3]) boxes.push(box(0, 0, 7, 7, 16, 9, tx, { skip: 1 << 1 }));
+      return boxes;
+    }
+    case BS.Door: {
+      const upper = (meta & 8) !== 0, open = (meta & 4) !== 0;
+      const t = upper ? f[3] : f[0];
+      // a closed door stands on the edge of the block opposite the facing direction
+      return [rotY(box(0, 0, 13, 16, 16, 16, t), ((meta & 3) + (open ? 1 : 0)) % 4)];
+    }
+    case BS.Trapdoor: {
+      const facing = meta & 3, top = (meta & 4) !== 0, open = (meta & 8) !== 0;
+      const t = f[0];
+      if (open) return [rotY(box(0, 0, 13, 16, 16, 16, t), facing)];
+      return [top ? box(0, 13, 0, 16, 16, 16, t) : box(0, 0, 0, 16, 3, 16, t)];
+    }
+    case BS.Button: {
+      const pressed = (meta & 8) !== 0, at = meta & 7, d = pressed ? 1 : 2;
+      if (at === 0) return [box(5, 0, 6, 11, d, 10, f[0])];
+      if (at === 5) return [box(5, 16 - d, 6, 11, 16, 10, f[0])];
+      return [rotY(box(5, 6, 0, 11, 10, d, f[0]), (at - 1) & 3)];
+    }
+    case BS.Plate:
+      return [box(1, 0, 1, 15, meta ? 0.5 : 1, 15, f[0])];
+    case BS.Carpet:
+      return [box(0, 0, 0, 16, 1, 16, f[0])];
+    case BS.Sign: {
+      const facing = Math.round(meta / 4) & 3;
+      return [box(7, 0, 7, 9, 9, 9, f[0]), rotY(box(0, 9, 7, 16, 17, 9, f[0]), facing)];
+    }
+    case BS.WallSign:
+      return [rotY(box(0, 4, 0, 16, 12, 2, f[0]), meta & 3)];
+    case BS.Lantern: {
+      const hang = meta & 1 ? 1 : 0;
+      const t = f[0], side = [4, 3, 12, 10];
+      return [
+        box(5, hang, 5, 11, 7 + hang, 11, t, { uv: [side, side, [5, 4, 11, 10], [5, 4, 11, 10], side, side] }),
+        box(6, 7 + hang, 6, 10, 9 + hang, 10, t, { uv: [[6, 2, 10, 4], [6, 2, 10, 4], null, [6, 2, 10, 4], [6, 2, 10, 4], [6, 2, 10, 4]] }),
+        ...(hang ? [box(7.5, 10, 7, 8.5, 16, 9, t, { uv: [[6, 0, 8, 3], [6, 0, 8, 3], null, null, [6, 0, 8, 3], [6, 0, 8, 3]] })] : []),
+      ];
+    }
+    case BS.Chain: {
+      const thin = id === B2.END_ROD ? 1 : 1.5;
+      const a = 8 - thin, b = 8 + thin;
+      const axis = meta % 3;
+      if (axis === 1) return [box(0, a, a, 16, b, b, f[0], { rot: [0, 0, 1, 1, 1, 1] })];
+      if (axis === 2) return [box(a, a, 0, b, b, 16, f[0], { rot: [1, 1, 0, 0, 0, 0] })];
+      return [box(a, 0, a, b, 16, b, f[0])];
+    }
+    case BS.Campfire: {
+      const log = T2.campfireLog, lit = (meta & 4) === 0;
+      const out = [box(1, 0, 0, 5, 4, 16, log), box(11, 0, 0, 15, 4, 16, log), box(0, 3, 1, 16, 7, 5, log), box(0, 3, 11, 16, 7, 15, log), box(5, 0, 0, 11, 1, 16, log)];
+      if (lit) out.push(box(8, 1, 1, 8, 15, 15, f[3]), box(1, 1, 8, 15, 15, 8, f[3]));
+      return out.map((x) => rotY(x, meta & 3));
+    }
+    case BS.Bed: {
+      const head = (meta & 8) !== 0, facing = meta & 3;
+      const tx = BED_TEX[id] ?? [T.bedHeadTop, T.bedFootTop, T.bedHeadSide, T.bedFootSide, T.bedHeadEnd, T.bedFootEnd];
+      const top = head ? tx[0] : tx[1], side = head ? tx[2] : tx[3], end = head ? tx[4] : tx[5];
+      return [rotY(box(0, 0, 0, 16, 9, 16, [side, side, T.bedBottom, top, end, end], { skip: head ? 1 << 5 : 1 << 4 }), facing)];
+    }
+    case BS.Head: case BS.WallHead: {
+      const face = T2.headFace[f[0]] ?? f[0];
+      const t = [f[0], f[0], f[0], f[0], f[0], face];
+      if (SHAPE[id] === BS.Head) return [rotY(box(4, 0, 4, 12, 8, 12, t), (Math.round(meta / 4) + 2) & 3)];
+      return [rotY(box(4, 4, 0, 12, 12, 8, t), meta & 3)];
+    }
+    case BS.CoralFan: {
+      const at = meta & 7;
+      if (at === 0) return [box(8, 0, 0, 8, 12, 16, f[0], { cullSame: false }), box(0, 0, 8, 16, 12, 8, f[0])];
+      return [rotY(box(0, 4, 0, 16, 4, 14, f[0]), (at - 1) & 3)];
+    }
+    case BS.Vine: {
+      const out: Box[] = [];
+      const e = 0.8;
+      if (meta & 1) out.push(box(0, 0, e, 16, 16, e, f[0]));
+      if (meta & 2) out.push(box(16 - e, 0, 0, 16 - e, 16, 16, f[0]));
+      if (meta & 4) out.push(box(0, 0, 16 - e, 16, 16, 16 - e, f[0]));
+      if (meta & 8) out.push(box(e, 0, 0, e, 16, 16, f[0]));
+      if (!out.length) out.push(box(0, 16 - e, 0, 16, 16 - e, 16, f[0]));
+      return out;
+    }
+  }
+  return null;
+}
+
+/** Boxes of the 1.9-1.16 blocks with models of their own (null: not one of them). */
+function newBlockBoxes(id: number, meta: number, nb: Neighbor | undefined, f: number[]): Box[] | null {
+  const faces = [f[0], f[1], f[2], f[3], f[4], f[5]];
+  switch (id) {
+    case B2.GRASS_PATH: return [box(0, 0, 0, 16, 15, 16, faces)];
+    case B2.HONEY_BLOCK: return [box(0, 0, 0, 16, 16, 16, faces, { cullSame: true }), box(1, 1, 1, 15, 15, 15, faces)];
+    case B2.SEA_PICKLE: {
+      const n = (meta & 3) + 1;
+      const spots = [[6, 6], [2, 9], [9, 2], [9, 9]];
+      return spots.slice(0, n).map(([x, z], i) => box(x, 0, z, x + 4, 6 - (i & 1), z + 4, f[0]));
+    }
+    case B2.TURTLE_EGG: {
+      const n = (meta & 3) + 1;
+      const spots = [[5, 5], [1, 9], [9, 1], [9, 9]];
+      return spots.slice(0, n).map(([x, z]) => box(x, 0, z, x + 5, 7, z + 5, f[0]));
+    }
+    case B2.CONDUIT: return [box(5, 5, 5, 11, 11, 11, f[0])];
+    case B2.COCOA: {
+      const age = Math.min(2, meta >> 2), w = 4 + age * 2, h = 5 + age * 2;
+      const t = T2.cocoa[age];
+      return [rotY(box(8 - w / 2, 12 - h, 1, 8 + w / 2, 12, 1 + w, t), meta & 3)];
+    }
+    case B2.CHORUS_PLANT: {
+      const out = [box(3, 3, 3, 13, 13, 13, f[0])];
+      if (nb) {
+        const c = (v: number) => { const i = idOf(v); return i === B2.CHORUS_PLANT || i === B2.CHORUS_FLOWER || i === B.END_STONE; };
+        if (c(nb(0, 1, 0))) out.push(box(4, 13, 4, 12, 16, 12, f[0]));
+        if (c(nb(0, -1, 0))) out.push(box(4, 0, 4, 12, 3, 12, f[0]));
+        if (c(nb(0, 0, -1))) out.push(box(4, 4, 0, 12, 12, 3, f[0]));
+        if (c(nb(0, 0, 1))) out.push(box(4, 4, 13, 12, 12, 16, f[0]));
+        if (c(nb(-1, 0, 0))) out.push(box(0, 4, 4, 3, 12, 12, f[0]));
+        if (c(nb(1, 0, 0))) out.push(box(13, 4, 4, 16, 12, 12, f[0]));
+      }
+      return out;
+    }
+    case B2.CHORUS_FLOWER: return [box(2, 0, 2, 14, 14, 14, meta >= 5 ? T2.chorusDead : f[0])];
+    case B2.BAMBOO: return [box(6.5, 0, 6.5, 9.5, 16, 9.5, [f[0], f[0], f[3], f[3], f[0], f[0]], { uv: [[6, 0, 9, 16], [6, 0, 9, 16], null, null, [6, 0, 9, 16], [6, 0, 9, 16]] })];
+    case B2.CAKE: {
+      const bites = Math.min(6, meta);
+      return [box(1 + bites * 2, 0, 1, 15, 8, 15, [bites ? f[6] : f[0], f[1], f[2], f[3], f[4], f[5]])];
+    }
+    case B2.SCAFFOLDING: {
+      const t = f[0];
+      return [box(0, 14, 0, 16, 16, 16, [t, t, f[2], f[3], t, t]), box(0, 0, 0, 2, 14, 2, t), box(14, 0, 0, 16, 14, 2, t), box(0, 0, 14, 2, 14, 16, t), box(14, 0, 14, 16, 14, 16, t)];
+    }
+    case B2.STONECUTTER: return [box(0, 0, 0, 16, 9, 16, faces)];
+    case B2.GRINDSTONE: {
+      const g = f[0];
+      return [rotY(box(4, 4, 2, 12, 16, 14, [g, g, g, g, f[3], f[3]]), meta & 3), box(2, 0, 6, 4, 7, 10, g), box(12, 0, 6, 14, 7, 10, g)];
+    }
+    case B2.COMPOSTER: {
+      const t = f[0], lvl = Math.min(8, meta);
+      const out = [box(0, 0, 0, 16, 2, 16, [t, t, f[2], t, t, t]), box(0, 2, 0, 2, 16, 16, t), box(14, 2, 0, 16, 16, 16, t), box(2, 2, 0, 14, 16, 2, t), box(2, 2, 14, 14, 16, 16, t)];
+      if (lvl) out.push(box(2, 2, 2, 14, Math.min(15, 2 + lvl * 1.7), 14, lvl >= 8 ? T2.compostReady : T2.compost));
+      return out;
+    }
+    case B2.CAULDRON: {
+      const t = f[0], lvl = meta & 3, lava = (meta & 4) !== 0;
+      const out = [box(0, 3, 0, 16, 4, 16, [t, t, f[2], T2.cauldronInner, t, t]), box(0, 0, 0, 2, 16, 16, [t, t, t, f[3], t, t]), box(14, 0, 0, 16, 16, 16, [t, t, t, f[3], t, t]), box(2, 0, 0, 14, 16, 2, [t, t, t, f[3], t, t]), box(2, 0, 14, 14, 16, 16, [t, t, t, f[3], t, t])];
+      if (lvl) out.push(box(2, 4, 2, 14, 6 + lvl * 3, 14, lava ? T2.lava : T2.water, { skip: 0b110111 }));
+      return out;
+    }
+    case B2.FLOWER_POT: {
+      const out = [box(5, 0, 5, 11, 6, 11, f[0])];
+      const plant = POT_PLANTS[meta];
+      if (plant) {
+        const pt = BLOCKS[plant].faces[0];
+        out.push(box(8, 4, 4, 8, 16, 12, pt), box(4, 4, 8, 12, 16, 8, pt));
+      }
+      return out;
+    }
+    case B2.BEACON: return [box(0, 0, 0, 16, 16, 16, T2.beaconGlass), box(2, 0.1, 2, 14, 3, 14, T2.obsidian), box(3, 3, 3, 13, 13, 13, f[0])];
+    case B2.DAYLIGHT_DETECTOR: return [box(0, 0, 0, 16, 6, 16, [f[0], f[1], f[2], meta & 8 ? T2.daylightInverted : f[3], f[4], f[5]])];
+    case B2.TRIPWIRE_HOOK: return [rotY(box(6, 1, 0, 10, 9, 2, f[0]), meta & 3), rotY(box(7, 5, 2, 9, 6, 8, f[0]), meta & 3)];
+    case B2.TRIPWIRE: {
+      // along x unless the wire continues north or south
+      const alongZ = !!nb && [nb(0, 0, -1), nb(0, 0, 1)].some((v) => idOf(v) === B2.TRIPWIRE || idOf(v) === B2.TRIPWIRE_HOOK);
+      return [alongZ ? box(7.5, 1, 0, 8.5, 1.5, 16, f[0]) : box(0, 1, 7.5, 16, 1.5, 8.5, f[0])];
+    }
+    case B2.BELL: return [box(4, 4, 4, 12, 13, 12, f[0]), box(5, 13, 5, 11, 14, 11, f[0]), rotY(box(2, 14, 7, 14, 16, 9, f[0]), meta & 3)];
+    case B2.LECTERN: return [box(0, 0, 0, 16, 2, 16, T2.lecternBase), box(4, 2, 4, 12, 13, 12, f[0]), rotY(box(0, 12, 0, 16, 16, 16, faces), meta & 3)];
+    case B2.SHULKER_BOX: return [box(0, 0, 0, 16, 16, 16, faces)];
+    case B2.TRAPPED_CHEST: {
+      const b = box(1, 0, 1, 15, 14, 15, [T.chestSide, T.chestSide, T.chestTop, T.chestTop, f[6], T.chestSide]);
+      return [rotY(b, meta & 3)];
+    }
+  }
+  if (SHULKER_IDS.has(id)) return [box(0, 0, 0, 16, 16, 16, faces)];
+  return null;
+}
+const SHULKER_IDS = new Set(SHULKER_BOXES);
+/** What a flower pot holds, by meta (0 = empty). */
+export const POT_PLANTS: number[] = [0, B.OAK_SAPLING, B.SPRUCE_SAPLING, B.BIRCH_SAPLING, WOOD.jungle.sapling, WOOD.acacia.sapling, WOOD.dark_oak.sapling, B.DANDELION, B.POPPY, B2.BLUE_ORCHID, B.CORNFLOWER, B.RED_MUSHROOM, B.BROWN_MUSHROOM, B.DEAD_BUSH, B.FERN, B.CACTUS];
 
 export function modelBoxes(v: number, nb?: Neighbor): Box[] {
   const id = idOf(v), meta = metaOf(v);
@@ -202,16 +483,13 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
   if (mb) {
     try { return mb(meta, nb, f); } catch (e) { console.error(`[mod ${def.mod}] model of ${def.name}:`, e); return [box(0, 0, 0, 16, 16, 16, f[0])]; }
   }
-  if (isSlab(id)) {
-    const top = meta === 1;
-    return [box(0, top ? 8 : 0, 0, 16, top ? 16 : 8, 16, [f[0], f[1], f[2], f[3], f[4], f[5]])];
+  if (SHAPE[id] !== BS.Cube) {
+    const fam = familyBoxes(id, meta, nb, f);
+    if (fam) return fam;
   }
-  if (isStairs(id)) {
-    const facing = meta & 3, upside = (meta & 4) !== 0;
-    const t = f[0];
-    const lower = upside ? box(0, 8, 0, 16, 16, 16, t) : box(0, 0, 0, 16, 8, 16, t);
-    const upper = upside ? box(0, 0, 0, 16, 8, 8, t) : box(0, 8, 0, 16, 16, 8, t);
-    return [lower, rotY(upper, facing)];
+  if (id >= B2.CRIMSON_NYLIUM) {
+    const nb2 = newBlockBoxes(id, meta, nb, f);
+    if (nb2) return nb2;
   }
   switch (id) {
     case B.FARMLAND:
@@ -249,53 +527,6 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
       const b = box(0, 0, 0, 16, 16, 1, T.ladder, { skip: 0b001111 });
       return [rotY(b, meta & 3)];
     }
-    case B.OAK_DOOR: {
-      const upper = (meta & 8) !== 0, open = (meta & 4) !== 0;
-      const facing = meta & 3;
-      const t = upper ? T.doorTop : T.doorBottom;
-      // closed door stands on the edge of the block opposite the facing direction
-      const b = box(0, 0, 13, 16, 16, 16, [t, t, t, t, t, t]);
-      return [rotY(b, (facing + (open ? 1 : 0)) % 4)];
-    }
-    case B.BED: {
-      const head = (meta & 8) !== 0, facing = meta & 3;
-      const top = head ? T.bedHeadTop : T.bedFootTop;
-      const side = head ? T.bedHeadSide : T.bedFootSide;
-      const end = head ? T.bedHeadEnd : T.bedFootEnd;
-      // authored facing north: head at north end
-      const b = box(0, 0, 0, 16, 9, 16, [side, side, T.bedBottom, top, head ? end : end, head ? end : end], { skip: head ? 1 << 5 : 1 << 4 });
-      const r = rotY(b, facing);
-      return [r];
-    }
-    case B.OAK_FENCE:
-    case B.NETHER_BRICK_FENCE: {
-      const t = f[0];
-      const boxes = [box(6, 0, 6, 10, 16, 10, t)];
-      if (nb) {
-        const dirs: [number, number, number, number, number, number, number, number][] = [
-          [0, -1, 7, 0, 9, 6, 0, 0], [1, 0, 10, 7, 16, 9, 0, 0], [0, 1, 7, 10, 9, 16, 0, 0], [-1, 0, 0, 7, 6, 9, 0, 0],
-        ];
-        for (const [dx, dz, x0, z0, x1, z1] of dirs)
-          if (connectsFence(id, nb(dx, 0, dz))) {
-            boxes.push(box(x0, 12, z0, x1, 15, z1, t));
-            boxes.push(box(x0, 6, z0, x1, 9, z1, t));
-          }
-      }
-      return boxes;
-    }
-    case B.GLASS_PANE:
-    case B.IRON_BARS: {
-      const t = f[0], e = id === B.IRON_BARS ? T.ironBarsTop : T.glassPaneTop;
-      const conn = [false, false, false, false];
-      if (nb) HORIZ.forEach(([dx, dz], i) => (conn[i] = connectsPane(nb(dx, 0, dz))));
-      if (!conn.some((c) => c)) conn.fill(true);
-      const boxes: Box[] = [box(7, 0, 7, 9, 16, 9, [t, t, e, e, t, t])];
-      if (conn[0]) boxes.push(box(7, 0, 0, 9, 16, 7, [t, t, e, e, t, t], { skip: 1 << 5 }));
-      if (conn[2]) boxes.push(box(7, 0, 9, 9, 16, 16, [t, t, e, e, t, t], { skip: 1 << 4 }));
-      if (conn[1]) boxes.push(box(9, 0, 7, 16, 16, 9, [t, t, e, e, t, t], { skip: 1 << 0 }));
-      if (conn[3]) boxes.push(box(0, 0, 7, 7, 16, 9, [t, t, e, e, t, t], { skip: 1 << 1 }));
-      return boxes;
-    }
     case B.SOUL_SAND:
       return [box(0, 0, 0, 16, 14, 16, f[0])];
     case B.NETHER_PORTAL:
@@ -322,15 +553,8 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
       if (at === 0) return [box(5, 0, 4, 11, 3, 12, T.cobble), box(7, 3, on ? 5 : 9, 9, 11, on ? 7 : 11, T.lever)];
       return [rotY(box(5, 4, 0, 11, 12, 3, T.cobble), (at - 1) & 3), rotY(box(7, on ? 9 : 5, 3, 9, on ? 11 : 7, 11, T.lever), (at - 1) & 3)];
     }
-    case B.STONE_BUTTON: {
-      const pressed = (meta & 8) !== 0, at = meta & 7;
-      if (at === 0) return [box(5, 0, 6, 11, pressed ? 1 : 2, 10, T.stone)];
-      return [rotY(box(5, 6, 0, 11, 10, pressed ? 1 : 2, T.stone), (at - 1) & 3)];
-    }
     case B.ENCHANTING_TABLE:
       return [box(0, 0, 0, 16, 12, 16, [f[0], f[1], f[2], f[3], f[4], f[5]])];
-    case B.STONE_PRESSURE_PLATE:
-      return [box(1, 0, 1, 15, meta ? 0.5 : 1, 15, T.stone)];
     case B.LILY_PAD:
       return [box(0, 0, 0, 16, 0.25, 16, T.lilyPad, { skip: 0b110011, rot: [0, 0, meta & 3, meta & 3, 0, 0] })];
     case B.REPEATER:
@@ -425,15 +649,23 @@ export function collisionShapes(v: number, nb?: Neighbor): Shape[] {
   if (!def.solid) return [];
   if (def.behavior?.collision) return def.behavior.collision(metaOf(v), nb);
   if (def.render === Render.Cube) return FULL;
-  if (isFence(id)) {
+  if (isFence(id) || SHAPE[id] === BS.Wall) {
     return modelBoxes(v, nb).map(toShape).map((s) => ({ ...s, y0: 0, y1: 1.5 }));
   }
+  if (SHAPE[id] === BS.Gate) {
+    // closed: a thin 1.5-high barrier across the gate's line; open: nothing
+    if (metaOf(v) & 4) return [];
+    return (metaOf(v) & 1) ? [{ x0: 6 / 16, y0: 0, z0: 0, x1: 10 / 16, y1: 1.5, z1: 1 }] : [{ x0: 0, y0: 0, z0: 6 / 16, x1: 1, y1: 1.5, z1: 10 / 16 }];
+  }
+  if (SHAPE[id] === BS.Carpet) return [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1 / 16, z1: 1 }];
+  if (id === B2.HONEY_BLOCK) return [{ x0: 1 / 16, y0: 0, z0: 1 / 16, x1: 15 / 16, y1: 15 / 16, z1: 15 / 16 }];
+  if (id === B2.SCAFFOLDING) return [{ x0: 0, y0: 14 / 16, z0: 0, x1: 1, y1: 1, z1: 1 }];
+  if (id === B2.SOUL_SOIL || id === B2.BUBBLE_COLUMN) return id === B2.SOUL_SOIL ? FULL : [];
   if (id === B.LADDER) {
     const d = metaOf(v) & 3;
     const t = 3 / 16;
     return [[{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1, z1: t }], [{ x0: 1 - t, y0: 0, z0: 0, x1: 1, y1: 1, z1: 1 }], [{ x0: 0, y0: 0, z0: 1 - t, x1: 1, y1: 1, z1: 1 }], [{ x0: 0, y0: 0, z0: 0, x1: t, y1: 1, z1: 1 }]][d];
   }
-  if (id === B.OAK_DOOR) return modelBoxes(v, nb).map(toShape);
   if (id === B.LILY_PAD) return [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1 / 64, z1: 1 }];
   if (id === B.SNOW) return [];
   if (id === B.SOUL_SAND) return [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 14 / 16, z1: 1 }];
@@ -466,7 +698,14 @@ export function selectionShapes(v: number, nb?: Neighbor): Shape[] {
     }
     case Render.Model: {
       if (id === B.REDSTONE_WIRE) return [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1 / 16, z1: 1 }];
-      const shapes = modelBoxes(v, nb).map(toShape);
+      const shapes = modelBoxes(v, nb).map(toShape).map((s) => {
+        // flat planes (vines, fans, fire) still need something to aim at
+        const t = 1 / 16;
+        if (s.x1 - s.x0 < t) { s.x0 = Math.max(0, s.x0 - t / 2); s.x1 = Math.min(1, s.x1 + t / 2); }
+        if (s.y1 - s.y0 < t) { s.y0 = Math.max(0, s.y0 - t / 2); s.y1 = Math.min(1, s.y1 + t / 2); }
+        if (s.z1 - s.z0 < t) { s.z0 = Math.max(0, s.z0 - t / 2); s.z1 = Math.min(1, s.z1 + t / 2); }
+        return s;
+      });
       if (id === B.LADDER) return collisionShapes(v, nb);
       if (id === B.LILY_PAD) return [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1 / 16, z1: 1 }];
       return shapes;

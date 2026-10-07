@@ -8,7 +8,9 @@ import type { Game } from './game';
 import type { World } from '../world/world';
 import {
   B, BLOCKS, OPAQUE, REDSTONE, idOf, metaOf, pack, HORIZ, FACING6, isRedstoneTorch, isRedstoneComponent, isRepeater, isDiode,
+  isButton, isPlate, isDoor, isTrapdoor, isGate,
 } from '../world/blocks';
+import { buttonTicks, platePower, platePresses, weightedLevel } from './families';
 import { blockCtx, callBlock } from '../mod/blockctx';
 import { repeaterLocked } from '../world/models';
 import { containerLevel } from './devices';
@@ -42,6 +44,7 @@ export class Redstone {
     const id = idOf(v), m = metaOf(v);
     const at = isRedstoneTorch(id) ? m : m & 7;
     if (at === 0) return DOWN;
+    if (at === 5 && isButton(id)) return UP;
     return H_D6[(at - 1) & 3];
   }
 
@@ -49,6 +52,14 @@ export class Redstone {
   emit(x: number, y: number, z: number, d: number, strong: boolean): number {
     const v = this.w.get(x, y, z);
     const id = idOf(v), m = metaOf(v);
+    if (isButton(id)) {
+      if (!(m & 8)) return 0;
+      return !strong || this.attachD6(v) === d ? 15 : 0;
+    }
+    if (isPlate(id)) {
+      const p = platePower(id, m);
+      return !strong || d === DOWN ? p : 0;
+    }
     switch (id) {
       case B.REDSTONE_BLOCK: return strong ? 0 : 15;
       case B.LEVER: case B.STONE_BUTTON:
@@ -111,7 +122,7 @@ export class Redstone {
   private connectsToWire(x: number, y: number, z: number, h: number): boolean {
     const v = this.w.get(x, y, z);
     const id = idOf(v), m = metaOf(v);
-    if (id === B.REDSTONE_WIRE || id === B.LEVER || id === B.STONE_BUTTON || id === B.STONE_PRESSURE_PLATE || isRedstoneTorch(id) || id === B.REDSTONE_BLOCK || id === B.COMPARATOR || id === B.DETECTOR_RAIL || REDSTONE[id] === 1) return true;
+    if (id === B.REDSTONE_WIRE || id === B.LEVER || isButton(id) || isPlate(id) || isRedstoneTorch(id) || id === B.REDSTONE_BLOCK || id === B.COMPARATOR || id === B.DETECTOR_RAIL || REDSTONE[id] === 1) return true;
     if (isRepeater(id)) return ((m & 3) & 1) === (h & 1);
     if (id === B.OBSERVER) { const [dx, dz] = HORIZ[h]; const [fx, fy, fz] = FACING6[m & 7]; return fy === 0 && fx === dx && fz === dz; }
     return false;
@@ -295,6 +306,21 @@ export class Redstone {
     const v = w.get(x, y, z);
     const id = idOf(v), m = metaOf(v);
     if (!isRedstoneComponent(id)) return;
+    if (isDoor(id)) {
+      const ly = m & 8 ? y - 1 : y;
+      if (idOf(w.get(x, ly, z)) !== id) return;
+      const p = this.isPowered(x, ly, z) || this.isPowered(x, ly + 1, z);
+      const last = this.doorPower.get(key(x, ly, z)) ?? false;
+      if (p !== last) { this.doorPower.set(key(x, ly, z), p); g.interact!.swing(x, ly, z, p); }
+      return;
+    }
+    if (isTrapdoor(id) || isGate(id)) {
+      const p = this.isPowered(x, y, z);
+      const k = key(x, y, z);
+      const last = this.doorPower.get(k) ?? false;
+      if (p !== last) { this.doorPower.set(k, p); g.interact!.swing(x, y, z, p); }
+      return;
+    }
     switch (id) {
       case B.REDSTONE_LAMP: case B.LIT_REDSTONE_LAMP: {
         const p = this.isPowered(x, y, z);
@@ -384,17 +410,22 @@ export class Redstone {
       }
       return true;
     }
+    if (isButton(id)) {
+      if (m & 8) { w.set(x, y, z, pack(id, m & 7)); g.audio.play('click', at, 0.4, 0.5); }
+      return true;
+    }
+    if (isPlate(id)) {
+      if (!m) return true;
+      const n = this.pressing(x, y, z, id);
+      const lvl = weightedLevel(id, n);
+      const nm = BLOCKS[id].material === 'iron' || BLOCKS[id].material === 'gold' ? lvl : n ? 1 : 0;
+      if (nm !== m) { w.set(x, y, z, pack(id, nm)); if (!nm) g.audio.play('click', at, 0.3, 0.5); }
+      if (nm) g.ticker!.schedule(x, y, z, BLOCKS[id].material === 'iron' || BLOCKS[id].material === 'gold' ? 10 : 20);
+      return true;
+    }
     switch (id) {
       case B.LIT_REDSTONE_LAMP:
         if (!this.isPowered(x, y, z)) w.set(x, y, z, B.REDSTONE_LAMP);
-        return true;
-      case B.STONE_BUTTON:
-        if (m & 8) { w.set(x, y, z, pack(id, m & 7)); g.audio.play('click', at, 0.4, 0.5); }
-        return true;
-      case B.STONE_PRESSURE_PLATE:
-        if (!m) return true;
-        if (!this.occupied(x, y, z)) { w.set(x, y, z, B.STONE_PRESSURE_PLATE); g.audio.play('click', at, 0.3, 0.5); }
-        else g.ticker!.schedule(x, y, z, 20);
         return true;
       case B.REPEATER: case B.POWERED_REPEATER: {
         if (repeaterLocked(m, (dx, dy, dz) => w.get(x + dx, y + dy, z + dz))) return true;
@@ -435,6 +466,11 @@ export class Redstone {
     return false;
   }
 
+  /**
+   * Doors, trapdoors and gates remember the power they last saw (unknown = unpowered): they follow changes of it,
+   * so a hand can still open an unpowered one (vanilla keeps this as a POWERED block state).
+   */
+  private doorPower = new Map<string, boolean>();
   private torchToggles = new Map<string, number[]>();
   /** Vanilla burnout: a torch that turned on 8 times within 60 ticks stays off for a while. */
   private burnedOut(x: number, y: number, z: number): boolean {
@@ -450,9 +486,16 @@ export class Redstone {
     return false;
   }
 
-  private occupied(x: number, y: number, z: number) {
-    const g = this.game;
-    return g.entities.some((e) => !e.removed && Math.floor(e.x) === x && Math.floor(e.z) === z && e.y >= y && e.y < y + 0.5);
+  /** How many entities press the plate at (x,y,z) (stone plates only feel players and mobs). */
+  private pressing(x: number, y: number, z: number, id: number) {
+    const mobsOnly = platePresses(id) === 'mobs';
+    let n = 0;
+    for (const e of this.game.entities) {
+      if (e.removed || (e as { spectator?: boolean }).spectator) continue;
+      if (mobsOnly && !(e as { health?: number }).health) continue;
+      if (Math.floor(e.x) === x && Math.floor(e.z) === z && e.y >= y && e.y < y + 0.5) n++;
+    }
+    return n;
   }
 
   /** Per tick: pressure plates, comparators watching containers. */
@@ -461,11 +504,13 @@ export class Redstone {
     for (const e of g.entities) {
       if (e.removed || (e as { spectator?: boolean }).spectator) continue;
       const x = Math.floor(e.x), y = Math.floor(e.y + 0.01), z = Math.floor(e.z);
-      const v = w.get(x, y, z);
-      if (idOf(v) === B.STONE_PRESSURE_PLATE && !metaOf(v)) {
-        w.set(x, y, z, pack(B.STONE_PRESSURE_PLATE, 1));
+      const v = w.get(x, y, z), id = idOf(v);
+      if (isPlate(id) && !metaOf(v)) {
+        if (platePresses(id) === 'mobs' && !(e as { health?: number }).health) continue;
+        const weighted = BLOCKS[id].material === 'iron' || BLOCKS[id].material === 'gold';
+        w.set(x, y, z, pack(id, weighted ? weightedLevel(id, this.pressing(x, y, z, id)) : 1));
         g.audio.play('click', { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, 0.3, 0.6);
-        g.ticker!.schedule(x, y, z, 20);
+        g.ticker!.schedule(x, y, z, weighted ? 10 : 20);
       }
     }
     if (g.ticker!.now % 2 === 0) {
@@ -496,11 +541,11 @@ export class Redstone {
     this.game.audio.play('click', { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, 0.4, metaOf(v) & 8 ? 0.5 : 0.6);
   }
   pressButton(x: number, y: number, z: number) {
-    const v = this.w.get(x, y, z);
-    if (metaOf(v) & 8) return;
-    this.w.set(x, y, z, pack(B.STONE_BUTTON, metaOf(v) | 8));
+    const v = this.w.get(x, y, z), id = idOf(v);
+    if (!isButton(id) || metaOf(v) & 8) return;
+    this.w.set(x, y, z, pack(id, metaOf(v) | 8));
     this.game.audio.play('click', { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, 0.4, 0.6);
-    this.game.ticker!.schedule(x, y, z, 20);
+    this.game.ticker!.schedule(x, y, z, buttonTicks(id));
   }
   /** Right-click on a repeater (cycle delay) or comparator (toggle subtract mode). */
   useDiode(x: number, y: number, z: number) {

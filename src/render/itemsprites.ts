@@ -2,6 +2,7 @@
 import { Img, RGB, newImg, hex, set, get, art, shade, S } from './pixels';
 import { POTION_SPRITES } from '../game/potiondata';
 import { SPAWN_EGGS, EXTRA_EGGS, EXTRA_EGGS2 } from '../game/items';
+import { paintItems2 } from './itemsprites2';
 
 type Pal = Record<string, RGB | [number, number, number, number]>;
 const sprites: Record<string, () => Img> = {};
@@ -33,6 +34,7 @@ const TOOL_MATS: Record<string, { H: string; h: string; d: string; o: string }> 
   iron: { H: '#d8d8d8', h: '#ffffff', d: '#a8a8a8', o: '#3f3f3f' },
   golden: { H: '#f5cc27', h: '#fffcb8', d: '#c29b10', o: '#5a4200' },
   diamond: { H: '#33ebcb', h: '#b8fff4', d: '#1a9b93', o: '#0c3d3a' },
+  netherite: { H: '#4a4446', h: '#6e6668', d: '#2e2a2c', o: '#120f10' },
 };
 const TOOL_ART: Record<string, string[]> = {
   pickaxe: [
@@ -136,6 +138,7 @@ const ARMOR_MATS: Record<string, { H: string; h: string; d: string; o: string }>
   iron: TOOL_MATS.iron,
   golden: TOOL_MATS.golden,
   diamond: TOOL_MATS.diamond,
+  netherite: TOOL_MATS.netherite,
 };
 const ARMOR_ART: Record<string, string[]> = {
   helmet: [
@@ -1158,6 +1161,15 @@ sprites.missing = () => {
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) set(img, x, y, ((x >> 3) ^ (y >> 3)) & 1 ? hex('#f800f8') : hex('#000000'));
   return img;
 };
+
+// the 1.9 - 1.16 items (itemsprites2.ts)
+paintItems2({
+  sprite,
+  define: (name, make, o) => { sprites[name] = () => { const img = make(); if (o) outline(img, hex(o)); return img; }; },
+  get: (name) => (sprites[name] ? sprites[name]() : null),
+  potion: potionSprite,
+  bucket,
+});
 
 export function getItemSprite(name: string): Img | null {
   const f = sprites[name];

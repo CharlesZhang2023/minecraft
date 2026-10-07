@@ -1,5 +1,5 @@
 // Item registry. Block items share ids with their blocks (< 1000); other items start at 1000.
-import { BLOCKS, B, blockByName, Render } from '../world/blocks';
+import { BLOCKS, B, B2, blockByName, Render, DYE_COLORS, WOOD, BEDS, SHULKER_BOXES, STONE2 } from '../world/blocks';
 import { POTIONS } from './potiondata';
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'hoe' | 'sword' | 'shears';
@@ -12,7 +12,7 @@ export interface ItemDef {
   tool?: { type: ToolType; level: number; speed: number; damage: number };
   durability?: number;
   food?: { hunger: number; saturation: number; stew?: boolean };
-  armor?: { slot: 0 | 1 | 2 | 3; points: number }; // 0 helmet .. 3 boots
+  armor?: { slot: 0 | 1 | 2 | 3; points: number; toughness?: number; knockback?: number }; // 0 helmet .. 3 boots
   attack?: number;
   fuel?: number; // burn ticks in a furnace
   sprite?: string; // item sprite name (else rendered from the block)
@@ -22,6 +22,12 @@ export interface ItemDef {
   splash?: boolean;
   egg?: string; // spawn egg mob type
   drink?: boolean; // consumed by drinking (potions, milk)
+  /** Survives fire and lava as a dropped item (netherite). */
+  fireproof?: boolean;
+  /** A lingering potion (leaves a cloud). */
+  lingering?: boolean;
+  /** A music disc: the tune's name. */
+  disc?: string;
   /** Mods: the namespaced key ('mod:name'), the owning mod, its hooks and creative tab. */
   key?: string;
   mod?: string;
@@ -38,7 +44,7 @@ const byName = new Map<string, ItemDef>();
 // block items
 for (const b of BLOCKS) {
   if (!b.item || b.id === 0) continue;
-  const flat = b.render === Render.Cross || b.render === Render.Torch || b.render === Render.Rail || b.id === B.LADDER || b.id === B.LILY_PAD || b.id === B.GLASS_PANE;
+  const flat = b.render === Render.Cross || b.render === Render.Torch || b.render === Render.Rail || b.id === B.LADDER || b.id === B.LILY_PAD || b.id === B.GLASS_PANE || b.icon !== undefined || b.name.endsWith('glass_pane') || b.name === 'iron_bars' || b.name === 'vine' || b.name.endsWith('coral_fan');
   const d: ItemDef = { id: b.id, name: b.name, display: b.display, maxStack: 64, block: b.id, flatBlock: flat };
   if (b.flammable && b.sound === 'wood') d.fuel = 300;
   if (b.name.endsWith('_sapling')) d.fuel = 100;
@@ -302,6 +308,121 @@ export function dyeColor(id: number): number | undefined {
   return FIREWORK_DYES.find((d) => d.id() === id)?.col;
 }
 
+// ======================================================================== 1.9 - 1.16.5 items (appended after I6)
+const M = 60 * 20;
+/** The sixteen dyes (1.14+), in DYE_COLORS order. */
+export const DYES: number[] = DYE_COLORS.map((c) => item(`${c}_dye`, `${c.split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')} Dye`));
+/** Vanilla dye colours (firework stars, leather, beds and banners use them). */
+export const DYE_RGB = [0xf9fffe, 0xf9801d, 0xc74ebd, 0x3ab3da, 0xfed83d, 0x80c71f, 0xf38baa, 0x474f52, 0x9d9d97, 0x169c9c, 0x8932b8, 0x3c44aa, 0x835432, 0x5e7c16, 0xb02e26, 0x1d1d21];
+DYES.forEach((id, i) => FIREWORK_DYES.push({ id: () => id, name: getItem(id).display.replace(' Dye', ''), col: DYE_RGB[i] }));
+export const I7 = {
+  // the Nether update
+  NETHERITE_SCRAP: item('netherite_scrap', 'Netherite Scrap', { fireproof: true }),
+  NETHERITE_INGOT: item('netherite_ingot', 'Netherite Ingot', { fireproof: true }),
+  WARPED_FUNGUS_ON_A_STICK: item('warped_fungus_on_a_stick', 'Warped Fungus on a Stick', { maxStack: 1, durability: 100 }),
+  CARROT_ON_A_STICK: item('carrot_on_a_stick', 'Carrot on a Stick', { maxStack: 1, durability: 25 }),
+  // the sea
+  PRISMARINE_SHARD: item('prismarine_shard', 'Prismarine Shard'),
+  PRISMARINE_CRYSTALS: item('prismarine_crystals', 'Prismarine Crystals'),
+  NAUTILUS_SHELL: item('nautilus_shell', 'Nautilus Shell', { rarity: 'uncommon' }),
+  HEART_OF_THE_SEA: item('heart_of_the_sea', 'Heart of the Sea', { rarity: 'uncommon' }),
+  SCUTE: item('scute', 'Scute'),
+  TURTLE_HELMET: item('turtle_helmet', 'Turtle Shell', { maxStack: 1, durability: 275, armor: { slot: 0, points: 2 } }),
+  TRIDENT: item('trident', 'Trident', { maxStack: 1, durability: 250, attack: 9, rarity: 'rare' }),
+  DRIED_KELP: item('dried_kelp', 'Dried Kelp', { food: { hunger: 1, saturation: 0.6 } }),
+  COD_BUCKET: item('cod_bucket', 'Bucket of Cod', { maxStack: 1 }),
+  SALMON_BUCKET: item('salmon_bucket', 'Bucket of Salmon', { maxStack: 1 }),
+  PUFFERFISH_BUCKET: item('pufferfish_bucket', 'Bucket of Pufferfish', { maxStack: 1 }),
+  TROPICAL_FISH_BUCKET: item('tropical_fish_bucket', 'Bucket of Tropical Fish', { maxStack: 1 }),
+  PHANTOM_MEMBRANE: item('phantom_membrane', 'Phantom Membrane'),
+  // the End
+  CHORUS_FRUIT: item('chorus_fruit', 'Chorus Fruit', { food: { hunger: 4, saturation: 2.4 } }),
+  POPPED_CHORUS_FRUIT: item('popped_chorus_fruit', 'Popped Chorus Fruit'),
+  SHULKER_SHELL: item('shulker_shell', 'Shulker Shell'),
+  DRAGON_BREATH: item('dragon_breath', "Dragon's Breath", { rarity: 'uncommon' }),
+  // combat
+  SHIELD: item('shield', 'Shield', { maxStack: 1, durability: 336 }),
+  CROSSBOW: item('crossbow', 'Crossbow', { maxStack: 1, durability: 326 }),
+  TOTEM_OF_UNDYING: item('totem_of_undying', 'Totem of Undying', { maxStack: 1, rarity: 'uncommon' }),
+  SPECTRAL_ARROW: item('spectral_arrow', 'Spectral Arrow'),
+  // food and farming
+  BEETROOT: item('beetroot', 'Beetroot', { food: { hunger: 1, saturation: 1.2 } }),
+  BEETROOT_SEEDS: item('beetroot_seeds', 'Beetroot Seeds', { block: B2.BEETROOTS }),
+  BEETROOT_SOUP: item('beetroot_soup', 'Beetroot Soup', { maxStack: 1, food: { hunger: 6, saturation: 7.2, stew: true } }),
+  MELON_SEEDS: item('melon_seeds', 'Melon Seeds', { block: B2.MELON_STEM }),
+  SWEET_BERRIES: item('sweet_berries', 'Sweet Berries', { block: B2.SWEET_BERRY_BUSH, food: { hunger: 2, saturation: 0.4 } }),
+  HONEY_BOTTLE: item('honey_bottle', 'Honey Bottle', { maxStack: 16, food: { hunger: 6, saturation: 1.2 }, drink: true }),
+  HONEYCOMB: item('honeycomb', 'Honeycomb'),
+  PUMPKIN_PIE: item('pumpkin_pie', 'Pumpkin Pie', { food: { hunger: 8, saturation: 4.8 } }),
+  CAKE: item('cake', 'Cake', { maxStack: 1, block: B2.CAKE }),
+  RABBIT: item('rabbit', 'Raw Rabbit', { food: { hunger: 3, saturation: 1.8 } }),
+  COOKED_RABBIT: item('cooked_rabbit', 'Cooked Rabbit', { food: { hunger: 5, saturation: 6 } }),
+  RABBIT_STEW: item('rabbit_stew', 'Rabbit Stew', { maxStack: 1, food: { hunger: 10, saturation: 12, stew: true } }),
+  RABBIT_FOOT: item('rabbit_foot', "Rabbit's Foot"),
+  RABBIT_HIDE: item('rabbit_hide', 'Rabbit Hide'),
+  POISONOUS_POTATO: item('poisonous_potato', 'Poisonous Potato', { food: { hunger: 2, saturation: 1.2 } }),
+  ENCHANTED_GOLDEN_APPLE: item('enchanted_golden_apple', 'Enchanted Golden Apple', { food: { hunger: 4, saturation: 9.6 }, rarity: 'epic' }),
+  SUSPICIOUS_STEW: item('suspicious_stew', 'Suspicious Stew', { maxStack: 1, food: { hunger: 6, saturation: 7.2, stew: true } }),
+  // materials and tools
+  IRON_NUGGET: item('iron_nugget', 'Iron Nugget'),
+  EXPERIENCE_BOTTLE: item('experience_bottle', "Bottle o' Enchanting", { rarity: 'uncommon' }),
+  LEAD: item('lead', 'Lead'),
+  LEATHER_HORSE_ARMOR: item('leather_horse_armor', 'Leather Horse Armor', { maxStack: 1 }),
+  ITEM_FRAME: item('item_frame', 'Item Frame'),
+  PAINTING: item('painting', 'Painting'),
+  ARMOR_STAND: item('armor_stand', 'Armor Stand', { maxStack: 16 }),
+  CHEST_MINECART: item('chest_minecart', 'Minecart with Chest', { maxStack: 1 }),
+  FURNACE_MINECART: item('furnace_minecart', 'Minecart with Furnace', { maxStack: 1 }),
+  HOPPER_MINECART: item('hopper_minecart', 'Minecart with Hopper', { maxStack: 1 }),
+  TNT_MINECART: item('tnt_minecart', 'Minecart with TNT', { maxStack: 1 }),
+  MAP: item('map', 'Empty Map'),
+  FILLED_MAP: item('filled_map', 'Map', { maxStack: 1 }),
+  WRITABLE_BOOK: item('writable_book', 'Book and Quill', { maxStack: 1 }),
+  KNOWLEDGE_UNUSED: item('unused_item_1', 'Unused'),
+};
+/** Boats of every wood (the oak boat is I2.BOAT). */
+export const BOATS: Record<string, number> = { oak: I2.BOAT };
+for (const k of ['spruce', 'birch', 'jungle', 'acacia', 'dark_oak'] as const) BOATS[k] = item(`${k}_boat`, `${k.split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')} Boat`, { maxStack: 1, fuel: 1200 });
+/** Netherite: tools and armour a step above diamond that float on lava. */
+export const NETHERITE = { level: 4, speed: 9, durability: 2031, dmg: 4 };
+for (const k of TOOL_KINDS) {
+  const name = `netherite_${k.type}`;
+  TOOLS[name] = item(name, `Netherite ${k.display}`, {
+    maxStack: 1, durability: NETHERITE.durability, fireproof: true, rarity: 'common',
+    tool: { type: k.type, level: NETHERITE.level, speed: NETHERITE.speed, damage: k.base + NETHERITE.dmg },
+    attack: k.type === 'sword' ? 4 + NETHERITE.dmg : k.type === 'axe' ? 3 + NETHERITE.dmg : k.type === 'pickaxe' ? 2 + NETHERITE.dmg : k.type === 'shovel' ? 1 + NETHERITE.dmg : 1,
+  });
+}
+ARMOR_SLOTS.forEach((s, i) => {
+  const name = `netherite_${s.name}`;
+  ARMOR[name] = item(name, `Netherite ${s.display}`, { maxStack: 1, durability: s.mul * 37, fireproof: true, armor: { slot: i as 0 | 1 | 2 | 3, points: [3, 8, 6, 3][i], toughness: 3, knockback: 0.1 } });
+});
+// 1.9 armour toughness: diamond 2
+for (const s of ARMOR_SLOTS) getItem(ARMOR[`diamond_${s.name}`]).armor!.toughness = 2;
+HORSE_ARMOR[I7.LEATHER_HORSE_ARMOR] = { points: 3, kind: 'leather' };
+/** Potion forms of 1.9+: lingering potions and tipped arrows, one per potion type. */
+export const LINGERING_ITEMS: Record<string, number> = {};
+export const TIPPED_ARROWS: Record<string, number> = {};
+for (const p of POTIONS) LINGERING_ITEMS[p.key] = item(`lingering_potion_${p.key}`, p.key === 'water' ? 'Lingering Water Bottle' : 'Lingering ' + p.name, { maxStack: 1, potion: p.key, lingering: true, sprite: `lingering_potion_${p.sprite}` });
+for (const p of POTIONS) if (p.effects.length) TIPPED_ARROWS[p.key] = item(`tipped_arrow_${p.key}`, 'Arrow of ' + p.name.replace(/^Potion of /, ''), { potion: p.key, sprite: `tipped_arrow_${p.sprite}` });
+/** Music discs (the jukebox plays each disc's own tune). */
+export const DISCS = ['13', 'cat', 'blocks', 'chirp', 'far', 'mall', 'mellohi', 'stal', 'strad', 'ward', '11', 'wait', 'pigstep'].map((n) => item(`music_disc_${n}`, 'Music Disc', { maxStack: 1, rarity: 'rare', sprite: `music_disc_${n}`, disc: n }));
+void M;
+
+// block items of the new blocks: sizes and fuel that differ from the defaults
+for (const id of [...BEDS]) { const d = ITEMS.get(id); if (d) d.maxStack = 1; }
+for (const w of Object.values(WOOD)) {
+  for (const id of [w.sign]) { const d = ITEMS.get(id); if (d) d.maxStack = 16; }
+  if (!w.nether) for (const id of [w.planks, w.log, w.strippedLog, w.wood, w.strippedWood, w.stairs, w.fence, w.gate, w.trapdoor]) { const d = ITEMS.get(id); if (d) d.fuel ??= 300; }
+  if (!w.nether) for (const id of [w.slab, w.button, w.plate, w.sapling, w.door]) { const d = ITEMS.get(id); if (d) d.fuel ??= w.slab === id ? 150 : id === w.door ? 200 : 100; }
+}
+for (const id of [B2.LANTERN, B2.SOUL_LANTERN, B2.CHAIN, B2.END_ROD]) { const d = ITEMS.get(id); if (d) d.flatBlock = true; }
+for (const id of SHULKER_BOXES.concat(B2.SHULKER_BOX)) { const d = ITEMS.get(id); if (d) d.maxStack = 1; }
+for (const id of [STONE2.SEA_LANTERN, B2.CRYING_OBSIDIAN, B2.NETHERITE_BLOCK, B2.ANCIENT_DEBRIS]) { const d = ITEMS.get(id); if (d && (id === B2.NETHERITE_BLOCK || id === B2.ANCIENT_DEBRIS)) d.fireproof = true; }
+ITEMS.get(B2.BAMBOO)!.fuel = 50;
+ITEMS.get(B2.DRIED_KELP_BLOCK)!.fuel = 4000;
+ITEMS.get(B2.SCAFFOLDING)!.fuel = 50;
+
 /** How many items the game itself has (before any mod's). */
 export const VANILLA_ITEM_COUNT = ITEMS.size;
 
@@ -356,7 +477,7 @@ export const maxStack = (s: ItemStack) => getItem(s.id).maxStack;
 
 // ------------------------------------------------------------------ block drops
 import { Random } from '../noise';
-import { isLeaves } from '../world/blocks';
+import { isLeaves, Shape, BlockDef } from '../world/blocks';
 
 export function blockDrops(blockId: number, meta: number, tool: ItemDef | undefined, rng: Random, silk = false): ItemStack[] {
   const def = BLOCKS[blockId];
@@ -368,6 +489,8 @@ export function blockDrops(blockId: number, meta: number, tool: ItemDef | undefi
   if (def.behavior?.drops) return def.behavior.drops({ id: blockId, meta, tool, rng, silk });
   if (silk && def.item && blockId !== B.SPAWNER && !def.needsSupport) return [stack(blockId)];
   const shears = tool?.tool?.type === 'shears';
+  const fam = familyDrops(blockId, meta, def, shears, rng, tool);
+  if (fam) return fam;
   switch (blockId) {
     case B.OAK_LEAVES: case B.SPRUCE_LEAVES: case B.BIRCH_LEAVES: {
       if (shears) return [stack(blockId)];
@@ -416,6 +539,55 @@ export function blockDrops(blockId: number, meta: number, tool: ItemDef | undefi
   if (!def.item) return [];
   return [stack(blockId)];
 }
+
+/** Drops of the block families and the 1.9-1.16 blocks; null = the old rules decide. */
+function familyDrops(id: number, meta: number, def: BlockDef, shears: boolean, rng: Random, tool: ItemDef | undefined): ItemStack[] | null {
+  const fortune = 0; void tool;
+  switch (def.shape) {
+    case Shape.Slab: return (meta & 7) === 2 ? [stack(id, 2)] : [stack(id)];
+    case Shape.Leaves: {
+      if (shears) return [stack(id)];
+      const out: ItemStack[] = [];
+      const sap = def.sapling ? blockByName(def.sapling)?.id : undefined;
+      if (sap && rng.int(id === WOOD.jungle.leaves ? 40 : 20) === 0) out.push(stack(sap));
+      if ((id === B.OAK_LEAVES || id === WOOD.dark_oak.leaves) && rng.int(200) === 0) out.push(stack(I.APPLE));
+      if (rng.int(50) === 0) out.push(stack(I.STICK, 1 + rng.int(2)));
+      return out;
+    }
+    case Shape.DoublePlant:
+      if (id === B2.TALL_GRASS2 || id === B2.LARGE_FERN) return shears ? [stack(id === B2.TALL_GRASS2 ? B.TALL_GRASS : B.FERN, 2)] : rng.int(8) === 0 ? [stack(I.WHEAT_SEEDS)] : [];
+      if (id === B2.TALL_SEAGRASS) return shears ? [stack(B2.SEAGRASS, 2)] : [];
+      return [stack(id)];
+    case Shape.Bed: return [stack(id === B.BED ? I.RED_BED : id)];
+    case Shape.Vine: return shears ? [stack(id)] : [];
+    case Shape.Campfire: return [stack(id === B2.SOUL_CAMPFIRE ? B2.SOUL_SOIL : I.CHARCOAL, id === B2.SOUL_CAMPFIRE ? 1 : 2)];
+  }
+  switch (id) {
+    case B2.NETHER_GOLD_ORE: return [stack(I.GOLD_NUGGET, 2 + rng.int(5) + fortune)];
+    case STONE2.GILDED_BLACKSTONE: return rng.int(10) === 0 ? [stack(I.GOLD_NUGGET, 2 + rng.int(4))] : [stack(id)];
+    case B2.REDSTONE_ORE_LIT: return [stack(I.REDSTONE, 4 + rng.int(2))];
+    case STONE2.SEA_LANTERN: return [stack(I7.PRISMARINE_CRYSTALS, 2 + rng.int(2))];
+    case B2.BROWN_MUSHROOM_BLOCK: case B2.RED_MUSHROOM_BLOCK: { const n = Math.max(0, rng.int(10) - 7); return n ? [stack(id === B2.RED_MUSHROOM_BLOCK ? B.RED_MUSHROOM : B.BROWN_MUSHROOM, n)] : []; }
+    case B2.SEAGRASS: case B2.NETHER_SPROUTS: return shears ? [stack(id)] : [];
+    case B2.SWEET_BERRY_BUSH: return meta >= 2 ? [stack(I7.SWEET_BERRIES, meta === 3 ? 2 + rng.int(2) : 1 + rng.int(2))] : [];
+    case B2.BEETROOTS: return meta >= 3 ? [stack(I7.BEETROOT), stack(I7.BEETROOT_SEEDS, 1 + rng.int(3))] : [stack(I7.BEETROOT_SEEDS)];
+    case B2.MELON_STEM: return [stack(I7.MELON_SEEDS)];
+    case B2.COCOA: return [stack(I.COCOA, meta >> 2 >= 2 ? 2 + rng.int(2) : 1)];
+    case B2.FLOWER_POT: { const out = [stack(B2.FLOWER_POT)]; const pl = POT_PLANT_IDS[meta]; if (pl) out.push(stack(pl)); return out; }
+    case B2.SEA_PICKLE: return [stack(id, (meta & 3) + 1)];
+    case B2.TURTLE_EGG: return [];
+    case B2.CHORUS_PLANT: return rng.int(2) ? [stack(I7.CHORUS_FRUIT)] : [];
+    case B2.CHORUS_FLOWER: return [stack(id)];
+    case B2.KELP: case B2.KELP_PLANT: return [stack(B2.KELP)];
+    case B2.BAMBOO: case B2.BAMBOO_SAPLING: return [stack(B2.BAMBOO)];
+    case B2.GRASS_PATH: case B2.MYCELIUM: return [stack(B.DIRT)];
+    case B2.BEE_NEST: case B2.INFESTED_STONE: case B2.INFESTED_COBBLESTONE: case B2.INFESTED_STONE_BRICKS: return [];
+    case B2.TRIPWIRE: return [stack(I.STRING)];
+  }
+  return null;
+}
+/** What a flower pot can hold, by meta (models.ts keeps the same list). */
+const POT_PLANT_IDS: number[] = [0, B.OAK_SAPLING, B.SPRUCE_SAPLING, B.BIRCH_SAPLING, WOOD.jungle.sapling, WOOD.acacia.sapling, WOOD.dark_oak.sapling, B.DANDELION, B.POPPY, B2.BLUE_ORCHID, B.CORNFLOWER, B.RED_MUSHROOM, B.BROWN_MUSHROOM, B.DEAD_BUSH, B.FERN, B.CACTUS];
 
 export function blockItemFor(name: string): number {
   const b = blockByName(name);
