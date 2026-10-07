@@ -3,6 +3,7 @@
 // (speed or haste; resistance or jump boost at two levels; strength at three; at four, regeneration or the first
 // power at level II). A conduit in a frame of prismarine under water gives Conduit Power to swimmers and, with a
 // full frame, attacks monsters near it.
+import { advanceNear } from './advancements';
 import type { Game } from './game';
 import type { World } from '../world/world';
 import { B, B2, STONE2, BLOCKS, OPAQUE, STAINED_GLASS, STAINED_PANES } from '../world/blocks';
@@ -55,6 +56,7 @@ export function tickBeacon(g: Game, x: number, y: number, z: number, t: BeaconTi
     if (t.beam && !beam) g.audio.play('beacon.deactivate', at, 1, 1);
     t.levels = levels; t.beam = beam;
     w.setTile(x, y, z, t as never);
+    if (levels > 0) advanceNear(g, { x, y, z }, 'beacon', { levels }, 20);
   }
   if (!levels || !beam || !t.primary) return;
   const range = 10 + levels * 10, dur = (9 + levels * 2) * 20;

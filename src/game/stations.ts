@@ -62,6 +62,7 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
       // glowstone charges it (four charges); used in the Nether it sets the spawn point, anywhere else it explodes
       if (held?.id === B.GLOWSTONE && m < 4) {
         w.set(x, y, z, pack(id, m + 1));
+        g.achievements.event('anchor', { charges: m + 1 });
         h.consume(1);
         g.audio.play('anchor.charge', at(x, y, z), 1, 1);
         return true;
@@ -86,6 +87,7 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
       if (held.count > 1) { held.count--; if (p.inventory.add(lc) > 0) g.dropItem(p.x, p.y + 1, p.z, lc); }
       else p.inventory.setHeld(lc);
       g.audio.play('lodestone.lock', at(x, y, z), 1, 1);
+      g.achievements.event('lodestone');
       return true;
     }
     case B2.BEE_NEST: case B2.BEEHIVE:
@@ -180,6 +182,7 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
     case B2.CAKE: {
       if (!p.creative && p.food >= 20) return false;
       p.eat(2, 0.4);
+      g.achievements.event('eat', { ate: 'cake' });
       if (m >= 6) w.set(x, y, z, B.AIR);
       else w.set(x, y, z, pack(id, m + 1));
       g.audio.play('eat', p, 0.5, 1);

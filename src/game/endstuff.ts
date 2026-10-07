@@ -107,4 +107,5 @@ export function tickDragonRespawn(g: Game) {
   meta.dragonKilled = false;
   meta.dragonRespawn = 0;
   g.ensureDragon();
+  for (const sp of g.players) if (sp.dim === 'end') sp.achievements.event('dragon_respawn');
 }

@@ -178,9 +178,10 @@ export class ServerPlayer {
     this.interact = new Interaction(game);
     this.ui = new ServerUI(this, game);
     this.achievements = new Achievements(game);
-    this.achievements.onUnlock = (id, title) => {
+    this.achievements.onUnlock = (id, title, kind) => {
       this.send({ t: 'ach', id });
-      for (const p of game.players) p.send({ t: 'chat', msg: `${this.name} has just earned the achievement §a[${title}]` });
+      const what = kind === 'achievement' ? 'has just earned the achievement §a' : kind === 'challenge' ? 'has completed the challenge §5' : kind === 'goal' ? 'has reached the goal §a' : 'has made the advancement §a';
+      for (const p of game.players) p.send({ t: 'chat', msg: `${this.name} ${what}[${title}]` });
     };
   }
 

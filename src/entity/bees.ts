@@ -246,6 +246,7 @@ export function harvestHive(g: Game, p: Player, x: number, y: number, z: number,
   else return false;
   t.honey = 0;
   setHoney(w, x, y, z, t);
+  g.playerOf(p)?.achievements.event('honey', { smoked: smoked(w, x, y, z) && held.id !== I.SHEARS });
   if (!smoked(w, x, y, z)) {
     releaseBees(g, x, y, z, t, p);
     for (const e of g.entities) if (e instanceof Bee && e.hive && e.hive.x === x && e.hive.y === y && e.hive.z === z) e.anger(p);

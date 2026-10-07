@@ -1,6 +1,7 @@
 // Horses, donkeys and mules (1.8 behaviour): tame one by riding it until it stops bucking you off (food makes
 // it more willing), put a saddle on it to steer, hold jump to charge a leap. Horses can wear armour; donkeys
 // and mules can carry a chest. A horse and a donkey have a mule, which can't breed.
+import { advanceNear } from '../game/advancements';
 import { Animal, type Mob } from './mobs';
 import type { Entity } from './entity';
 import type { World } from '../world/world';
@@ -238,6 +239,7 @@ export class Horse extends Animal implements Mount {
     if (rng.int(50) !== 0) return;
     if (rng.int(100) < this.temper) {
       this.tame = true;
+      advanceNear(this.game, this, 'tame', {}, 4);
       for (let i = 0; i < 7; i++) this.game.particles?.heart(this.x + rng.next() * 1.4 - 0.7, this.y + this.height + 0.2, this.z + rng.next() * 1.4 - 0.7);
       this.game.audio.play(this.kind === 'horse' ? 'horse.say' : 'donkey.say', this, 1, 1);
       return;

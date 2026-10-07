@@ -1,7 +1,8 @@
 // Classic achievements with the 1.8-style "Achievement get!" popup.
 import type { Game } from './game';
 import { B, isLog } from '../world/blocks';
-import { I, I2, TOOLS } from './items';
+import { I, I2, TOOLS, itemByName, getItem } from './items';
+import { ADVANCEMENTS, ADV_BY_ID, type Adv, type ScanCtx } from './advancements';
 import type { Ctx } from '../ui/gui';
 
 interface Ach { id: string; name: string; desc: string; icon: number }
@@ -31,9 +32,11 @@ const LIST: Ach[] = [
 
 export class Achievements {
   unlocked = new Set<string>();
-  private queue: { a: Ach; t: number }[] = [];
-  /** Server side: a player earned one (their client shows it). */
-  onUnlock: ((id: string, name: string) => void) | null = null;
+  private queue: { a: Ach; t: number; frame?: string }[] = [];
+  /** Server side: a player earned one (their client shows it); `kind` is 'achievement' or an advancement's frame. */
+  onUnlock: ((id: string, name: string, kind: string) => void) | null = null;
+  /** Where levitation began (for "Great View From Up Here"). */
+  levitateFrom: number | null = null;
   /** Client side: only the server awards achievements; the client just shows them. */
   passive = false;
   constructor(private game: Game) {
@@ -56,19 +59,70 @@ export class Achievements {
 
   unlock(id: string) {
     if (this.passive || this.unlocked.has(id) || this.game.panorama) return;
+    if (id.startsWith('adv:')) {
+      const adv = ADV_BY_ID.get(id.slice(4));
+      if (!adv) return;
+      this.unlocked.add(id);
+      this.onUnlock?.(id, adv.title, adv.frame ?? 'task');
+      return;
+    }
     const a = LIST.find((x) => x.id === id);
     if (!a) return;
     this.unlocked.add(id);
-    this.onUnlock?.(id, a.name);
+    this.onUnlock?.(id, a.name, 'achievement');
   }
+  has(id: string) { return this.unlocked.has(id); }
 
   /** Client: the server says we earned one. */
   show(id: string) {
+    if (id.startsWith('adv:')) {
+      const adv = ADV_BY_ID.get(id.slice(4));
+      if (!adv) return;
+      this.unlocked.add(id);
+      this.queue.push({ a: { id, name: adv.title, desc: adv.desc, icon: itemByName(adv.icon)?.id ?? I.BOOK }, t: performance.now(), frame: adv.frame ?? 'task' });
+      this.game.audio.play(adv.frame === 'challenge' ? 'levelup' : 'levelup', null, adv.frame === 'challenge' ? 0.6 : 0.35, adv.frame === 'challenge' ? 0.8 : 1.3);
+      return;
+    }
     const a = LIST.find((x) => x.id === id);
     if (!a) return;
     this.unlocked.add(id);
     this.queue.push({ a, t: performance.now() });
     this.game.audio.play('levelup', null, 0.35, 1.3);
+  }
+  /** Client: everything earned so far (sent on joining). */
+  loadShown(ids: string[]) { for (const id of ids) this.unlocked.add(id); }
+
+  // ------------------------------------------------------------------ advancements
+  /** Something happened that advancements listen for. */
+  event(ev: string, arg: Record<string, unknown> = {}) {
+    if (this.passive) return;
+    for (const a of ADVANCEMENTS) {
+      if (a.on === ev && (!a.when || a.when(arg))) this.unlock('adv:' + a.id);
+      if (a.every && a.key && !(a.scan)) this.progress(a, a.key(arg));
+    }
+  }
+  /** The periodic look at the player. */
+  scan(c: ScanCtx) {
+    if (this.passive) return;
+    for (const a of ADVANCEMENTS) {
+      if (this.unlocked.has('adv:' + a.id)) continue;
+      if (a.has?.some((n) => c.items.has(n))) this.unlock('adv:' + a.id);
+      else if (a.scan?.(c)) this.unlock('adv:' + a.id);
+      else if (a.every && a.key && (a.id === 'nether/explore_nether' || a.id === 'adventure/adventuring_time')) this.progress(a, a.key(c));
+    }
+  }
+  /** Count one more of an "every one of" advancement. */
+  private progress(a: Adv, key: string | null) {
+    if (!key || this.unlocked.has('adv:' + a.id)) return;
+    const all = a.every!();
+    if (!all.includes(key)) return;
+    this.unlocked.add(`p:${a.id}:${key}`);
+    if (all.every((k) => this.unlocked.has(`p:${a.id}:${k}`))) this.unlock('adv:' + a.id);
+  }
+  /** How many of an "every one of" advancement are done. */
+  progressOf(a: Adv): [number, number] {
+    const all = a.every?.() ?? [];
+    return [all.filter((k) => this.unlocked.has(`p:${a.id}:${k}`)).length, all.length];
   }
 
   // ------------------------------------------------------------------ triggers
@@ -90,7 +144,8 @@ export class Achievements {
   onSmelt(id: number) {
     if (id === I.IRON_INGOT) this.unlock('acquireIron');
   }
-  onKill(type: string, byArrowFrom?: number, byFireball = false) {
+  onKill(type: string, byArrowFrom?: number, byFireball = false, extra: Record<string, unknown> = {}) {
+    this.event('kill', { type, kill: type, distance: byArrowFrom ?? 0, source: byFireball ? 'explosion' : byArrowFrom !== undefined ? 'arrow' : 'melee', ...extra });
     if (['Zombie', 'Skeleton', 'Creeper', 'Spider', 'Ghast', 'Zombified Piglin', 'Piglin', 'Piglin Brute', 'Hoglin', 'Zoglin', 'Wither Skeleton', 'Magma Cube', 'Blaze', 'Shulker', 'Enderman', 'Slime', 'Husk', 'Drowned', 'Stray', 'Zombie Villager', 'Cave Spider', 'Witch', 'Pillager', 'Vindicator', 'Evoker', 'Vex', 'Ravager', 'Guardian', 'Elder Guardian', 'Phantom', 'Endermite', 'Wither'].includes(type)) this.unlock('killEnemy');
     if (type === 'Skeleton' && byArrowFrom !== undefined && byArrowFrom > 50) this.unlock('snipeSkeleton');
     if (type === 'Ghast' && byFireball) this.unlock('ghast');
@@ -122,7 +177,9 @@ export class Achievements {
     ctx.fillStyle = '#3a3a3a';
     ctx.fillRect(x + 4, y + 4, 24, 24);
     ctx.drawImage(c.icons.get(cur.a.icon || I.BOOK), x + 8, y + 8, 16, 16);
-    gui.text(ctx, 'Achievement get!', x + 30, y + 7, '#FFFF00', false);
+    const head = cur.frame === 'challenge' ? 'Challenge Complete!' : cur.frame === 'goal' ? 'Goal Reached!' : cur.frame ? 'Advancement Made!' : 'Achievement get!';
+    gui.text(ctx, head, x + 30, y + 7, cur.frame === 'challenge' ? '#FF55FF' : '#FFFF00', false);
     gui.text(ctx, cur.a.name, x + 30, y + 18, '#FFFFFF', false);
   }
 }
+void getItem;

@@ -128,6 +128,7 @@ export function shieldBlocks(g: Game, p: Player, amount: number, source: DamageS
   const sh = hand === 'main' ? p.inventory.held()! : p.inventory.offhand!;
   if (amount >= 3) wearShield(g, p, hand, sh, 1 + Math.floor(amount));
   g.audio.play('shield.block', p, 1, 0.8 + Math.random() * 0.4);
+  if (source === 'arrow' || source === 'trident' || source === 'firework' || (from as unknown as { shooter?: Entity }).shooter) g.playerOf(p)?.achievements.event('deflect');
   const holder = (from as unknown as { shooter?: Entity }).shooter ?? from;
   if (holder instanceof LivingEntity && source !== 'arrow' && source !== 'explosion') {
     holder.knockback(p.x - holder.x, p.z - holder.z, 0.5);
@@ -180,6 +181,7 @@ export function fireCrossbow(g: Game, p: Player, cb: ItemStack, eye: { x: number
   const ch = cb.charged;
   if (!ch) return;
   cb.charged = undefined;
+  g.playerOf(p)?.achievements.event('crossbow');
   const multi = level(cb, 'multishot') > 0;
   const pierce = level(cb, 'piercing');
   const yaws = multi ? [0, -10, 10] : [0];
@@ -282,6 +284,7 @@ export function releaseTrident(g: Game, p: Player, s: ItemStack, ticks: number, 
   t.shoot(look.x, look.y, look.z, 2.5, 1);
   t.pickup = !p.creative;
   g.addEntity(t);
+  g.playerOf(p)?.achievements.event('trident');
   wear(1);
   if (!p.creative) takeHeld();
   g.audio.play('trident.throw', p, 1, 1);
@@ -331,6 +334,7 @@ export function useTotem(g: Game, p: Player, source: DamageSource): boolean {
   if (!hand) return false;
   if (hand === 'main') p.inventory.setHeld(null); else p.inventory.offhand = null;
   p.health = 1;
+  g.playerOf(p)?.achievements.event('totem');
   p.dead = false;
   p.clearEffects();
   p.addEffect('regeneration', 900, 1);

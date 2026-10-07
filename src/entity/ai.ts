@@ -3,6 +3,7 @@
 // and running goals that can't continue stop. The goals here are shared by the mobs added for 1.16 (piglins,
 // hoglins, striders, shulkers, golems, illagers, aquatic and other mobs): wander, look, swim, panic, flee, avoid,
 // tempt, breed, follow a parent, melee and ranged attacks, and target selection.
+import { advanceNear } from '../game/advancements';
 import { Mob } from './mobs';
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
@@ -266,6 +267,7 @@ export const breed = (priority: number, speed: number, makeBaby?: (m: GoalMob, m
       else if (m.id < mate.id) {
         m.loveTicks = mate.loveTicks = 0;
         m.breedCooldown = mate.breedCooldown = 6000;
+        advanceNear(m.game, m, 'breed', { bred: (m as unknown as { typeName: string }).typeName });
         if (makeBaby) makeBaby(m, mate);
         else {
           const b = m.game.interact!.spawnMob(m.kind, m.x, m.y, m.z, true) as Mob | null;

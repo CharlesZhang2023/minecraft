@@ -1,4 +1,5 @@
 // Fishing bobber with vanilla-style wait / approach / bite timing.
+import { getItem } from '../game/items';
 import { Entity } from './entity';
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
@@ -97,6 +98,7 @@ export class FishingHook extends Entity {
     let dmg = 0;
     if (this.bite > 0) {
       const loot = this.loot();
+      g.playerOf(p)?.achievements.event('fish', { item: getItem(loot.id).name });
       const e = g.dropItem(this.x, this.y + 0.2, this.z, loot, false, 0);
       if (e) {
         const dx = p.x - this.x, dy = p.y - this.y, dz = p.z - this.z;

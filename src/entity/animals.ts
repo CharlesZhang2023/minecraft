@@ -49,6 +49,7 @@ export abstract class Tameable extends GoalMob {
   tameBy(game: Game) {
     this.owner = true;
     this.ownerName = game.ctx?.name ?? '';
+    game.achievements.event('tame');
     this.sitting = true;
     this.path = null;
     this.target = null;
@@ -928,6 +929,7 @@ export abstract class Fish extends Mob {
     const out = stack(this.bucket) as ItemStack & { fish?: Record<string, unknown> };
     out.fish = this.bucketData();
     swapHeld(game, out);
+    game.achievements.event('bucket_fish');
     this.removed = true;
     game.audio.play('splash', this, 0.4, 1.4);
     return true;

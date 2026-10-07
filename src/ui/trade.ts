@@ -100,6 +100,7 @@ export class TradeScreen extends ContainerScreen {
     t.uses++;
     this.game.player!.addXp(3 + Math.floor(Math.random() * 4));
     villagerTraded(this.villager, t);
+    this.game.achievements.event('trade');
     return true;
   }
   override onClose() {

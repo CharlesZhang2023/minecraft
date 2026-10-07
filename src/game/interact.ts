@@ -1,4 +1,5 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
+import { advanceNear } from './advancements';
 import { createMap } from './maps';
 import { buildGolem } from '../entity/overworldmobs';
 import { BOATS } from './items';
@@ -194,6 +195,7 @@ export class Interaction {
     // mods may keep the block
     if (Events.breakBlock.any && Events.breakBlock.fire({ game: g, player: p, x, y, z, v }) === 'fail') return;
     const tile = w.getTile(x, y, z);
+    if (id === B2.BEE_NEST && level(p.inventory.held(), 'silk_touch') > 0 && ((tile as { bees?: unknown[] } | undefined)?.bees?.length ?? 0) >= 3) g.achievements.event('silk_nest');
     if (id === B2.BEE_NEST || id === B2.BEEHIVE) hiveBroken(g, x, y, z, p);
     const held = p.inventory.held();
     const tool = held ? getItem(held.id) : undefined;
@@ -878,6 +880,7 @@ export class Interaction {
     }
     if (this.eating >= 32 && item.food) {
       p.eat(item.food.hunger, item.food.saturation);
+      g.achievements.event('eat', { ate: item.name });
       g.audio.play('burp', p, 0.5, this.rng.next() * 0.1 + 0.9);
       if (held.id === I.GOLDEN_APPLE) { p.addEffect('regeneration', 100, 1); p.addEffect('absorption', 2400, 0); }
       if (held.id === I.ROTTEN_FLESH && this.rng.next() < 0.8) p.addEffect('hunger', 600, 0);
@@ -1140,6 +1143,7 @@ export class Interaction {
     // tile entities
     if (blockId === B.CHEST) w.setTile(x, y, z, undefined);
     const placed = this.setPlaced(x, y, z, v, blockId);
+    if (placed && SEEDED.includes(BLOCKS[blockId].name)) g.achievements.event('plant');
     // a shulker box item brings its contents back
     if (placed && held.box && isShulkerBox(blockId)) w.setTile(x, y, z, { type: 'chest', items: held.box.map((s) => (s ? { ...s } : null)) } as never);
     return placed;
@@ -1155,9 +1159,9 @@ export class Interaction {
     // a placed sign asks for its words
     if (/_sign$/.test(def.name)) (g.ui as unknown as { openSign?(x: number, y: number, z: number): void }).openSign?.(x, y, z);
     // a pumpkin on iron or snow blocks brings a golem to life
-    if (idOf(v) === B2.CARVED_PUMPKIN || idOf(v) === B.JACK_O_LANTERN) buildGolem(g, x, y, z);
+    if (idOf(v) === B2.CARVED_PUMPKIN || idOf(v) === B.JACK_O_LANTERN) { const m = buildGolem(g, x, y, z); if (m) advanceNear(g, m, 'golem', {}, 8); }
     // three wither skeleton skulls on a T of soul sand: the Wither
-    if ((idOf(v) === B2.WITHER_SKELETON_SKULL || idOf(v) === B2.WITHER_SKELETON_WALL_SKULL) && w.dimension !== undefined) buildWither(g, x, y, z);
+    if ((idOf(v) === B2.WITHER_SKELETON_SKULL || idOf(v) === B2.WITHER_SKELETON_WALL_SKULL) && w.dimension !== undefined) { const wi = buildWither(g, x, y, z); if (wi) advanceNear(g, wi, 'wither', {}, 50); }
     if (Events.blockPlaced.any) Events.blockPlaced.fire({ game: g, player: this.player, x, y, z, v });
     g.playBlockSound(soundBlock, x, y, z, 'place');
     this.consume(1);
@@ -1269,6 +1273,7 @@ export class Interaction {
         let dmg = Math.ceil(speed * a.damageBase);
         if ((a as unknown as { crit?: boolean }).crit) dmg += this.rng.int(Math.floor(dmg / 2) + 2);
         if (e.damage(dmg, 'arrow', a.shooter ?? a)) {
+          if (a.shooter instanceof Player) g.playerOf(a.shooter)?.achievements.event('arrow_hit');
           const h = Math.hypot(a.vx, a.vz) || 1;
           const punch = (a as unknown as { punch?: number }).punch ?? 0;
           e.vx += (a.vx / h) * 0.6 * (0.6 + punch * 0.6);
@@ -1498,4 +1503,5 @@ function bannerItem(id: number, tile: unknown): ItemStack {
 }
 /** The illagers' banner: on white, a cyan lozenge, grey stripes and bordure, a black fess (vanilla's eight layers). */
 const OMINOUS = [{ p: 'mr', c: 9 }, { p: 'bs', c: 8 }, { p: 'cs', c: 7 }, { p: 'bo', c: 8 }, { p: 'ms', c: 15 }, { p: 'hh', c: 8 }, { p: 'mc', c: 8 }, { p: 'bo', c: 15 }];
-
+/** Crops planted from seeds ("A Seedy Place"). */
+const SEEDED = ['wheat', 'carrots', 'potatoes', 'beetroots', 'melon_stem', 'pumpkin_stem', 'nether_wart', 'sweet_berry_bush', 'cocoa'];

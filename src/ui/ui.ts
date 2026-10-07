@@ -13,6 +13,7 @@ import { TradeScreen } from './trade';
 import { EnchantScreen } from './enchant';
 import { HopperScreen, DispenserScreen, BrewingScreen, AnvilScreen } from './devices';
 import { BookScreen } from './book';
+import { AdvancementsScreen } from './advancements';
 import { SmithingScreen, StonecutterScreen, BeaconScreen, GrindstoneScreen, CartScreen, SignScreen, LoomScreen, CartographyScreen } from './stations';
 import type { Villager } from '../entity/mobs';
 import { TouchControls } from './touch';
@@ -220,6 +221,7 @@ export class UI {
       case 'Escape': this.open(new Menus.PauseScreen(this)); return true;
       case 'KeyE': if (!g.player!.dead) { this.suppressChar = true; this.openInventory(); } return true;
       case 'KeyT': this.suppressChar = true; this.open(new Menus.ChatScreen(this, '')); return true;
+      case 'KeyL': this.open(new AdvancementsScreen(this)); return true;
       case 'Slash': this.suppressChar = true; this.open(new Menus.ChatScreen(this, '/')); return true;
       case 'Enter': this.open(new Menus.ChatScreen(this, '')); return true;
       case 'F1': g.hideHud = !g.hideHud; return true;

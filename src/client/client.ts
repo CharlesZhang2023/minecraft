@@ -773,6 +773,7 @@ export class Client {
       case 'chat': this.ui.chat.add(String(m.msg)); break;
       case 'bar': this.ui.hud.actionBar(String(m.msg)); break;
       case 'ach': this.achievements.show(String(m.id)); break;
+      case 'achs': this.achievements.loadShown((m.ids as string[]) ?? []); break;
       case 'sel': if (this.player) this.player.inventory.selected = m.n as number; break;
       case 'death': setTimeout(() => this.ui.openDeath(String(m.msg)), 50); break;
       case 'credits': this.ui.open(new CreditsScreen(this.ui, () => this.ui.close())); break;

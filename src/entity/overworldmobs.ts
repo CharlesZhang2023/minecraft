@@ -1,6 +1,7 @@
 // The overworld's hostile and guardian mobs added between 1.4 and 1.16: husks, drowned, strays, zombie villagers
 // (and curing them), cave spiders, witches, the illagers (pillagers, vindicators, evokers with their fangs and vexes,
 // ravagers), guardians and elder guardians, phantoms, and the iron and snow golems players build.
+import { advanceNear } from '../game/advancements';
 import { GoalMob, Goal, swim, wander, lookAtPlayer, meleeAttack, rangedAttack, shootArrow, nearestTarget, avoidEntity, aiRng } from './ai';
 import { Mob, Monster, Zombie, Skeleton, Spider, Villager, Squid, convertMob } from './mobs';
 import { Entity } from './entity';
@@ -92,7 +93,7 @@ export class ZombieVillager extends Zombie {
     if (this.age % 10 === 0) this.game.particles?.spell(this.x + (rng.next() - 0.5) * 0.6, this.y + 1 + rng.next(), this.z + (rng.next() - 0.5) * 0.6, 0xd8b030);
     if (--this.curing === 0) {
       const v = convertMob(this, 'villager') as Villager | null;
-      if (v) { v.profession = this.profession; v.trades = null; v.addEffect('nausea', 200, 0); this.game.audio.play('villager.trade', v, 1, 1); }
+      if (v) { v.profession = this.profession; v.trades = null; v.addEffect('nausea', 200, 0); this.game.audio.play('villager.trade', v, 1, 1); advanceNear(this.game, v, 'cure'); }
     }
   }
   /** A golden apple while it's weakened starts the cure. */

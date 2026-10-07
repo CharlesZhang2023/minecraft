@@ -1,4 +1,5 @@
 // Mob behaviours.
+import { advanceNear } from '../game/advancements';
 import { villagerTick, villagerTrades } from './villagers';
 import { leashTick } from './leash';
 import { LivingEntity, DamageSource } from './living';
@@ -220,7 +221,7 @@ export abstract class Mob extends LivingEntity {
     const shooter = (attacker as unknown as { shooter?: Entity })?.shooter;
     const killer = attacker instanceof Player ? attacker : shooter instanceof Player ? shooter : null;
     const byPlayer = !!killer;
-    if (killer) this.game.playerOf(killer)?.achievements.onKill(this.typeName, source === 'arrow' ? this.distanceTo(killer) : undefined, source === 'explosion');
+    if (killer) this.game.playerOf(killer)?.achievements.onKill(this.typeName, source === 'arrow' ? this.distanceTo(killer) : undefined, source === 'explosion', { captain: !!(this as unknown as { captain?: boolean }).captain, weapon: killer.inventory.held() ? getItem(killer.inventory.held()!.id).name : '' });
     if (!this.baby) {
       const looting = killer ? level(killer.inventory.held(), 'looting') : 0;
       for (const s of this.drops(this.fireTicks > 0)) {
@@ -570,6 +571,7 @@ export abstract class Animal extends Mob {
           this.breedCooldown = mate.breedCooldown = 6000;
           const baby = this.game.interact!.spawnMob(this.babyType(mate), this.x, this.y, this.z, true);
           if (baby) this.bred(baby as Mob, mate);
+          if (baby) advanceNear(this.game, this, 'breed', { bred: this.typeName });
           if (baby) for (let i = 0; i < 7; i++) this.game.particles?.heart(this.x + rng.next() - 0.5, this.y + 0.8, this.z + rng.next() - 0.5);
           const o = new XpOrb(this.world, this.game, 1 + rng.int(7));
           o.setPos(this.x, this.y + 0.5, this.z);
@@ -1058,6 +1060,7 @@ export class Wolf extends Animal {
         this.ownerName = game.ctx?.name ?? '';
         this.sitting = true;
         this.maxHealth = this.health = 20;
+        game.achievements.event('tame');
         for (let i = 0; i < 7; i++) game.particles?.heart(this.x + rng.next() - 0.5, this.y + 0.8, this.z + rng.next() - 0.5);
         game.audio.play('wolf.say', this, 1, 1.3);
       } else for (let i = 0; i < 7; i++) game.particles?.smoke(this.x + rng.next() - 0.5, this.y + 0.8, this.z + rng.next() - 0.5);

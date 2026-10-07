@@ -443,6 +443,7 @@ export function finishDragonFight(g: Game) {
     g.meta.dragonKilled = true;
   }
   g.achievements.unlock('theEnd2');
+  for (const sp of g.players) if (sp.dim === 'end') sp.achievements.event('dragon');
   g.ui.chat.add('§dThe Ender Dragon has been slain. The exit portal opens beneath you.');
   buildExitPortal(g);
   openGateway(g);
