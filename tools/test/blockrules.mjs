@@ -153,6 +153,26 @@ ok(grow.kelp > 2, `kelp grows up through the water (${grow.kelp} tall)`);
 ok(grow.beet === 3, `beetroots ripen (stage ${grow.beet})`);
 ok(grow.coral === 'dead_tube_coral_block', `coral out of the water dies (${grow.coral})`);
 
+// a chorus flower on end stone grows into a branching plant
+const chorus = await t.page.evaluate(() => window.sim((g, p) => {
+  const blocks = window.__mc;
+  const id = (n) => blocks.BLOCKS.find((b) => b?.name === n).id;
+  const w = g.world, x = Math.floor(p.x) - 20, y = Math.floor(p.y) + 40, z = Math.floor(p.z) + 20;
+  for (let a = -6; a <= 6; a++) for (let c = -6; c <= 6; c++) for (let b = -1; b < 22; b++) w.set(x + a, y + b, z + c, b < 0 ? id('end_stone') : 0);
+  w.set(x, y, z, id('chorus_flower'));
+  const tick = (bx, by, bz) => blocks.BLOCKS[w.getId(bx, by, bz)].behavior?.randomTick?.({ game: g, world: w, x: bx, y: by, z: bz, v: w.get(bx, by, bz), id: w.getId(bx, by, bz), meta: w.get(bx, by, bz) >>> 12, setMeta: (m) => w.set(bx, by, bz, (w.get(bx, by, bz) & 0xfff) | (m << 12)), set: (v) => w.set(bx, by, bz, v) });
+  for (let i = 0; i < 60; i++)
+    for (let a = -6; a <= 6; a++) for (let c = -6; c <= 6; c++) for (let b = 0; b < 22; b++) if (w.getId(x + a, y + b, z + c) === id('chorus_flower')) tick(x + a, y + b, z + c);
+  let plant = 0, flowers = 0, wide = 0;
+  for (let a = -6; a <= 6; a++) for (let c = -6; c <= 6; c++) for (let b = 0; b < 22; b++) {
+    const k = w.getId(x + a, y + b, z + c);
+    if (k === id('chorus_plant')) { plant++; if (a || c) wide++; }
+    if (k === id('chorus_flower')) flowers++;
+  }
+  return { plant, flowers, wide };
+}));
+ok(chorus.plant >= 4 && chorus.flowers >= 1 && chorus.wide >= 1, `a chorus flower grows into a branching plant (${chorus.plant} stalks, ${chorus.wide} off-centre, ${chorus.flowers} flowers)`);
+
 // swimming (1.13): sprinting under water lays the player flat (0.6 tall) and moves along the look
 const pool = await t.page.evaluate(() => window.sim((g, p) => {
   const w = g.world, x = Math.floor(p.x) - 30, y = Math.floor(p.y) + 60, z = Math.floor(p.z) - 30;

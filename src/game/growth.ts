@@ -92,3 +92,45 @@ for (const [live, dead] of deadOf) {
     randomTick(c) { if (!wet(c)) c.set(pack(dead, metaOf(c.v) & 7)); },
   };
 }
+
+/**
+ * Chorus flowers (vanilla's growth): on end stone or a short stalk they grow straight up; higher, they branch out
+ * sideways into one to four new flowers a stage older, leaving a stalk behind; at stage 5 (or boxed in) they die.
+ */
+const airAround = (c: BlockCtx, x: number, y: number, z: number, except: [number, number]) =>
+  DIRS4.every(([dx, dz]) => (dx === except[0] && dz === except[1]) || c.world.getId(x + dx, y, z + dz) === B.AIR);
+BLOCKS[B2.CHORUS_FLOWER].behavior = {
+  ...BLOCKS[B2.CHORUS_FLOWER].behavior,
+  randomTick(c) {
+    const age = c.meta;
+    if (age >= 5 || c.y >= 255 || c.world.getId(c.x, c.y + 1, c.z) !== B.AIR) return;
+    const below = c.world.getId(c.x, c.y - 1, c.z);
+    // how tall is the stalk under it, and does it stand on end stone at its foot?
+    let up = false, onStone = false;
+    if (below === B.END_STONE) up = true;
+    else if (below === B2.CHORUS_PLANT) {
+      let n = 1;
+      while (n < 5 && c.world.getId(c.x, c.y - n - 1, c.z) === B2.CHORUS_PLANT) n++;
+      onStone = c.world.getId(c.x, c.y - n - 1, c.z) === B.END_STONE;
+      if (n < 2 || n <= rnd(onStone ? 5 : 4)) up = true;
+    } else if (below === B.AIR) up = true;
+    const grow = (x: number, y: number, z: number, a: number) => { c.world.set(x, y, z, pack(B2.CHORUS_FLOWER, a)); c.game.playBlockSound?.(B2.CHORUS_FLOWER, x, y, z, 'place'); };
+    if (up && airAround(c, c.x, c.y + 1, c.z, [0, 0]) && c.world.getId(c.x, c.y + 2, c.z) === B.AIR) {
+      c.world.set(c.x, c.y, c.z, B2.CHORUS_PLANT);
+      grow(c.x, c.y + 1, c.z, age);
+      return;
+    }
+    if (age < 4) {
+      const n = rnd(4) + (onStone ? 1 : 0);
+      const spots: [number, number][] = [];
+      for (let i = 0; i < n; i++) {
+        const [dx, dz] = DIRS4[rnd(4)];
+        const x = c.x + dx, z = c.z + dz;
+        if (c.world.getId(x, c.y, z) === B.AIR && c.world.getId(x, c.y - 1, z) === B.AIR && airAround(c, x, c.y, z, [-dx, -dz]) && !spots.some(([a, b]) => a === x && b === z)) spots.push([x, z]);
+      }
+      // the stalk first, so the new flowers have something to grow out of
+      if (spots.length) { c.world.set(c.x, c.y, c.z, B2.CHORUS_PLANT); for (const [x, z] of spots) grow(x, c.y, z, age + 1); return; }
+    }
+    c.setMeta(5);
+  },
+};

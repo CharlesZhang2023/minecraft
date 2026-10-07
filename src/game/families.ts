@@ -208,7 +208,8 @@ export function familyCanStay(w: World, x: number, y: number, z: number, v: numb
     case B2.SWEET_BERRY_BUSH: return isSoil(below);
     case B2.BEETROOTS: case B2.MELON_STEM: return below === B.FARMLAND;
     case B2.COCOA: { const [dx, dz] = HORIZ[meta & 3]; const n = w.getId(x + dx, y, z + dz); return n === WOOD.jungle.log || n === WOOD.jungle.wood; }
-    case B2.CHORUS_FLOWER: return below === B2.CHORUS_PLANT || below === B.END_STONE;
+    // a flower stands on its stalk (or end stone), or grows out sideways from one with air beneath
+    case B2.CHORUS_FLOWER: return below === B2.CHORUS_PLANT || below === B.END_STONE || (below === B.AIR && HORIZ.filter(([dx, dz]) => w.getId(x + dx, y, z + dz) === B2.CHORUS_PLANT).length === 1);
     case B2.CHORUS_PLANT: {
       if (below === B2.CHORUS_PLANT || below === B.END_STONE) return true;
       return HORIZ.some(([dx, dz]) => w.getId(x + dx, y, z + dz) === B2.CHORUS_PLANT && [B2.CHORUS_PLANT, B.END_STONE].includes(w.getId(x + dx, y - 1, z + dz)));
