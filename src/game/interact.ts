@@ -2,6 +2,7 @@
 import type { Game } from './game';
 import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor } from '../world/blocks';
 import { familyPlacement, doubleSlab, partners, toggled } from './families';
+import { stationUse, stationItemUse, stationTile } from './stations';
 import { collisionShapes } from '../world/models';
 import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, stack, ItemDef, POTION_ITEMS } from './items';
 import { FireworkRocket } from '../entity/firework';
@@ -399,6 +400,7 @@ export class Interaction {
       return true;
     }
     if (isButton(id)) { g.redstone.pressButton(t.x, t.y, t.z); return true; }
+    if (id >= B2.CRIMSON_NYLIUM && stationUse(this.hands(), t.x, t.y, t.z, v, this.player.inventory.held())) return true;
     switch (id) {
       case B.CRAFTING_TABLE: g.ui.openCrafting(); return true;
       case B.ENCHANTING_TABLE: g.ui.openEnchant(t.x, t.y, t.z); return true;
@@ -444,6 +446,11 @@ export class Interaction {
       }
     }
     return false;
+  }
+
+  /** This player's hands, for the block and item rules outside this class (stations.ts). */
+  hands() {
+    return { game: this.game, world: this.world, player: this.player, consume: (n: number) => this.consume(n), damageHeld: (n: number) => this.damageHeld(n) };
   }
 
   /** Open or close a door, trapdoor or fence gate (both halves of a door). */
@@ -494,6 +501,7 @@ export class Interaction {
     const id = idOf(v);
     const [nx, ny, nz] = FACE_DIRS[t.face];
     const ax = t.x + nx, ay = t.y + ny, az = t.z + nz;
+    if (stationItemUse(this.hands(), t.x, t.y, t.z, t.face, held, item)) return true;
     if (item.tool?.type === 'hoe') {
       if ((id === B.GRASS || id === B.DIRT || id === B.COARSE_DIRT) && t.face !== 2 && w.getId(t.x, t.y + 1, t.z) === B.AIR) {
         w.set(t.x, t.y, t.z, id === B.COARSE_DIRT ? B.DIRT : B.FARMLAND);
@@ -991,6 +999,7 @@ export class Interaction {
     const g = this.game, w = this.world;
     const id = idOf(v);
     if (id === B.CHEST) w.setTile(x, y, z, { type: 'chest', items: new Array(27).fill(null) });
+    if (id >= B2.CRIMSON_NYLIUM) stationTile(w, x, y, z, id);
     if (id === B.FURNACE) w.setTile(x, y, z, { type: 'furnace', slots: [null, null, null], burn: 0, burnMax: 0, cook: 0 });
     if (id === B.HOPPER) w.setTile(x, y, z, { type: 'hopper', items: [null, null, null, null, null], cooldown: 0 });
     if (id === B.DISPENSER || id === B.DROPPER) w.setTile(x, y, z, { type: id === B.DISPENSER ? 'dispenser' : 'dropper', items: new Array(9).fill(null) });

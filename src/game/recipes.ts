@@ -1,6 +1,9 @@
 // Crafting & smelting recipes.
 import { B, WOOL_COLORS, blockByName } from '../world/blocks';
 import { I, I2, I3, I4, I5, I6, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion, itemByName } from './items';
+import { ITEM_TAGS } from './tags';
+import { registerRecipes116, type Smelt } from './recipes2';
+export { STONECUTTING, SMITHING } from './recipes2';
 
 interface Shaped { pattern: string[]; key: Record<string, number | number[]>; out: ItemStack }
 interface Shapeless { ingredients: (number | number[])[]; out: ItemStack }
@@ -10,9 +13,10 @@ const shapeless: Shapeless[] = [];
 const S = (pattern: string[], key: Record<string, number | number[]>, id: number, count = 1) => shaped.push({ pattern, key, out: stack(id, count) });
 const L = (ingredients: (number | number[])[], id: number, count = 1) => shapeless.push({ ingredients, out: stack(id, count) });
 
-const PLANKS = [B.OAK_PLANKS, B.SPRUCE_PLANKS, B.BIRCH_PLANKS];
-const LOGS = [B.OAK_LOG, B.SPRUCE_LOG, B.BIRCH_LOG];
-const STONEISH = [B.COBBLESTONE];
+// every wood's planks and logs, and blackstone where cobblestone goes (tags.ts)
+const PLANKS = ITEM_TAGS.planks;
+const LOGS = ITEM_TAGS.logs;
+const STONEISH = ITEM_TAGS.stone_crafting_materials;
 const COAL = [I.COAL, I.CHARCOAL];
 
 // basic materials
@@ -25,8 +29,8 @@ S(['###', '# #', '###'], { '#': STONEISH }, B.FURNACE);
 S(['###', '# #', '###'], { '#': PLANKS }, B.CHEST);
 S(['C', 'S'], { C: COAL, S: I.STICK }, B.TORCH, 4);
 S(['# #', '###', '# #'], { '#': I.STICK }, B.LADDER, 3);
-S(['##', '##', '##'], { '#': PLANKS }, I.OAK_DOOR, 3);
-S(['#S#', '#S#'], { '#': PLANKS, S: I.STICK }, B.OAK_FENCE, 3);
+S(['##', '##', '##'], { '#': B.OAK_PLANKS }, I.OAK_DOOR, 3);
+S(['#S#', '#S#'], { '#': B.OAK_PLANKS, S: I.STICK }, B.OAK_FENCE, 3);
 S(['###'], { '#': B.OAK_PLANKS }, B.OAK_SLAB, 6);
 S(['###'], { '#': [B.STONE, B.DOUBLE_STONE_SLAB] }, B.STONE_SLAB, 6);
 S(['###'], { '#': B.COBBLESTONE }, B.COBBLESTONE_SLAB, 6);
@@ -62,7 +66,7 @@ S(['A', 'B'], { A: B.PUMPKIN, B: B.TORCH }, B.JACK_O_LANTERN);
 L([B.COBBLESTONE, B.STONE], B.MOSSY_COBBLESTONE); // simplified (vines absent)
 
 // tools
-const toolMats: [string, number[]][] = [['wooden', PLANKS], ['stone', [B.COBBLESTONE]], ['iron', [I.IRON_INGOT]], ['golden', [I.GOLD_INGOT]], ['diamond', [I.DIAMOND]]];
+const toolMats: [string, number[]][] = [['wooden', PLANKS], ['stone', STONEISH], ['iron', [I.IRON_INGOT]], ['golden', [I.GOLD_INGOT]], ['diamond', [I.DIAMOND]]];
 for (const [m, mat] of toolMats) {
   S(['XXX', ' # ', ' # '], { X: mat, '#': I.STICK }, TOOLS[m + '_pickaxe']);
   S(['XX', 'X#', ' #'], { X: mat, '#': I.STICK }, TOOLS[m + '_axe']);
@@ -83,7 +87,7 @@ S(['# #', ' # '], { '#': I.IRON_INGOT }, I.BUCKET);
 L([I.IRON_INGOT, I.FLINT], I.FLINT_AND_STEEL);
 S([' #', '# '], { '#': I.IRON_INGOT }, I.SHEARS);
 S(['# #', ' # '], { '#': PLANKS }, I.BOWL, 4);
-S(['# #', '###'], { '#': PLANKS }, I2.BOAT);
+S(['# #', '###'], { '#': B.OAK_PLANKS }, I2.BOAT);
 S(['R', 'S'], { R: I.REDSTONE, S: I.STICK }, B.REDSTONE_TORCH);
 S(['  #', ' #S', '# S'], { '#': I.STICK, S: I.STRING }, I2.FISHING_ROD);
 S(['S', 'C'], { S: I.STICK, C: B.COBBLESTONE }, B.LEVER);
@@ -150,7 +154,7 @@ S(['CCC', 'C C', 'CRC'], { C: B.COBBLESTONE, R: I.REDSTONE }, B.DROPPER);
 S(['I I', 'ICI', ' I '], { I: I.IRON_INGOT, C: B.CHEST }, B.HOPPER);
 S(['BBB', ' I ', 'III'], { B: B.IRON_BLOCK, I: I.IRON_INGOT }, B.ANVIL);
 // brewing
-S([' B ', 'CCC'], { B: I3.BLAZE_ROD, C: B.COBBLESTONE }, I3.BREWING_STAND);
+S([' B ', 'CCC'], { B: I3.BLAZE_ROD, C: STONEISH }, I3.BREWING_STAND);
 S(['G G', ' G '], { G: B.GLASS }, I3.GLASS_BOTTLE, 3);
 L([I3.BLAZE_ROD], I2.BLAZE_POWDER, 2);
 L([I2.SLIME_BALL, I2.BLAZE_POWDER], I3.MAGMA_CREAM);
@@ -255,7 +259,7 @@ function fireworkCraft(items: ItemStack[]): ItemStack | null {
 }
 
 // ------------------------------------------------------------------ smelting
-export const SMELTING: Record<number, { out: number; xp: number }> = {
+export const SMELTING: Record<number, Smelt> = {
   [B.IRON_ORE]: { out: I.IRON_INGOT, xp: 0.7 },
   [B.GOLD_ORE]: { out: I.GOLD_INGOT, xp: 1 },
   [B.DIAMOND_ORE]: { out: I.DIAMOND, xp: 1 },
@@ -292,6 +296,9 @@ S(['I I', 'III'], { I: I.IRON_INGOT }, I5.MINECART);
 S(['###', '###', '###'], { '#': I.WHEAT }, B.HAY_BLOCK);
 L([B.HAY_BLOCK], I.WHEAT, 9);
 
+// the 1.9 - 1.16 recipes (recipes2.ts)
+registerRecipes116({ S, L, SMELTING });
+
 // ------------------------------------------------------------------ mod recipes
 /**
  * An ingredient as mods write it: an item or block key ('ruby:ruby', 'stick', 'minecraft:stick'), a tag ('#planks'),
@@ -311,11 +318,8 @@ export interface ModRecipe {
 }
 export const MOD_RECIPES: ModRecipe[] = [];
 /** Item tags mods can use as ingredients. */
-export const TAGS: Record<string, number[]> = {
-  planks: PLANKS, logs: LOGS, wool: [...WOOL_COLORS], coals: COAL, stone_crafting_materials: [B.COBBLESTONE],
-  saplings: [B.OAK_SAPLING, B.SPRUCE_SAPLING, B.BIRCH_SAPLING], leaves: [B.OAK_LEAVES, B.SPRUCE_LEAVES, B.BIRCH_LEAVES],
-  sand: [B.SAND], flowers: [B.DANDELION, B.POPPY, B.CORNFLOWER, B.OXEYE_DAISY, B.ALLIUM],
-};
+export const TAGS: Record<string, number[]> = ITEM_TAGS;
+void WOOL_COLORS; void COAL;
 
 function resolveIngredient(ing: Ingredient): number[] | null {
   if (typeof ing === 'number') return [ing];

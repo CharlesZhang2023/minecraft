@@ -556,12 +556,12 @@ export const STONE2 = {
   CRACKED_POLISHED_BLACKSTONE_BRICKS: reg('cracked_polished_blackstone_bricks', 'Cracked Polished Blackstone Bricks', { ...stone }),
   ...prefixed('POLISHED_BLACKSTONE_BRICK', cuts('polished_blackstone_bricks', 'polished_blackstone_brick', 'Polished Blackstone Brick', true)),
 };
-function prefixed(p: string, c: { stairs: number; slab: number; wall: number }) {
+function prefixed<P extends string>(p: P, c: { stairs: number; slab: number; wall: number }): { [K in `${P}_STAIRS` | `${P}_SLAB` | `${P}_WALL`]: number } {
   const o: Record<string, number> = {};
   o[p + '_STAIRS'] = c.stairs;
   o[p + '_SLAB'] = c.slab;
   if (c.wall) o[p + '_WALL'] = c.wall;
-  return o;
+  return o as { [K in `${P}_STAIRS` | `${P}_SLAB` | `${P}_WALL`]: number };
 }
 
 // ---------------------------------------------------------------- the Nether update and other new blocks
@@ -926,7 +926,7 @@ export const isDiode = (id: number) => isRepeater(id) || id === B.COMPARATOR;
 export const isPiston = (id: number) => id === B.PISTON || id === B.STICKY_PISTON;
 export const isRedstoneComponent = (id: number) =>
   id === B.REDSTONE_WIRE || id === B.LEVER || isButton(id) || isPlate(id) || isRedstoneTorch(id) || isDoor(id) || isTrapdoor(id) || isGate(id) ||
-  id === B.REDSTONE_LAMP || id === B.LIT_REDSTONE_LAMP || id === B.REDSTONE_BLOCK || id === B.TNT || id === B2.TARGET || id === B2.NOTE_BLOCK ||
+  id === B.REDSTONE_LAMP || id === B.LIT_REDSTONE_LAMP || id === B.REDSTONE_BLOCK || id === B.TNT || id === B2.TARGET || id === B2.NOTE_BLOCK || id === B2.DAYLIGHT_DETECTOR || id === B2.TRAPPED_CHEST ||
   isDiode(id) || isPiston(id) || id === B.OBSERVER || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER || isRail(id) || REDSTONE[id] === 1;
 export const isRail = (id: number) => id === B.RAIL || id === B.POWERED_RAIL || id === B.DETECTOR_RAIL || id === B.ACTIVATOR_RAIL;
 

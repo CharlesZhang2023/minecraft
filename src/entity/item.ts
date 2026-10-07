@@ -4,7 +4,8 @@ import { Entity } from './entity';
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import { ItemStack, sameItem, getItem } from '../game/items';
-import { BLOCKS, B } from '../world/blocks';
+import { BLOCKS, B, B2 } from '../world/blocks';
+import { hitTarget } from '../game/stations';
 
 export class ItemEntity extends Entity {
   typeName = 'Item';
@@ -269,6 +270,7 @@ export class Arrow extends Entity {
           this.world.set(bx, by, bz, 0);
           this.game.interact!.primeTnt(bx, by, bz);
         }
+        if (id === B2.TARGET) hitTarget(this.game, bx, by, bz, this.x - this.vx / steps * 0.5, this.y - this.vy / steps * 0.5, this.z - this.vz / steps * 0.5, true);
         return;
       }
       this.x = nx; this.y = ny; this.z = nz;

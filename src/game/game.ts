@@ -36,6 +36,7 @@ import { END_PLATFORM } from '../world/endgen';
 import { GENERATOR_VERSION } from '../world/worldgen';
 import { EnderDragon, buildExitPortal } from '../entity/dragon';
 import { tickFurnaces } from './furnace';
+import { tickStations } from './stations';
 import { SOUND_FOR } from './audio';
 import type { Conn, Msg } from '../net/conn';
 import { ServerPlayer, NetPlayer } from '../server/splayer';
@@ -693,6 +694,7 @@ export class Game {
     dim.devices.tick();
     dim.brewing.tick();
     tickFurnaces(this);
+    if (this.ticks % 2 === 0) tickStations(this);
     dim.spawner.tick();
     if (modState.active.size) this.tickModTiles(w);
   }

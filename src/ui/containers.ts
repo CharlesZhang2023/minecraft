@@ -2,11 +2,11 @@
 import { Screen, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, I6, POTION_ITEMS, itemByName, HORSE_ARMOR, FIREWORK_DYES, FIREWORK_SHAPES, FireworkExplosion } from '../game/items';
+import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, I6, I7, BOATS, POTION_ITEMS, itemByName, HORSE_ARMOR, FIREWORK_DYES, FIREWORK_SHAPES, FireworkExplosion } from '../game/items';
 import { craft, SMELTING } from '../game/recipes';
 import { addToSlots } from '../game/inventory';
-import { BLOCKS, Render, B, isLeaves, isSapling, isStairs, isSlab } from '../world/blocks';
-import { COOK_TIME, FurnaceTile } from '../game/furnace';
+import { BLOCKS, Render, B, B2, STONE2, WOOD, isLeaves, isSapling, isStairs, isSlab } from '../world/blocks';
+import { FurnaceTile, cooks, cookTime } from '../game/furnace';
 import { enchName, ENCHANTS } from '../game/enchant';
 import { drawEffectList } from './effects';
 import { POTION_BY_KEY, effectLine } from '../game/potiondata';
@@ -537,7 +537,8 @@ export class FurnaceScreen extends ContainerScreen {
     const w = this.game.world!;
     let t = w.getTile(this.x, this.y, this.z) as unknown as FurnaceTile | undefined;
     if (!t) {
-      t = { type: 'furnace', slots: [null, null, null], burn: 0, burnMax: 0, cook: 0 };
+      const id = w.getId(this.x, this.y, this.z);
+      t = { type: 'furnace', slots: [null, null, null], burn: 0, burnMax: 0, cook: 0, ...(id === B2.SMOKER ? { kind: 'smoker' as const } : id === B2.BLAST_FURNACE ? { kind: 'blast' as const } : {}) };
       w.setTile(this.x, this.y, this.z, t as unknown as { type: 'furnace' });
     }
     this.tile = t;
@@ -553,7 +554,7 @@ export class FurnaceScreen extends ContainerScreen {
   }
   override quickTargets(s: Slot, st: ItemStack): string[] {
     if (s.group === 'main' || s.group === 'hotbar') {
-      if (SMELTING[st.id]) return ['input'];
+      if (cooks(this.tile.kind, st.id)) return ['input'];
       if (getItem(st.id).fuel) return ['fuel'];
     }
     return super.quickTargets(s, st);
@@ -571,10 +572,11 @@ export class FurnaceScreen extends ContainerScreen {
       ctx.fillStyle = '#ffd84a';
       ctx.fillRect(L + 60, T + 37 + 13 - Math.max(0, h - 3), 7, Math.max(0, h - 3));
     }
-    arrow(ctx, L + 79, T + 34, t.cook / COOK_TIME);
+    arrow(ctx, L + 79, T + 34, t.cook / cookTime(t));
   }
   override drawForeground(ctx: Ctx) {
-    this.label(ctx, 'Furnace', 88 - this.gui.font.width('Furnace') / 2, 6);
+    const name = this.tile.kind === 'smoker' ? 'Smoker' : this.tile.kind === 'blast' ? 'Blast Furnace' : 'Furnace';
+    this.label(ctx, name, 88 - this.gui.font.width(name) / 2, 6);
     this.label(ctx, 'Inventory', 8, 72);
   }
 }
@@ -588,6 +590,14 @@ export class ChestScreen extends ContainerScreen {
     if (!t) {
       t = { type: 'chest', items: new Array(27).fill(null) };
       w.setTile(this.x, this.y, this.z, t);
+    }
+    // the same 27 slots serve chests, trapped chests and barrels
+    this.title = BLOCKS[w.getId(this.x, this.y, this.z)]?.display ?? 'Chest';
+    // a trapped chest powers redstone while someone looks inside (counted on the server)
+    if (w.getId(this.x, this.y, this.z) === B2.TRAPPED_CHEST && (this.ui as unknown as { isServer?: boolean }).isServer && !this.counted) {
+      this.counted = true;
+      (t as { viewers?: number }).viewers = ((t as { viewers?: number }).viewers ?? 0) + 1;
+      (this.game as unknown as { redstone?: { update(x: number, y: number, z: number): void } }).redstone?.update(this.x, this.y, this.z);
     }
     const items = t.items;
     for (let r = 0; r < 3; r++)
@@ -605,11 +615,18 @@ export class ChestScreen extends ContainerScreen {
     if (c) c.modified = true;
   }
   override drawForeground(ctx: Ctx) {
-    this.label(ctx, 'Chest', 8, 6);
+    this.label(ctx, this.title, 8, 6);
     this.label(ctx, 'Inventory', 8, 72);
   }
+  private counted = false;
   override onClose() {
     this.changed();
+    if (this.counted) {
+      const t = this.game.world!.getTile(this.x, this.y, this.z) as { viewers?: number } | undefined;
+      if (t) t.viewers = Math.max(0, (t.viewers ?? 1) - 1);
+      (this.game as unknown as { redstone?: { update(x: number, y: number, z: number): void } }).redstone?.update(this.x, this.y, this.z);
+      this.counted = false;
+    }
     this.game.audio.play('chestClose', { x: this.x + 0.5, y: this.y + 0.5, z: this.z + 0.5 }, 0.5, 0.9 + Math.random() * 0.1);
     super.onClose();
   }
@@ -704,7 +721,11 @@ const defs = () => [...ITEMS.values()].filter((d) => d.id !== 0 && !d.mod && !d.
 const modDefs = () => [...ITEMS.values()].filter((d) => d.mod && !d.missing);
 const REDSTONE_IDS = [I.REDSTONE, B.REDSTONE_TORCH, I3.REPEATER, I3.COMPARATOR, B.REDSTONE_BLOCK, B.LEVER, B.STONE_BUTTON, B.STONE_PRESSURE_PLATE,
   B.PISTON, B.STICKY_PISTON, B.SLIME_BLOCK, B.OBSERVER, B.DISPENSER, B.DROPPER, B.HOPPER, B.REDSTONE_LAMP, B.TNT, I.OAK_DOOR, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL];
-const TRANSPORT_IDS = [B.RAIL, B.POWERED_RAIL, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL, I5.MINECART, I2.BOAT, I5.SADDLE, I5.IRON_HORSE_ARMOR, I5.GOLDEN_HORSE_ARMOR, I5.DIAMOND_HORSE_ARMOR, I6.ELYTRA];
+REDSTONE_IDS.push(...Object.values(WOOD).flatMap((w) => [w.button, w.plate, w.door, w.trapdoor, w.gate]).filter((id) => id !== B.OAK_DOOR),
+  STONE2.POLISHED_BLACKSTONE_BUTTON, STONE2.POLISHED_BLACKSTONE_PRESSURE_PLATE, B2.HEAVY_WEIGHTED_PRESSURE_PLATE, B2.LIGHT_WEIGHTED_PRESSURE_PLATE,
+  B2.IRON_DOOR, B2.IRON_TRAPDOOR, B2.TARGET, B2.DAYLIGHT_DETECTOR, B2.TRIPWIRE_HOOK, B2.NOTE_BLOCK, B2.TRAPPED_CHEST, B2.LECTERN);
+const TRANSPORT_IDS = [B.RAIL, B.POWERED_RAIL, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL, I5.MINECART, I7.CHEST_MINECART, I7.FURNACE_MINECART, I7.HOPPER_MINECART, I7.TNT_MINECART,
+  ...Object.values(BOATS), I5.SADDLE, I7.CARROT_ON_A_STICK, I7.WARPED_FUNGUS_ON_A_STICK, I7.LEAD, I7.LEATHER_HORSE_ARMOR, I5.IRON_HORSE_ARMOR, I5.GOLDEN_HORSE_ARMOR, I5.DIAMOND_HORSE_ARMOR, I6.ELYTRA];
 const FIREWORK_IDS = [I6.FIREWORK_ROCKET, I6.FIREWORK_STAR];
 /** Rockets of each flight duration, then a few ready-made shows (the creative menu's fireworks). */
 const fireworks = (): ItemStack[] => {
@@ -727,7 +748,7 @@ const TOOL_ENCH = ['efficiency', 'silk_touch', 'unbreaking', 'fortune', 'luck_of
 const special = new Set<number>([...REDSTONE_IDS, ...BREWING_IDS, ...MISC_IDS, ...TRANSPORT_IDS, ...FIREWORK_IDS, I3.ENCHANTED_BOOK]);
 const isFood = (d: ItemDef) => !!d.food && !d.potion;
 const isTool = (d: ItemDef) => (!!d.tool && d.tool.type !== 'sword') || [I.FLINT_AND_STEEL, I.COMPASS, I.CLOCK, I2.FISHING_ROD, I3.NAME_TAG].includes(d.id);
-const isCombat = (d: ItemDef) => d.tool?.type === 'sword' || !!d.armor || d.id === I.BOW || d.id === I.ARROW || d.id === I.EGG || d.id === I.ENDER_PEARL;
+const isCombat = (d: ItemDef) => d.tool?.type === 'sword' || !!d.armor || d.id === I.BOW || d.id === I.ARROW || d.id === I.EGG || d.id === I.ENDER_PEARL || [I7.TRIDENT, I7.SHIELD, I7.CROSSBOW, I7.SPECTRAL_ARROW, I7.TOTEM_OF_UNDYING].includes(d.id);
 const isDecoration = (d: ItemDef) => {
   if (d.block === undefined || d.sprite) return d.id === I.RED_BED || d.id === I3.NETHER_WART && false;
   const b = BLOCKS[d.block];
@@ -742,7 +763,7 @@ const books = (filter: (id: string) => boolean, allLevels: boolean): ItemStack[]
   }
   return out;
 };
-const potions = (): ItemStack[] => [...defs().filter((d) => d.potion && !d.splash), ...defs().filter((d) => d.splash)].map((d) => one(d.id));
+const potions = (): ItemStack[] => [...defs().filter((d) => d.potion && !d.splash && !d.lingering && !d.name.startsWith('tipped_')), ...defs().filter((d) => d.splash), ...defs().filter((d) => d.lingering), ...defs().filter((d) => d.name.startsWith('tipped_arrow'))].map((d) => one(d.id));
 const general = (f: (d: ItemDef) => boolean) => () => defs().filter((d) => !special.has(d.id) && !d.egg && !d.potion && f(d)).map((d) => one(d.id));
 const TABS: Tab[] = [
   { name: 'Building Blocks', icon: B.BRICKS, items: general(isBuilding) },

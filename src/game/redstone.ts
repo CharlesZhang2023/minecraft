@@ -8,8 +8,9 @@ import type { Game } from './game';
 import type { World } from '../world/world';
 import {
   B, BLOCKS, OPAQUE, REDSTONE, idOf, metaOf, pack, HORIZ, FACING6, isRedstoneTorch, isRedstoneComponent, isRepeater, isDiode,
-  isButton, isPlate, isDoor, isTrapdoor, isGate,
+  isButton, isPlate, isDoor, isTrapdoor, isGate, B2,
 } from '../world/blocks';
+import { playNote } from './stations';
 import { buttonTicks, platePower, platePresses, weightedLevel } from './families';
 import { blockCtx, callBlock } from '../mod/blockctx';
 import { repeaterLocked } from '../world/models';
@@ -58,6 +59,13 @@ export class Redstone {
     }
     if (isPlate(id)) {
       const p = platePower(id, m);
+      return !strong || d === DOWN ? p : 0;
+    }
+    if (id === B2.TRAPPED_CHEST || id === B2.DAYLIGHT_DETECTOR || id === B2.TARGET) {
+      // trapped chests: how many look inside; daylight detectors and targets keep their level in the tile
+      const t = this.w.getTile(x, y, z) as { viewers?: number; power?: number } | undefined;
+      const p = Math.min(15, id === B2.TRAPPED_CHEST ? t?.viewers ?? 0 : t?.power ?? 0);
+      if (id === B2.TARGET) return p;
       return !strong || d === DOWN ? p : 0;
     }
     switch (id) {
@@ -122,7 +130,7 @@ export class Redstone {
   private connectsToWire(x: number, y: number, z: number, h: number): boolean {
     const v = this.w.get(x, y, z);
     const id = idOf(v), m = metaOf(v);
-    if (id === B.REDSTONE_WIRE || id === B.LEVER || isButton(id) || isPlate(id) || isRedstoneTorch(id) || id === B.REDSTONE_BLOCK || id === B.COMPARATOR || id === B.DETECTOR_RAIL || REDSTONE[id] === 1) return true;
+    if (id === B.REDSTONE_WIRE || id === B.LEVER || isButton(id) || isPlate(id) || isRedstoneTorch(id) || id === B.REDSTONE_BLOCK || id === B.COMPARATOR || id === B.DETECTOR_RAIL || id === B2.TARGET || id === B2.DAYLIGHT_DETECTOR || id === B2.TRAPPED_CHEST || REDSTONE[id] === 1) return true;
     if (isRepeater(id)) return ((m & 3) & 1) === (h & 1);
     if (id === B.OBSERVER) { const [dx, dz] = HORIZ[h]; const [fx, fy, fz] = FACING6[m & 7]; return fy === 0 && fx === dx && fz === dz; }
     return false;
@@ -312,6 +320,12 @@ export class Redstone {
       const p = this.isPowered(x, ly, z) || this.isPowered(x, ly + 1, z);
       const last = this.doorPower.get(key(x, ly, z)) ?? false;
       if (p !== last) { this.doorPower.set(key(x, ly, z), p); g.interact!.swing(x, ly, z, p); }
+      return;
+    }
+    if (id === B2.NOTE_BLOCK) {
+      const p = this.isPowered(x, y, z), k = key(x, y, z);
+      if (p && !this.doorPower.get(k)) playNote(g, w, x, y, z, m);
+      this.doorPower.set(k, p);
       return;
     }
     if (isTrapdoor(id) || isGate(id)) {

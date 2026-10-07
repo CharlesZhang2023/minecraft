@@ -1,5 +1,6 @@
 // Procedurally synthesised sound effects and ambient music (WebAudio).
 import { Random } from '../noise';
+import { moreSounds } from './audio2';
 
 const SR = 22050;
 type Buf = Float32Array;
@@ -427,6 +428,9 @@ const GENS: Record<string, Gen> = {
     return normalize(b, 0.7);
   },
 };
+
+// the 1.9 - 1.16 sounds (audio2.ts)
+moreSounds((name, g) => { GENS[name] = g; }, { noise, lowpass, highpass, bandpass, env, normalize, tone, mixInto }, SR);
 
 export class Audio {
   ctx: AudioContext | null = null;

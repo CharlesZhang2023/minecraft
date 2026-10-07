@@ -3,6 +3,7 @@ import type { Game } from './game';
 import type { World, Chunk } from '../world/world';
 import { B, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston, isFire } from '../world/blocks';
 import { familyCanStay } from './families';
+import { stationScheduled } from './stations';
 import { WorldGen, Setter } from '../world/worldgen';
 import { Random } from '../noise';
 import { FallingBlock } from '../entity/item';
@@ -157,6 +158,7 @@ export class BlockTicker {
   private scheduledTick(x: number, y: number, z: number) {
     const w = this.world;
     if (this.game.redstone.scheduled(x, y, z)) return;
+    if (stationScheduled(w, x, y, z)) return;
     const v = w.get(x, y, z);
     const id = idOf(v);
     const st = BLOCKS[id].behavior?.scheduledTick;
