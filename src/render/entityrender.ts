@@ -21,14 +21,14 @@ import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball }
 import { ThrownPotion } from '../entity/potion';
 import { getItem, I, I6, I7 } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
-import { BLOCKS, TEXTURES, Render, B, B2, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX } from '../world/blocks';
+import { BLOCKS, TEXTURES, Render, B, B2, WOOD, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX } from '../world/blocks';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
 import { poseMat4 } from '../sublevel/pose';
 import { getTexture } from './textures';
 import { Player } from '../game/player';
 import { Boat } from '../entity/boat';
-import { Minecart } from '../entity/minecart';
+import { Minecart, CART_BLOCK } from '../entity/minecart';
 import { Horse } from '../entity/horse';
 import { HORSE_ARMOR } from '../game/items';
 import { FishingHook } from '../entity/fishing';
@@ -1139,7 +1139,7 @@ export class EntityRenderer {
 
   private drawBoat(mesh: DynMesh, e: Boat, x: number, y: number, z: number, t: number, sky: number, blk: number) {
     const m = this.boatMatrix(e, x, y, z, t);
-    const layer = BLOCKS[B.OAK_PLANKS].faces[0];
+    const layer = BLOCKS[e.wood === 'oak' ? B.OAK_PLANKS : (WOOD as Record<string, { planks: number }>)[e.wood]?.planks ?? B.OAK_PLANKS].faces[0];
     // hull (1.9 proportions: 1.75 long along z, 1.25 wide): floor, two long sides, bow and stern
     const hull: number[][] = [
       [-0.5, 0.125, -0.75, 0.5, 0.3, 0.75],
@@ -1219,6 +1219,9 @@ export class EntityRenderer {
     this.woodBox(mesh, m, [-0.625, 0.0625, 0.375, 0.625, 0.6875, 0.5], out, sky, blk);
     this.woodBox(mesh, m, [-0.625, 0.0625, -0.375, -0.5, 0.6875, 0.375], out, sky, blk);
     this.woodBox(mesh, m, [0.5, 0.0625, -0.375, 0.625, 0.6875, 0.375], out, sky, blk);
+    // the cargo sits inside (a TNT cart flashes as its fuse burns)
+    const cargo = e.kind !== 'minecart' ? CART_BLOCK[e.kind]() : 0;
+    if (cargo) this.blockCube(mesh, cargo, x - 0.375, y + 0.25, z - 0.375, 0.75, sky, blk, e.kind === 'tnt' && e.fuse >= 0 && Math.floor(e.fuse / 5) % 2 === 0 ? 1 : 0);
   }
 
   /** Skin texture for a horse, made the first time that coat is seen. */

@@ -1,6 +1,7 @@
 import { Entity } from './entity';
 import type { World } from '../world/world';
-import { BLOCKS, B } from '../world/blocks';
+import { BLOCKS, B, B2, metaOf } from '../world/blocks';
+import { bubblePush, standingOn, honeySlide, insideBlock } from '../game/blockrules';
 import { EFFECTS, potionColor } from '../game/potiondata';
 import { Events } from '../mod/events';
 import { live } from '../mod/hooks';
@@ -341,6 +342,9 @@ export class LivingEntity extends Entity {
     this.strafe *= 0.98;
     this.forward *= 0.98;
     this.travel(this.strafe, this.forward);
+    if (this.inWater) bubblePush(this);
+    standingOn(this as never);
+    honeySlide(this);
     // limb animation
     this.pLimbSwingAmount = this.limbSwingAmount;
     const dx = this.x - this.px, dz = this.z - this.pz;
@@ -399,7 +403,7 @@ export class LivingEntity extends Entity {
           } else if (id === B.FIRE && !this.fireImmune) {
             this.damage(1, 'fire');
             this.fireTicks = Math.max(this.fireTicks, 160);
-          }
+          } else if (id === B2.SWEET_BERRY_BUSH || id === B2.SOUL_FIRE) insideBlock(this as never, id, metaOf(this.world.get(x, y, z)));
         }
     if (this.y < -64) this.damage(4, 'void');
   }

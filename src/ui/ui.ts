@@ -12,7 +12,7 @@ import * as Containers from './containers';
 import { TradeScreen } from './trade';
 import { EnchantScreen } from './enchant';
 import { HopperScreen, DispenserScreen, BrewingScreen, AnvilScreen } from './devices';
-import { SmithingScreen, StonecutterScreen, BeaconScreen, GrindstoneScreen } from './stations';
+import { SmithingScreen, StonecutterScreen, BeaconScreen, GrindstoneScreen, CartScreen } from './stations';
 import type { Villager } from '../entity/mobs';
 import { TouchControls } from './touch';
 import { device } from '../game/device';
@@ -194,6 +194,7 @@ export class UI {
   openSmithing(x: number, y: number, z: number) { this.open(new SmithingScreen(this, x, y, z)); }
   openStonecutter(x: number, y: number, z: number) { this.open(new StonecutterScreen(this, x, y, z)); }
   openBeacon(x: number, y: number, z: number) { this.open(new BeaconScreen(this, x, y, z)); }
+  openCart(c: { items: (import('../game/items').ItemStack | null)[]; kind: string; typeName: string }) { this.open(new CartScreen(this, c)); }
   openGrindstone(x: number, y: number, z: number) { this.open(new GrindstoneScreen(this, x, y, z)); }
   /** A container's contents changed outside the UI (hoppers, droppers): open screens read tiles live. */
   containerChanged(_x: number, _y: number, _z: number) {}

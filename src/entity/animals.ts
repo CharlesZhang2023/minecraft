@@ -886,8 +886,9 @@ export abstract class Fish extends Mob {
       if (!this.noAi) { this.vx += (this.dir.x - this.vx) * 0.1; this.vy += (this.dir.y - this.vy) * 0.1; this.vz += (this.dir.z - this.vz) * 0.1; }
       // don't swim out of the water
       const ahead = this.world.getId(Math.floor(this.x + this.vx * 8), Math.floor(this.y + 0.15), Math.floor(this.z + this.vz * 8));
-      if (ahead !== B.WATER && !BLOCKS[ahead].solid) { this.dir.x = -this.dir.x; this.dir.z = -this.dir.z; this.vx *= -0.5; this.vz *= -0.5; }
-      if (this.world.getId(Math.floor(this.x), Math.floor(this.y + this.height + 0.1), Math.floor(this.z)) !== B.WATER && this.vy > 0) this.vy = -0.01;
+      if (ahead !== B.WATER && ahead !== B2.BUBBLE_COLUMN && !BLOCKS[ahead].solid) { this.dir.x = -this.dir.x; this.dir.z = -this.dir.z; this.vx *= -0.5; this.vz *= -0.5; }
+      const above = this.world.getId(Math.floor(this.x), Math.floor(this.y + this.height + 0.1), Math.floor(this.z));
+      if (above !== B.WATER && above !== B2.BUBBLE_COLUMN && this.vy > 0) this.vy = -0.01;
       this.move(this.vx, this.vy, this.vz);
       if (Math.hypot(this.vx, this.vz) > 0.005) this.yaw = this.bodyYaw = this.headYaw = (Math.atan2(this.vz, this.vx) * 180) / Math.PI - 90;
     } else {

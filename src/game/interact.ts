@@ -1,6 +1,8 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
 import { buildGolem } from '../entity/overworldmobs';
+import { BOATS } from './items';
 import { buildWither } from '../entity/wither';
+import { hardenConcrete } from './blockrules';
 import { swingDamage, sweep, shieldBlocks, shieldHand, crossbowLoadTicks, loadCrossbow, fireCrossbow, releaseTrident, ThrownTrident } from './combat';
 import { hiveBroken } from '../entity/bees';
 import { FISH_BUCKETS, releaseFish } from '../entity/animals';
@@ -581,10 +583,12 @@ export class Interaction {
       this.consume(1);
       return true;
     }
-    if (held.id === I5.MINECART) {
+    const cartKind = held.id === I5.MINECART ? 'minecart' : held.id === I7.CHEST_MINECART ? 'chest' : held.id === I7.FURNACE_MINECART ? 'furnace' : held.id === I7.HOPPER_MINECART ? 'hopper' : held.id === I7.TNT_MINECART ? 'tnt' : null;
+    if (cartKind) {
       const at = placeOnRail(w, t.x, t.y, t.z);
       if (!at) return false;
       const c = new Minecart(w, g);
+      c.setKind(cartKind);
       c.setPos(t.x + 0.5, at.y, t.z + 0.5);
       c.yaw = c.pyaw = at.yaw;
       g.addEntity(c);
@@ -761,12 +765,14 @@ export class Interaction {
       p.swing();
       return;
     }
-    if (held.id === I2.BOAT) {
+    const boatWood = held.id === I2.BOAT ? 'oak' : Object.entries(BOATS).find(([, id]) => id === held.id)?.[0];
+    if (boatWood) {
       const eye = g.eyePos(1);
       const d = g.lookVec(p.yaw, p.pitch);
       const hit = raycastBlocks(w, eye.x, eye.y, eye.z, d.x, d.y, d.z, g.reach(), true);
       if (hit && hit.face === 3) {
         const b = new Boat(w, g);
+        b.wood = boatWood;
         const onWater = w.getId(hit.x, hit.y, hit.z) === B.WATER;
         // on water: straight at the waterline it floats at
         b.setPos(hit.hx, hit.y + (onWater ? 0.52 : 1), hit.hz);
@@ -1066,6 +1072,7 @@ export class Interaction {
     this.initTile(x, y, z, v);
     const def = BLOCKS[idOf(v)];
     if (def.mod && def.behavior?.onPlaced) callBlock(idOf(v), 'onPlaced', () => def.behavior!.onPlaced!({ ...blockCtx(g, x, y, z, v), player: this.player }), undefined);
+    hardenConcrete(w, x, y, z);
     // a pumpkin on iron or snow blocks brings a golem to life
     if (idOf(v) === B2.CARVED_PUMPKIN || idOf(v) === B.JACK_O_LANTERN) buildGolem(g, x, y, z);
     // three wither skeleton skulls on a T of soul sand: the Wither

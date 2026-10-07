@@ -1,7 +1,8 @@
 // Scheduled & random block updates: fluids, gravity, plants, leaf decay, fire...
+import { hardenConcrete, basaltForms, updateColumn } from './blockrules';
 import type { Game } from './game';
 import type { World, Chunk } from '../world/world';
-import { B, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston, isFire } from '../world/blocks';
+import { B, B2, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston, isFire } from '../world/blocks';
 import { familyCanStay } from './families';
 import { stationScheduled } from './stations';
 import { chestLoot } from './loot';
@@ -74,7 +75,10 @@ export class BlockTicker {
     const id = idOf(v);
     if (id === 0) return;
     const def = BLOCKS[id];
-    if (def.fluid) { this.schedule(x, y, z, id === B.WATER ? 5 : w.dimension === 'nether' ? 10 : 30); if (id === B.LAVA) this.lavaMix(x, y, z); return; }
+    // bubble columns rise from soul sand and magma through water sources
+    if (id === B.SOUL_SAND || id === B.MAGMA_BLOCK || id === B2.BUBBLE_COLUMN || (id === B.WATER && metaOf(v) === 0)) updateColumn(w, id === B.SOUL_SAND || id === B.MAGMA_BLOCK ? x : x, id === B.SOUL_SAND || id === B.MAGMA_BLOCK ? y + 1 : y, z);
+    if (def.fluid) { if (idOf(w.get(x, y, z)) !== id) return; this.schedule(x, y, z, id === B.WATER ? 5 : w.dimension === 'nether' ? 10 : 30); if (id === B.LAVA) this.lavaMix(x, y, z); return; }
+    if (hardenConcrete(w, x, y, z)) return;
     if (def.gravity) { this.schedule(x, y, z, 2); return; }
     if (id === B.NETHER_PORTAL) {
       if (!portalCanStay(w, x, y, z)) w.set(x, y, z, B.AIR);
@@ -177,7 +181,8 @@ export class BlockTicker {
 
   // ------------------------------------------------------------------ fluids
   private isFluid(id: number, fluid: number) {
-    return id === fluid;
+    // a bubble column is a water source as far as flowing water is concerned
+    return id === fluid || (fluid === B.WATER && id === B2.BUBBLE_COLUMN);
   }
   private blocksFlow(id: number) {
     if (id === B.AIR) return false;
@@ -304,6 +309,7 @@ export class BlockTicker {
     const w = this.world;
     const v = w.get(x, y, z);
     if (idOf(v) !== B.LAVA) return;
+    if (basaltForms(w, x, y, z)) { this.game.audio.play('fizz', { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, 0.5, 2.6); return; }
     let touching = false;
     for (const [dx, dy, dz] of DIRS6) {
       if (dy === -1) continue;

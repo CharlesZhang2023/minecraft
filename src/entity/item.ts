@@ -1,5 +1,6 @@
 import { enterGateway } from '../game/gateways';
 import { mend } from '../game/mending';
+import { hardenConcrete } from '../game/blockrules';
 import { Player } from '../game/player';
 import { Entity } from './entity';
 import type { World } from '../world/world';
@@ -180,6 +181,7 @@ export class FallingBlock extends Entity {
       }
       if (BLOCKS[cur].replaceable) {
         this.world.set(x, y, z, v);
+        hardenConcrete(this.world, x, y, z);
       } else {
         this.game.dropItem(this.x, this.y + 0.5, this.z, { id, count: 1 });
       }

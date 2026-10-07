@@ -1209,6 +1209,7 @@ export class Client {
         pt.drip(x + this.rng.next(), y - 1.05, z + this.rng.next(), id === B.LAVA);
       }
       if (id === B.WATER && this.rng.int(10) === 0 && p.inWater) pt.bubble(x + this.rng.next(), y + this.rng.next(), z + this.rng.next());
+      else if (id === B2.BUBBLE_COLUMN) for (let k = 0; k < 3; k++) pt.add({ x: x + 0.3 + this.rng.next() * 0.4, y: y + this.rng.next(), z: z + 0.3 + this.rng.next() * 0.4, vy: (metaOf(v) & 1) ? -0.06 : 0.12, layer: tex('particle_bubble'), size: 0.05, life: 12, gravity: 0, kind: 'bubble' } as never);
       else if ((id === B2.SOUL_TORCH || id === B2.SOUL_FIRE || id === B2.SOUL_CAMPFIRE || id === B2.CAMPFIRE) && this.rng.int(3) === 0) {
         pt.smoke(x + 0.5, y + (id === B2.SOUL_TORCH ? 0.7 : 0.8), z + 0.5, id !== B2.SOUL_TORCH);
         if (id === B2.SOUL_TORCH) pt.add({ x: x + 0.5, y: y + 0.7, z: z + 0.5, vy: 0.005, layer: tex('particle_flame'), size: 0.06, life: 15, gravity: 0, fullbright: true, col: 0x60e8ff, kind: 'flame' });

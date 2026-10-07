@@ -266,3 +266,21 @@ export class BeaconScreen extends ContainerScreen {
 }
 void EFFECTS;
 
+/** A chest minecart's 27 slots, or a hopper minecart's 5. */
+export class CartScreen extends ContainerScreen {
+  title = 'Minecart with Chest';
+  constructor(ui: UI, public cart: { items: Items; kind: string; typeName: string }) { super(ui); }
+  override buildSlots() {
+    const items = this.cart.items;
+    this.title = this.cart.typeName;
+    if (this.cart.kind === 'hopper') for (let i = 0; i < 5; i++) this.slots.push({ x: 44 + i * 18, y: 20, get: () => items[i], set: (s) => (items[i] = s), group: 'chest' });
+    else for (let r = 0; r < 3; r++) for (let c = 0; c < 9; c++) { const i = r * 9 + c; this.slots.push({ x: 8 + c * 18, y: 18 + r * 18, get: () => items[i], set: (s) => (items[i] = s), group: 'chest' }); }
+    this.addPlayerSlots();
+  }
+  override quickTargets(s: Slot): string[] { return s.group === 'chest' ? ['hotbar', 'main'] : ['chest']; }
+  override drawForeground(ctx: Ctx) {
+    this.label(ctx, this.title, 8, 6);
+    this.label(ctx, 'Inventory', 8, 72);
+  }
+}
+
