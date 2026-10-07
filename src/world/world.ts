@@ -1,5 +1,5 @@
 // Main-thread world: chunk storage, streaming, worker scheduling, block access.
-import { CHUNK_H, idOf, metaOf, BLOCKS, B, OPAQUE, LIGHT_OPACITY, LIGHT_EMIT } from './blocks';
+import { CHUNK_H, idOf, metaOf, BLOCKS, B, OPAQUE, LIGHT_OPACITY, STATE_LIGHT } from './blocks';
 import type { MeshResult } from './mesher';
 import { Storage, SavedChunk, SavedBase, rleEncode, rleDecode } from '../game/storage';
 import WorkerCtor from './worker.ts?worker&inline';
@@ -12,7 +12,7 @@ export const chunkKey = (cx: number, cz: number) => (cx + 0x8000) * 0x10000 + (c
 export const keyStr = (cx: number, cz: number) => cx + ',' + cz;
 
 export interface TileEntity {
-  type: 'chest' | 'furnace' | 'comparator' | 'hopper' | 'dispenser' | 'dropper' | 'brewing' | 'moving' | 'spawner';
+  type: 'chest' | 'furnace' | 'comparator' | 'hopper' | 'dispenser' | 'dropper' | 'brewing' | 'moving' | 'spawner' | 'campfire' | 'jukebox' | 'daylight' | 'target' | 'beehive' | 'anchor' | 'sign' | 'lectern' | 'beacon' | 'conduit';
   [k: string]: unknown;
 }
 
@@ -198,7 +198,7 @@ export class World {
     c.urgent = true;
     const oid = old & 0xfff, nid = v & 0xfff;
     // update cached heightmap/light-sensitive neighbours
-    const lightChanged = LIGHT_OPACITY[oid] !== LIGHT_OPACITY[nid] || LIGHT_EMIT[oid] !== LIGHT_EMIT[nid];
+    const lightChanged = LIGHT_OPACITY[oid] !== LIGHT_OPACITY[nid] || STATE_LIGHT[old] !== STATE_LIGHT[v];
     const lx = x & 15, lz = z & 15;
     for (let dz = -1; dz <= 1; dz++)
       for (let dx = -1; dx <= 1; dx++) {

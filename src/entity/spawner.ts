@@ -5,7 +5,11 @@ import { Mob } from './mobs';
 import type { Player } from '../game/player';
 import { Random } from '../noise';
 import { skyDarken } from '../game/env';
-import { BIOME } from '../world/biomes';
+import { BIOME, isOceanBiome } from '../world/biomes';
+import { MOB_TYPES } from './registry';
+import { spawnPhantoms } from './overworldmobs';
+import { pickVariant, releaseShoulders, spawnWanderingTrader } from './animals';
+import { tickRaids } from '../game/raids';
 
 export class Spawner {
   private rng = new Random(Date.now() & 0xffff);
@@ -33,7 +37,7 @@ export class Spawner {
     const hostiles = mobs.filter((m) => m.hostile).length;
     const animals = mobs.length - hostiles;
     const peaceful = g.options.difficulty === 0;
-    if (peaceful) for (const m of mobs) if (m.hostile && m.typeName !== 'Zombie Pigman') m.removed = true;
+    if (peaceful) for (const m of mobs) if (m.hostile && m.typeName !== 'Zombified Piglin' && !m.persistentHostile) m.removed = true;
     // hostile spawning every tick (cap ~ 70 in vanilla for 17x17 chunks; scaled to our view)
     const cap = Math.round(70 * Math.min(1, ((Math.min(8, w.renderDistance) * 2 + 1) ** 2) / 289) * Math.min(players, 4));
     if ((!peaceful || w.dimension === 'nether') && hostiles < cap && g.ticks % 2 === 0) {
@@ -42,14 +46,61 @@ export class Spawner {
     // passive animals: when new chunks come in, occasionally populate them
     if (g.ticks % 20 === 0 && animals < 40 * Math.min(players, 4) && w.dimension === 'overworld') this.populateChunks();
     for (const p of g.playerEntities()) this.spawnerBlocks(p);
+    // insomnia: phantoms find players who haven't slept in three days
+    for (const p of g.playerEntities()) {
+      p.restTicks = p.sleeping ? 0 : p.restTicks + 1;
+      // shoulder parrots hop off when their perch falls, gets hurt, swims, flies or sleeps
+      if ((p.shoulderLeft || p.shoulderRight) && (p.fallDistance > 0.5 || p.hurtTime > 0 || p.inWater || p.flying || p.sleeping || p.dead)) releaseShoulders(g, p);
+    }
+    if (w.dimension === 'overworld' && g.ticks % 1200 === 0) spawnPhantoms(g, this.rng);
+    if (w.dimension === 'overworld' && g.ticks % 24000 === 12000) spawnWanderingTrader(g, this.rng);
+    if (w.dimension === 'overworld') tickRaids(g, this.rng);
+    if (w.dimension === 'overworld') this.siege();
     if (w.dimension === 'overworld' && g.ticks % 40 === 0) this.ambient(mobs);
   }
+
+  /** A zombie siege under way: where, and how many zombies are still to come. */
+  siegeAt: { x: number; y: number; z: number; left: number } | null = null;
+  private siegeNight = -1;
+  /**
+   * Zombie sieges (1.4; 1.14 rules): at midnight, one night in ten, a village with someone in it and at least a
+   * handful of villagers is beset by twenty zombies that come in from its edge, whatever the light.
+   */
+  siege() {
+    const g = this.game, w = g.world!, day = Math.floor(g.time / 24000), t = g.time % 24000;
+    if (g.options.difficulty === 0) { this.siegeAt = null; return; }
+    if (t === 18000 && this.siegeNight !== day) {
+      this.siegeNight = day;
+      if (this.rng.next() < 0.1) {
+        for (const p of g.playerEntities()) {
+          const villagers = g.entities.filter((e) => (e as unknown as { typeName?: string }).typeName === 'Villager' && e.distanceTo(p) < 48);
+          if (villagers.length < 5) continue;
+          const cx = villagers.reduce((a, v) => a + v.x, 0) / villagers.length, cz = villagers.reduce((a, v) => a + v.z, 0) / villagers.length;
+          this.startSiege(cx, p.y, cz);
+          break;
+        }
+      }
+    }
+    const s = this.siegeAt;
+    if (!s || g.ticks % 10 !== 0) return;
+    if (s.left <= 0 || g.isDaytime()) { this.siegeAt = null; return; }
+    // one zombie at a time, from somewhere on the village's edge with room to stand
+    const a = this.rng.next() * Math.PI * 2, r = 24 + this.rng.int(8);
+    const x = Math.floor(s.x + Math.cos(a) * r), z = Math.floor(s.z + Math.sin(a) * r);
+    if (!w.isLoaded(x, z)) return;
+    const y = w.topSolidY(x, z) + 1;
+    if (y <= 0 || BLOCKS[w.getId(x, y, z)].solid || BLOCKS[w.getId(x, y + 1, z)].solid) return;
+    g.interact!.spawnMob('zombie', x + 0.5, y, z + 0.5);
+    s.left--;
+  }
+  startSiege(x: number, y: number, z: number) { this.siegeAt = { x, y, z, left: 20 }; }
 
   /** Squid in deep water, bats in dark caves. */
   private ambient(mobs: Mob[]) {
     const g = this.game, p = this.pick(), w = g.world!;
     const squid = mobs.filter((m) => m.typeName === 'Squid').length;
     const bats = mobs.filter((m) => m.typeName === 'Bat').length;
+    const fish = mobs.filter((m) => ['Cod', 'Salmon', 'Pufferfish', 'Tropical Fish', 'Dolphin'].includes(m.typeName)).length;
     for (let i = 0; i < 4; i++) {
       const a = this.rng.next() * Math.PI * 2, d = 20 + this.rng.next() * 40;
       const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
@@ -57,6 +108,31 @@ export class Spawner {
       if (squid < 8 && this.rng.int(2) === 0) {
         const y = 45 + this.rng.int(17);
         if (w.getId(x, y, z) === B.WATER && w.getId(x, y + 1, z) === B.WATER && w.getId(x, y - 1, z) === B.WATER) g.interact!.spawnMob('squid', x + 0.5, y, z + 0.5);
+      } else if (this.rng.int(2) === 0 && fish < 16) {
+        // fish and dolphins by the ocean's temperature (vanilla 1.16 water creature spawns)
+        const biome = g.biomeAt(x, z).id;
+        const river = biome === BIOME.RIVER || biome === BIOME.FROZEN_RIVER;
+        if (!river && !isOceanBiome(biome)) continue;
+        const y = 50 + this.rng.int(12);
+        if (w.getId(x, y, z) !== B.WATER || w.getId(x, y + 1, z) !== B.WATER || this.nearest(x, y, z) < 12) continue;
+        const warm = biome === BIOME.WARM_OCEAN, luke = biome === BIOME.LUKEWARM_OCEAN || biome === BIOME.DEEP_LUKEWARM_OCEAN;
+        const cold = biome === BIOME.COLD_OCEAN || biome === BIOME.DEEP_COLD_OCEAN || biome === BIOME.FROZEN_OCEAN || biome === BIOME.DEEP_FROZEN_OCEAN;
+        const table: [string, number][] = river ? [['salmon', 5]] : warm ? [['pufferfish', 15], ['tropical_fish', 25], ['dolphin', 2]] : luke ? [['cod', 15], ['pufferfish', 5], ['tropical_fish', 25], ['dolphin', 2]] : cold ? [['cod', 15], ['salmon', 15]] : [['cod', 10], ['dolphin', 1]];
+        const type = this.weighted(table);
+        if (type === 'dolphin' && mobs.some((m) => m.typeName === 'Dolphin' && m.distanceTo({ x, y, z } as Mob) < 64)) continue;
+        const n = type === 'dolphin' ? 1 + this.rng.int(2) : type === 'pufferfish' ? 1 + this.rng.int(3) : 3 + this.rng.int(4);
+        for (let i = 0; i < n; i++) { const xx = x + this.rng.int(5) - 2, zz = z + this.rng.int(5) - 2; if (w.getId(xx, y, zz) === B.WATER) g.interact!.spawnMob(type, xx + 0.5, y, zz + 0.5); }
+      } else if (g.options.difficulty > 0 && this.rng.int(3) === 0) {
+        // drowned in dark oceans and rivers (more of them in rivers, vanilla)
+        const biome = g.biomeAt(x, z).id;
+        const river = biome === BIOME.RIVER || biome === BIOME.FROZEN_RIVER;
+        if (!river && !isOceanBiome(biome)) continue;
+        if (this.rng.int(river ? 3 : 15) || mobs.filter((m) => m.typeName === 'Drowned').length >= 6) continue;
+        const y = 30 + this.rng.int(32);
+        if (w.getId(x, y, z) !== B.WATER || w.getId(x, y + 1, z) !== B.WATER || !OPAQUE[w.getId(x, y - 1, z)]) continue;
+        const [sky, blk] = w.getLight(x, y, z);
+        if (Math.max(sky - skyDarken(g.time, g.weather?.rain ?? 0), blk) > 7 || this.nearest(x, y, z) < 24) continue;
+        g.interact!.spawnMob('drowned', x + 0.5, y, z + 0.5);
       } else if (bats < 6) {
         const y = 10 + this.rng.int(50);
         if (w.getId(x, y, z) !== B.AIR || w.getId(x, y + 1, z) !== B.AIR) continue;
@@ -69,7 +145,7 @@ export class Spawner {
   private spawnable(x: number, y: number, z: number, h: number): boolean {
     const w = this.game.world!;
     const below = w.getId(x, y - 1, z);
-    if (!OPAQUE[below] || below === B.BEDROCK || below === B.GLASS) return false;
+    if ((!OPAQUE[below] && below !== B.SOUL_SAND) || below === B.BEDROCK || below === B.GLASS) return false;
     for (let i = 0; i < h; i++) {
       const id = w.getId(x, y + i, z);
       if (BLOCKS[id].solid || BLOCKS[id].fluid) return false;
@@ -77,29 +153,54 @@ export class Spawner {
     return true;
   }
 
+  /** Nether spawning by biome (vanilla 1.16 weights), fortress floors, and striders on the lava sea. */
   private tryNether() {
     const g = this.game, p = this.pick(), w = g.world!;
     const a = this.rng.next() * Math.PI * 2, d = 24 + this.rng.next() * 50;
     const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
     if (!w.chunkAt(x, z)) return;
+    const biome = g.biomeAt(x, z).id;
+    // striders walk the lava sea in all the Nether's biomes
+    if (this.rng.int(6) === 0) {
+      const sy = 31;
+      if (w.getId(x, sy, z) === B.LAVA && w.getId(x, sy + 1, z) === B.AIR && w.getId(x, sy + 2, z) === B.AIR) {
+        if (g.entities.filter((e) => (e as { typeName?: string }).typeName === 'Strider').length < 8) g.interact!.spawnMob('strider', x + 0.5, sy + 1, z + 0.5);
+      }
+      return;
+    }
     const y = 32 + this.rng.int(90);
-    if (this.rng.int(20) === 0) {
+    // fortress floors: blazes, wither skeletons and the rest of the fortress crowd
+    if (this.spawnable(x, y, z, 2) && w.getId(x, y - 1, z) === B.NETHER_BRICKS) {
+      const type = this.weighted([['blaze', 10], ['zombie_pigman', 5], ['wither_skeleton', 8], ['skeleton', 2], ['magma_cube', 3]]);
+      if (type !== 'wither_skeleton' || this.spawnable(x, y, z, 3)) g.interact!.spawnMob(type, x + 0.5, y, z + 0.5);
+      return;
+    }
+    const table: [string, number, number][] = biome === BIOME.CRIMSON_FOREST ? [['hoglin', 9, 4], ['zombie_pigman', 1, 4], ['piglin', 5, 4]]
+      : biome === BIOME.WARPED_FOREST ? [['enderman', 1, 4]]
+      : biome === BIOME.SOUL_SAND_VALLEY ? [['skeleton', 20, 5], ['ghast', 50, 1], ['enderman', 1, 4]]
+      : biome === BIOME.BASALT_DELTAS ? [['magma_cube', 100, 5], ['ghast', 40, 1]]
+      : [['zombie_pigman', 100, 4], ['ghast', 50, 1], ['magma_cube', 2, 4], ['enderman', 1, 4], ['piglin', 15, 4]];
+    const type = this.weighted(table.map(([t, wgt]) => [t, wgt]));
+    const max = table.find((t) => t[0] === type)![2];
+    if (type === 'ghast') {
       // ghasts need a big open space
       for (let dx = -2; dx <= 2; dx++) for (let dy = 0; dy <= 4; dy++) for (let dz = -2; dz <= 2; dz++) if (w.getId(x + dx, y + dy, z + dz) !== B.AIR) return;
       g.interact!.spawnMob('ghast', x + 0.5, y, z + 0.5);
       return;
     }
-    // fortress floors: blazes (vanilla spawns them anywhere inside fortress bounds)
-    if (this.spawnable(x, y, z, 2) && w.getId(x, y - 1, z) === B.NETHER_BRICKS) {
-      if (this.rng.int(3) === 0) g.interact!.spawnMob('blaze', x + 0.5, y, z + 0.5);
-      return;
-    }
-    if (!this.spawnable(x, y, z, 2) || w.getId(x, y - 1, z) !== B.NETHERRACK) return;
-    const n = 1 + this.rng.int(3);
+    if (!this.spawnable(x, y, z, type === 'enderman' ? 3 : 2)) return;
+    const n = 1 + this.rng.int(max);
     for (let i = 0; i < n; i++) {
       const xx = x + this.rng.int(5) - 2, zz = z + this.rng.int(5) - 2;
-      if (this.spawnable(xx, y, zz, 2)) g.interact!.spawnMob('zombie_pigman', xx + 0.5, y, zz + 0.5);
+      if (this.spawnable(xx, y, zz, type === 'enderman' ? 3 : 2)) g.interact!.spawnMob(type, xx + 0.5, y, zz + 0.5);
     }
+  }
+  private weighted(list: [string, number][]): string {
+    let total = 0;
+    for (const [, w] of list) total += w;
+    let k = this.rng.next() * total;
+    for (const [t, w] of list) { k -= w; if (k < 0) return t; }
+    return list[0][0];
   }
 
   /** The End: endermen wander the islands in small groups (and nothing else spawns). */
@@ -139,6 +240,10 @@ export class Spawner {
       const slimeChunk = ((Math.imul(x >> 4, 0x4c1906) + Math.imul(z >> 4, 0x5ac0db) + (g.meta?.seed ?? 0)) >>> 0) % 10 === 0;
       if (!((slimeChunk && y < 40) || g.biomeAt(x, z).name === 'Swamp')) type = 'zombie';
     }
+    // biomes swap in their own kinds (vanilla: husks in deserts, strays in the snow, drowned in water), when known
+    const biome = g.biomeAt(x, z).id;
+    if (biome === BIOME.MUSHROOM_FIELDS) return; // nothing hostile spawns on mushroom islands
+    type = biomeVariant(type, biome, w.getId(x, y, z) === B.WATER, y >= w.topSolidY(x, z), this.rng);
     if (type === 'enderman' && (!this.spawnable(x, y + 2, z, 1))) return;
     if (type === 'spider' && !this.spawnable(x + 1, y, z, 1)) return;
     const m = g.interact!.spawnMob(type, x + 0.5, y, z + 0.5);
@@ -170,22 +275,32 @@ export class Spawner {
       if (this.rng.int(10) >= 1) continue; // ~10% of new chunks get an animal group
       const x0 = cx * 16 + this.rng.int(16), z0 = cz * 16 + this.rng.int(16);
       const biome = g.biomeAt(x0, z0);
-      if (biome.id === BIOME.DESERT || biome.id === BIOME.OCEAN || biome.id === BIOME.BEACH || biome.id === BIOME.RIVER) continue;
-      const wolfy = biome.id === BIOME.TAIGA || biome.id === BIOME.SNOWY_TAIGA || biome.id === BIOME.FOREST;
-      const types = wolfy && this.rng.int(3) === 0 ? ['wolf'] : biome.cold ? ['sheep', 'sheep', 'pig', 'chicken'] : ['pig', 'cow', 'sheep', 'sheep', 'chicken', 'cow'];
+      if (biome.id === BIOME.BEACH && this.rng.int(3) === 0) {
+        // turtles come ashore on warm beaches
+        const y = w.topSolidY(x0, z0) + 1;
+        if (w.getId(x0, y - 1, z0) === B.SAND) for (let i = 0; i < 2 + this.rng.int(4); i++) g.interact!.spawnMob('turtle', x0 + this.rng.int(5) - 2 + 0.5, y, z0 + this.rng.int(5) - 2 + 0.5);
+        continue;
+      }
+      if (biome.dry && biome.id !== BIOME.SAVANNA && biome.id !== BIOME.SAVANNA_PLATEAU || isOceanBiome(biome.id) || biome.id === BIOME.BEACH || biome.id === BIOME.SNOWY_BEACH || biome.id === BIOME.RIVER || biome.id === BIOME.FROZEN_RIVER || biome.id === BIOME.STONE_SHORE) continue;
+      const wolfy = biome.id === BIOME.TAIGA || biome.id === BIOME.SNOWY_TAIGA || biome.id === BIOME.FOREST || biome.id === BIOME.GIANT_TREE_TAIGA;
+      const types = biome.id === BIOME.MUSHROOM_FIELDS ? ['mooshroom'] : wolfy && this.rng.int(3) === 0 ? ['wolf'] : biome.cold ? ['sheep', 'sheep', 'pig', 'chicken'] : ['pig', 'cow', 'sheep', 'sheep', 'chicken', 'cow'];
+      for (const [b, extra] of BIOME_ANIMALS) if (b.includes(biome.id)) for (const t of extra) if (MOB_TYPES[t]) types.push(t);
       let type = types[this.rng.int(types.length)];
       let count = 2 + this.rng.int(3);
       // herds of horses (now and then with a donkey) roam the plains and savanna, sharing a coat colour
-      const horsey = biome.id === BIOME.PLAINS || biome.id === BIOME.SAVANNA;
+      const horsey = biome.id === BIOME.PLAINS || biome.id === BIOME.SAVANNA || biome.id === BIOME.SUNFLOWER_PLAINS || biome.id === BIOME.SAVANNA_PLATEAU;
       let herd = -1;
       if (horsey && this.rng.int(biome.id === BIOME.PLAINS ? 3 : 5) === 0) { type = 'horse'; count = 2 + this.rng.int(5); herd = this.rng.int(7); }
       for (let i = 0; i < count; i++) {
         const x = x0 + this.rng.int(7) - 3, z = z0 + this.rng.int(7) - 3;
         const y = w.topSolidY(x, z) + 1;
-        if (y <= 0 || w.getId(x, y - 1, z) !== B.GRASS) continue;
+        const ground = w.getId(x, y - 1, z);
+        if (y <= 0 || (ground !== B.GRASS && !(biome.id === BIOME.MUSHROOM_FIELDS && BLOCKS[ground].name === 'mycelium') && !(biome.cold && ground === B.SNOW_BLOCK))) continue;
+        if (!MOB_TYPES[type]) continue;
         if (!this.spawnable(x, y, z, 2)) continue;
         if (this.nearest(x, y, z) < 16) continue;
         const m = g.interact!.spawnMob(herd >= 0 && this.rng.int(10) === 0 ? 'donkey' : type, x + 0.5, y, z + 0.5);
+        if (m) pickVariant(m as Mob);
         if (m && herd >= 0 && (m as unknown as { kind: string }).kind === 'horse') (m as unknown as { color: number }).color = herd;
       }
     }
@@ -223,4 +338,26 @@ export class Spawner {
         }
       }
   }
+}
+
+/** Extra animals a biome adds to the usual farm animals (each only once its mob exists). */
+const BIOME_ANIMALS: [number[], string[]][] = [
+  [[BIOME.JUNGLE, BIOME.JUNGLE_EDGE, BIOME.BAMBOO_JUNGLE], ['parrot', 'ocelot', 'chicken']],
+  [[BIOME.BAMBOO_JUNGLE, BIOME.JUNGLE], ['panda']],
+  [[BIOME.SNOWY_PLAINS, BIOME.ICE_SPIKES, BIOME.SNOWY_TAIGA, BIOME.SNOWY_MOUNTAINS], ['polar_bear', 'rabbit']],
+  [[BIOME.TAIGA, BIOME.SNOWY_TAIGA, BIOME.GIANT_TREE_TAIGA], ['fox', 'rabbit']],
+  [[BIOME.SAVANNA, BIOME.SAVANNA_PLATEAU, BIOME.MOUNTAINS, BIOME.GRAVELLY_MOUNTAINS], ['llama']],
+  [[BIOME.PLAINS, BIOME.SUNFLOWER_PLAINS, BIOME.FLOWER_FOREST], ['rabbit', 'bee']],
+  [[BIOME.MOUNTAINS, BIOME.GRAVELLY_MOUNTAINS], ['llama']],
+];
+
+/** A hostile kind swapped for its biome's variant, when that mob exists: husks in deserts, strays under the open sky in the snow, drowned in water. */
+function biomeVariant(type: string, biome: number, inWater: boolean, open: boolean, r: Random): string {
+  const has = (t: string) => !!MOB_TYPES[t];
+  if (type === 'zombie' && (inWater || isOceanBiome(biome) || biome === BIOME.RIVER) && has('drowned')) return inWater ? 'drowned' : type;
+  if (type === 'zombie' && biome === BIOME.DESERT && open && r.int(5) < 4 && has('husk')) return 'husk';
+  if (type === 'skeleton' && (biome === BIOME.SNOWY_PLAINS || biome === BIOME.ICE_SPIKES || biome === BIOME.SNOWY_MOUNTAINS || biome === BIOME.FROZEN_RIVER) && open && r.int(5) < 4 && has('stray')) return 'stray';
+  if (type === 'zombie' && r.int(20) === 0 && has('zombie_villager')) return 'zombie_villager';
+  if (type === 'spider' && r.int(40) === 0 && has('witch')) return 'witch';
+  return type;
 }

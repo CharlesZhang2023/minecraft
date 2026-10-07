@@ -1,20 +1,21 @@
 // Horses, donkeys and mules (1.8 behaviour): tame one by riding it until it stops bucking you off (food makes
 // it more willing), put a saddle on it to steer, hold jump to charge a leap. Horses can wear armour; donkeys
 // and mules can carry a chest. A horse and a donkey have a mule, which can't breed.
+import { advanceNear } from '../game/advancements';
 import { Animal, type Mob } from './mobs';
 import type { Entity } from './entity';
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import type { DamageSource } from './living';
 import { B, BLOCKS } from '../world/blocks';
-import { I, I3, I5, HORSE_ARMOR, ItemStack, stack } from '../game/items';
+import { I, I3, I5, HORSE_ARMOR, ItemStack, stack, itemId } from '../game/items';
 import type { Player } from '../game/player';
 import { Random } from '../noise';
 import { carryRider, dismountSpot, type Mount } from './mount';
 
 const rng = new Random(Date.now() & 0xffff);
 
-export type HorseKind = 'horse' | 'donkey' | 'mule';
+export type HorseKind = 'horse' | 'donkey' | 'mule' | 'skeleton' | 'zombie';
 export const HORSE_COLORS = ['white', 'creamy', 'chestnut', 'brown', 'black', 'gray', 'darkbrown'] as const;
 export const HORSE_MARKINGS = ['none', 'white', 'whitefield', 'whitedots', 'blackdots'] as const;
 
@@ -90,9 +91,9 @@ export class Horse extends Animal implements Mount {
 
   get adult() { return !this.baby; }
   get canWearArmor() { return this.kind === 'horse'; }
-  get canCarryChest() { return this.kind !== 'horse'; }
+  get canCarryChest() { return this.kind === 'donkey' || this.kind === 'mule'; }
   /** Texture name for the renderer. */
-  get skinKey() { return this.kind === 'horse' ? `horse_${this.color}_${this.markings}` : this.kind; }
+  get skinKey() { return this.kind === 'horse' ? `horse_${this.color}_${this.markings}` : this.kind === 'skeleton' || this.kind === 'zombie' ? `${this.kind}_horse` : this.kind; }
 
   override eyeHeight() { return this.height * 0.95; }
   override groundSpeed() { return this.aiSpeed * this.speedFactor(); }
@@ -240,6 +241,7 @@ export class Horse extends Animal implements Mount {
     if (rng.int(50) !== 0) return;
     if (rng.int(100) < this.temper) {
       this.tame = true;
+      advanceNear(this.game, this, 'tame', {}, 4);
       for (let i = 0; i < 7; i++) this.game.particles?.heart(this.x + rng.next() * 1.4 - 0.7, this.y + this.height + 0.2, this.z + rng.next() * 1.4 - 0.7);
       this.game.audio.play(this.kind === 'horse' ? 'horse.say' : 'donkey.say', this, 1, 1);
       return;
@@ -411,3 +413,64 @@ export class Mule extends Horse {
     this.jumpStat = 0.5;
   }
 }
+
+/** Skeleton horses (1.6/1.9): undead, they don't drown and swim fast; the ones from a skeleton trap come with riders. */
+export class SkeletonHorse extends Horse {
+  override typeName = 'Skeleton Horse';
+  override kind: HorseKind = 'skeleton';
+  override undead = true;
+  override canBreathe = true;
+  override sayName = 'skeleton.say';
+  override hurtName = 'skeleton.hurt';
+  override deathName = 'skeleton.hurt';
+  /** A trap: when a player comes within 10 blocks, lightning strikes and four horsemen appear. */
+  trap = false;
+  private trapAge = 0;
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.maxHealth = this.health = 15;
+    this.tame = true;
+  }
+  override tick() {
+    super.tick();
+    if (!this.trap || this.dead) return;
+    if (++this.trapAge > 18000) { this.removed = true; return; }
+    const near = this.game.playerEntities().find((p) => !p.creative && !p.spectator && p.distanceTo(this) < 10);
+    if (!near) return;
+    this.trap = false;
+    springTrap(this);
+  }
+  override drops(): ItemStack[] { return [stack(I.BONE, rng.int(3))].filter((s) => s.count > 0); }
+  override babyType(): HorseKind { return 'skeleton'; }
+  override extraJSON() { return { ...super.extraJSON(), trap: this.trap }; }
+  override loadExtra(d: Record<string, unknown>) { super.loadExtra(d); this.trap = !!d.trap; }
+}
+/** Zombie horses: undead, rotten; can't be tamed in survival (vanilla). */
+export class ZombieHorse extends Horse {
+  override typeName = 'Zombie Horse';
+  override kind: HorseKind = 'zombie';
+  override undead = true;
+  override sayName = 'zombie.say';
+  override hurtName = 'zombie.hurt';
+  override deathName = 'zombie.death';
+  constructor(world: World, game: Game) {
+    super(world, game);
+    this.maxHealth = this.health = 15;
+  }
+  override drops(): ItemStack[] { return [stack(I.ROTTEN_FLESH, rng.int(3))].filter((s) => s.count > 0); }
+  override babyType(): HorseKind { return 'zombie'; }
+}
+/** The trap springs: lightning, and the horse plus three more, each with a skeleton (in an enchanted iron helmet) beside it. */
+function springTrap(h: SkeletonHorse) {
+  const g = h.game;
+  for (const p of g.playersHere()) p.event(['thunder', 2]);
+  for (let i = 0; i < 4; i++) {
+    const x = h.x + (i ? rng.next() * 6 - 3 : 0), z = h.z + (i ? rng.next() * 6 - 3 : 0);
+    const horse = i ? g.interact!.spawnMob('skeleton_horse', x, h.y, z) as SkeletonHorse | null : h;
+    const sk = g.interact!.spawnMob('skeleton', x + 0.6, h.y, z) as (Entity & { armorItems?: (ItemStack | null)[]; persistentHostile?: boolean }) | null;
+    if (sk) { sk.armorItems = [{ ...stack(itemIdOf('iron_helmet')), ench: { protection: 1 + rng.int(3) } }, null, null, null]; sk.persistentHostile = true; }
+    if (horse) horse.tame = true;
+  }
+}
+const itemIdOf = (n: string) => itemId(n);
+

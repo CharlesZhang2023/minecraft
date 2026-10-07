@@ -12,6 +12,8 @@ import { GENERATOR_VERSION } from '../world/worldgen';
 import { SkinScreen } from './skinscreen';
 import { PackScreen } from './packs';
 import { AgentScreen } from './agentscreen';
+import { AdvancementsScreen } from './advancements';
+import { StatsScreen } from './stats';
 
 const SPLASHES = [
   'Now in JavaScript!', 'Also try Terraria!', '100% procedural!', 'Punching trees!', 'Blocky!', 'Now with WebGPU!', 'Now with caves!',
@@ -411,7 +413,9 @@ export class PauseScreen extends Screen {
         : new Button(this.ui, W / 2 + 2, y + 40, 98, 20, 'Mods...', () => openMods(this.ui, this)),
       new Button(this.ui, W / 2 - 100, y + 64, 98, 20, 'Options...', () => this.ui.open(new OptionsScreen(this.ui, this))),
       new Button(this.ui, W / 2 + 2, y + 64, 98, 20, 'Controls', () => this.ui.open(new ControlsScreen(this.ui, this))),
-      new Button(this.ui, W / 2 - 100, y + 104, 200, 20, this.game.remote ? 'Disconnect' : 'Save and Quit to Title', () => this.quit()),
+      new Button(this.ui, W / 2 - 100, y + 88 - 4, 98, 20, 'Advancements', () => this.ui.open(new AdvancementsScreen(this.ui))),
+      new Button(this.ui, W / 2 + 2, y + 88 - 4, 98, 20, 'Statistics', () => this.ui.open(new StatsScreen(this.ui, this))),
+      new Button(this.ui, W / 2 - 100, y + 112, 200, 20, this.game.remote ? 'Disconnect' : 'Save and Quit to Title', () => this.quit()),
     ];
   }
   async quit() {

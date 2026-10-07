@@ -6,12 +6,18 @@ import { Gui, Ctx } from './gui';
 import { Hud, drawDurability } from './hud';
 import { Chat } from './chat';
 import { Screen } from './screen';
-import { ItemStack, starTint } from '../game/items';
+import { ItemStack, starTint, I7, leatherColor } from '../game/items';
+import { BANNERS } from '../world/blocks';
 import * as Menus from './menus';
 import * as Containers from './containers';
 import { TradeScreen } from './trade';
 import { EnchantScreen } from './enchant';
 import { HopperScreen, DispenserScreen, BrewingScreen, AnvilScreen } from './devices';
+import { BookScreen } from './book';
+import { CommandBlockScreen } from './commandblock';
+import { AdvancementsScreen } from './advancements';
+import { bannerCanvas } from './stations';
+import { SmithingScreen, StonecutterScreen, BeaconScreen, GrindstoneScreen, CartScreen, SignScreen, LoomScreen, CartographyScreen } from './stations';
 import type { Villager } from '../entity/mobs';
 import { TouchControls } from './touch';
 import { device } from '../game/device';
@@ -190,6 +196,17 @@ export class UI {
   openDispenser(x: number, y: number, z: number, dropper: boolean) { this.open(new DispenserScreen(this, x, y, z, dropper)); }
   openBrewing(x: number, y: number, z: number) { this.open(new BrewingScreen(this, x, y, z)); }
   openAnvil(x: number, y: number, z: number) { this.open(new AnvilScreen(this, x, y, z)); }
+  openSmithing(x: number, y: number, z: number) { this.open(new SmithingScreen(this, x, y, z)); }
+  openStonecutter(x: number, y: number, z: number) { this.open(new StonecutterScreen(this, x, y, z)); }
+  openBeacon(x: number, y: number, z: number) { this.open(new BeaconScreen(this, x, y, z)); }
+  openSign(x: number, y: number, z: number) { this.open(new SignScreen(this, x, y, z)); }
+  openCart(c: { items: (import('../game/items').ItemStack | null)[]; kind: string; typeName: string }) { this.open(new CartScreen(this, c)); }
+  openGrindstone(x: number, y: number, z: number) { this.open(new GrindstoneScreen(this, x, y, z)); }
+  openLoom(x: number, y: number, z: number) { this.open(new LoomScreen(this, x, y, z)); }
+  openBook(slot: number) { this.open(new BookScreen(this, { slot })); }
+  openCommandBlock(x: number, y: number, z: number) { this.open(new CommandBlockScreen(this, x, y, z)); }
+  openLectern(x: number, y: number, z: number) { this.open(new BookScreen(this, { lectern: [x, y, z] })); }
+  openCartography(x: number, y: number, z: number) { this.open(new CartographyScreen(this, x, y, z)); }
   /** A container's contents changed outside the UI (hoppers, droppers): open screens read tiles live. */
   containerChanged(_x: number, _y: number, _z: number) {}
 
@@ -208,6 +225,7 @@ export class UI {
       case 'Escape': this.open(new Menus.PauseScreen(this)); return true;
       case 'KeyE': if (!g.player!.dead) { this.suppressChar = true; this.openInventory(); } return true;
       case 'KeyT': this.suppressChar = true; this.open(new Menus.ChatScreen(this, '')); return true;
+      case 'KeyL': this.open(new AdvancementsScreen(this)); return true;
       case 'Slash': this.suppressChar = true; this.open(new Menus.ChatScreen(this, '/')); return true;
       case 'Enter': this.open(new Menus.ChatScreen(this, '')); return true;
       case 'F1': g.hideHud = !g.hideHud; return true;
@@ -283,6 +301,33 @@ export class UI {
 
   /** Draw an item icon with count / durability overlays at GUI position. */
   private glintCanvas = document.createElement('canvas');
+  private dyedIcons = new Map<string, HTMLCanvasElement>();
+  /** An icon washed with a dye colour (leather armour), keeping its shape and shading. */
+  private dyed(icon: HTMLCanvasElement, col: number): HTMLCanvasElement {
+    let k = this.iconKeys.get(icon);
+    if (!k) { k = String(++this.iconCount); this.iconKeys.set(icon, k); }
+    const id = k + ':' + col;
+    let c = this.dyedIcons.get(id);
+    if (!c) {
+      c = document.createElement('canvas');
+      c.width = icon.width; c.height = icon.height;
+      const g = c.getContext('2d')!;
+      g.drawImage(icon, 0, 0);
+      // each pixel's lightness (brightened, as vanilla's leather sprites are pale) times the dye
+      const img = g.getImageData(0, 0, c.width, c.height), d = img.data;
+      const cr = (col >> 16) & 255, cg = (col >> 8) & 255, cb = col & 255;
+      for (let i = 0; i < d.length; i += 4) {
+        if (!d[i + 3]) continue;
+        const l = Math.min(1.15, ((d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) / 255) * 2.2);
+        d[i] = Math.min(255, cr * l); d[i + 1] = Math.min(255, cg * l); d[i + 2] = Math.min(255, cb * l);
+      }
+      g.putImageData(img, 0, 0);
+      this.dyedIcons.set(id, c);
+    }
+    return c;
+  }
+  private iconKeys = new WeakMap<HTMLCanvasElement, string>();
+  private iconCount = 0;
   private glinted(icon: HTMLCanvasElement): HTMLCanvasElement {
     const c = this.glintCanvas;
     if (c.width !== icon.width) { c.width = icon.width; c.height = icon.height; }
@@ -303,6 +348,8 @@ export class UI {
 
   drawItem(ctx: Ctx, s: ItemStack, x: number, y: number, pop = 0) {
     let icon = this.game.icons.get(s.id, starTint(s));
+    const dye = leatherColor(s);
+    if (dye !== undefined) icon = this.dyed(icon, dye);
     if (s.ench) icon = this.glinted(icon);
     if (pop > 0) {
       const f = 1 + pop / 5;
@@ -312,6 +359,10 @@ export class UI {
       ctx.drawImage(icon, -8, -12, 16, 16);
       ctx.restore();
     } else ctx.drawImage(icon, x, y, 16, 16);
+    // a patterned banner shows its design on the cloth; a decorated shield on its face (the banner's upper part)
+    const shieldBase = s.tag?.shieldBase as number | undefined;
+    if (s.banner?.length && BANNERS.includes(s.id)) ctx.drawImage(bannerCanvas(BANNERS.indexOf(s.id), s.banner), x + 4, y + 2, 8, 12);
+    else if (shieldBase !== undefined && s.id === I7.SHIELD) ctx.drawImage(bannerCanvas(shieldBase, s.banner ?? []), 0, 0, 20, 22, x + 4, y + 3, 8, 8);
     drawDurability(ctx, s, x, y);
     if (s.count > 1) {
       const t = String(s.count);

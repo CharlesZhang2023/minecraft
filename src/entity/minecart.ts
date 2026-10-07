@@ -4,7 +4,8 @@ import { Entity } from './entity';
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import { B, BLOCKS, idOf, metaOf } from '../world/blocks';
-import { I5, type ItemStack } from '../game/items';
+import { I, I5, I7, type ItemStack, getItem, sameItem, itemId } from '../game/items';
+import { ItemEntity } from './item';
 import { Player } from '../game/player';
 import { RAIL_ENDS, railShape, isRail, isAscending, NS, EW, ASC_E, ASC_W, ASC_N, ASC_S } from '../world/rails';
 import { carryRider, dismountSpot, type Mount } from './mount';
@@ -13,9 +14,28 @@ const MAX_SPEED = 0.4;
 /** Feet of a seated rider, relative to the cart. */
 export const CART_SEAT = -0.55;
 
+/** What a cart carries: nothing (a seat), a chest, a furnace (an engine), a hopper, or TNT. */
+export type CartKind = 'minecart' | 'chest' | 'furnace' | 'hopper' | 'tnt';
+export const CART_ITEM: Record<CartKind, () => number> = { minecart: () => I5.MINECART, chest: () => I7.CHEST_MINECART, furnace: () => I7.FURNACE_MINECART, hopper: () => I7.HOPPER_MINECART, tnt: () => I7.TNT_MINECART };
+export const CART_BLOCK: Record<CartKind, () => number> = { minecart: () => 0, chest: () => B.CHEST, furnace: () => B.FURNACE, hopper: () => B.HOPPER, tnt: () => B.TNT };
+
 export class Minecart extends Entity implements Mount {
   typeName = 'Minecart';
   persist = true;
+  kind: CartKind = 'minecart';
+  /** A chest cart's 27 slots or a hopper cart's 5. */
+  items: (ItemStack | null)[] = [];
+  /** A furnace cart's fuel (ticks) and the way it pushes. */
+  fuel = 0;
+  pushX = 0;
+  pushZ = 0;
+  /** A TNT cart's fuse (-1: not lit). */
+  fuse = -1;
+  setKind(k: CartKind) {
+    this.kind = k;
+    this.items = k === 'chest' ? new Array(27).fill(null) : k === 'hopper' ? new Array(5).fill(null) : [];
+    this.typeName = k === 'minecart' ? 'Minecart' : k === 'tnt' ? 'Minecart with TNT' : `Minecart with ${k[0].toUpperCase() + k.slice(1)}`;
+  }
   rider: Player | null = null;
   lookLimit = 180;
   damageTaken = 0;
@@ -84,6 +104,56 @@ export class Minecart extends Entity implements Mount {
     }
     this.pushOthers();
     if (this.rider) carryRider(this, this.rider, CART_SEAT);
+    this.cargoTick(v);
+  }
+
+  /** What the cargo does each tick: furnaces push, hoppers collect, TNT burns down (and lights on activator rails). */
+  private cargoTick(v: number) {
+    if (this.kind === 'furnace' && this.fuel > 0) {
+      this.fuel--;
+      if (this.onRail && (this.pushX || this.pushZ)) {
+        // keep the push pointing along the cart's travel
+        const sp = Math.hypot(this.vx, this.vz);
+        if (sp > 0.01 && this.vx * this.pushX + this.vz * this.pushZ < 0) { this.pushX = -this.pushX; this.pushZ = -this.pushZ; }
+        if (sp < 0.2) { this.vx += this.pushX * 0.04; this.vz += this.pushZ * 0.04; }
+      }
+      if (this.age % 4 === 0) this.game.particles?.smoke(this.x, this.y + 0.9, this.z, true);
+    }
+    if (this.kind === 'hopper' && this.age % 4 === 0 && !(idOf(v) === B.ACTIVATOR_RAIL && metaOf(v) & 8)) {
+      for (const e of this.game.entities) {
+        if (!(e instanceof ItemEntity) || e.removed || e.pickupDelay > 0) continue;
+        if (Math.abs(e.x - this.x) > 1 || Math.abs(e.z - this.z) > 1 || e.y < this.y - 0.2 || e.y > this.y + 1.5) continue;
+        if (this.insert(e.item)) { if (e.item.count <= 0) e.removed = true; break; }
+      }
+      // and from a container above, one item at a time
+      const t = this.world.getTile(Math.floor(this.x), Math.floor(this.y) + 1, Math.floor(this.z)) as { items?: (ItemStack | null)[] } | undefined;
+      const from = t?.items?.findIndex((s) => !!s) ?? -1;
+      if (t?.items && from >= 0) { const one = { ...t.items[from]!, count: 1 }; if (this.insert(one) && one.count === 0) { t.items[from]!.count--; if (t.items[from]!.count <= 0) t.items[from] = null; } }
+    }
+    if (this.kind === 'tnt') {
+      if (this.fuse < 0 && idOf(v) === B.ACTIVATOR_RAIL && metaOf(v) & 8) this.fuse = 80;
+      if (this.fuse < 0 && this.fireTicks > 0) this.fuse = 80;
+      if (this.fuse >= 0) {
+        this.game.particles?.smoke(this.x, this.y + 1.1, this.z);
+        if (--this.fuse <= 0) this.explode();
+      }
+    }
+  }
+  private insert(s: ItemStack): boolean {
+    const max = getItem(s.id).maxStack;
+    for (let i = 0; i < this.items.length && s.count > 0; i++) {
+      const c = this.items[i];
+      if (!c) { this.items[i] = { ...s }; s.count = 0; return true; }
+      if (sameItem(c, s) && c.count < max) { const k = Math.min(max - c.count, s.count); c.count += k; s.count -= k; }
+    }
+    return s.count === 0;
+  }
+  /** A TNT cart goes off: power 4, more the faster it was rolling. */
+  explode() {
+    if (this.removed) return;
+    this.removed = true;
+    const sp = Math.min(5, Math.hypot(this.vx, this.vz) * 10);
+    this.game.interact!.explode(this.x, this.y + 0.5, this.z, 4 + Math.random() * 1.5 * sp, false, this);
   }
 
   private alongTrack(i: number, j: number, k: number, v: number) {
@@ -207,9 +277,19 @@ export class Minecart extends Entity implements Mount {
     }
   }
 
-  useLabel(p: Player) { return this.rider || p.sneaking || p.riding ? null : 'Ride'; }
-  interact(game: Game): boolean {
+  useLabel(p: Player) { return this.kind === 'chest' || this.kind === 'hopper' ? 'Open' : this.kind !== 'minecart' ? null : this.rider || p.sneaking || p.riding ? null : 'Ride'; }
+  interact(game: Game, held?: ItemStack | null): boolean {
     const p = game.player!;
+    if (this.kind === 'chest' || this.kind === 'hopper') { (game.ui as unknown as { openCart?(c: Minecart): void }).openCart?.(this); return true; }
+    if (this.kind === 'furnace') {
+      // coal (or charcoal) fuels it, and it sets off away from whoever fed it
+      const fuelOk = held && (held.id === I.COAL || held.id === itemId('charcoal'));
+      if (fuelOk) { this.fuel += 3600; game.interact!.consume(1); }
+      const dx = this.x - p.x, dz = this.z - p.z, l = Math.hypot(dx, dz) || 1;
+      this.pushX = dx / l; this.pushZ = dz / l;
+      return true;
+    }
+    if (this.kind !== 'minecart') return false;
     if (this.rider || p.sneaking || p.riding) return false;
     this.rider = p;
     p.riding = this;
@@ -233,16 +313,26 @@ export class Minecart extends Entity implements Mount {
     this.damageTaken += 10;
     if (creative || this.damageTaken > 40) {
       this.dismount();
+      // a moving or burning TNT cart goes off instead
+      if (this.kind === 'tnt' && (this.fuse >= 0 || Math.hypot(this.vx, this.vz) > 0.1)) { this.explode(); return; }
       this.removed = true;
-      if (!creative) this.game.dropItem(this.x, this.y + 0.5, this.z, { id: I5.MINECART, count: 1 } as ItemStack);
+      if (!creative) {
+        // the cart and its cargo come apart (1.16), contents spill
+        this.game.dropItem(this.x, this.y + 0.5, this.z, { id: I5.MINECART, count: 1 } as ItemStack);
+        if (this.kind !== 'minecart') this.game.dropItem(this.x, this.y + 0.5, this.z, { id: CART_BLOCK[this.kind](), count: 1 } as ItemStack);
+        for (const s of this.items) if (s) this.game.dropItem(this.x, this.y + 0.5, this.z, s, true);
+      }
       this.game.playBlockSound(B.IRON_BLOCK, Math.floor(this.x), Math.floor(this.y), Math.floor(this.z), 'break');
     }
   }
 
   toJSON() {
-    return { type: 'minecart', x: this.x, y: this.y, z: this.z, yaw: this.yaw, vx: this.vx, vz: this.vz };
+    return { type: 'minecart', x: this.x, y: this.y, z: this.z, yaw: this.yaw, vx: this.vx, vz: this.vz, kind: this.kind, items: this.items, fuel: this.fuel, pushX: this.pushX, pushZ: this.pushZ };
   }
-  load(d: { x: number; y: number; z: number; yaw: number; vx?: number; vz?: number }) {
+  load(d: { x: number; y: number; z: number; yaw: number; vx?: number; vz?: number; kind?: CartKind; items?: (ItemStack | null)[]; fuel?: number; pushX?: number; pushZ?: number }) {
+    this.setKind(d.kind ?? 'minecart');
+    if (d.items) this.items = d.items;
+    this.fuel = d.fuel ?? 0; this.pushX = d.pushX ?? 0; this.pushZ = d.pushZ ?? 0;
     this.setPos(d.x, d.y, d.z);
     this.yaw = this.pyaw = d.yaw;
     this.vx = d.vx ?? 0; this.vz = d.vz ?? 0;

@@ -23,6 +23,9 @@ export class FireworkRocket extends Entity {
   ex: FireworkExplosion[] = [];
   /** The glider it's pulling (null: flying free). */
   attached: Entity | null = null;
+  /** Shot from a crossbow: it flies straight and bursts on whatever it hits. */
+  shot = false;
+  shooter: Entity | null = null;
 
   constructor(world: World, public game: Game, item: ItemStack | null) {
     super(world);
@@ -44,6 +47,13 @@ export class FireworkRocket extends Entity {
       this.x = a.x; this.y = a.y; this.z = a.z;
       this.vx = a.vx; this.vy = a.vy; this.vz = a.vz;
       if (a.removed || (a instanceof LivingEntity && a.dead)) this.attached = null;
+    } else if (this.shot) {
+      this.move(this.vx, this.vy, this.vz);
+      if (this.collidedH || this.collidedV) { this.explode(); return; }
+      for (const e of this.game.entities) {
+        if (!(e instanceof LivingEntity) || e === this.shooter || e.dead) continue;
+        if (Math.abs(e.x - this.x) < e.width / 2 + 0.3 && Math.abs(e.z - this.z) < e.width / 2 + 0.3 && this.y > e.y - 0.2 && this.y < e.y + e.height + 0.2) { this.explode(); return; }
+      }
     } else {
       this.vx *= 1.15;
       this.vz *= 1.15;

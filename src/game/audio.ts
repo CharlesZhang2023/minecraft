@@ -3,6 +3,7 @@
 import { Random } from '../noise';
 import { SoundBank, loadSoundIndex, loadSoundBank } from './soundbank';
 import { cachedAsset, pruneAssets } from '../net/cdn';
+import { moreSounds } from './audio2';
 
 const SR = 22050;
 type Buf = Float32Array;
@@ -465,6 +466,9 @@ const SYNTH_PITCH: Record<string, number> = { 'bat.idle': 1.8 / 0.95, 'ghast.moa
 
 /** At most this many sounds at once (vanilla's sound engine has a similar cap); more are skipped. */
 const MAX_VOICES = 64;
+
+// the 1.9 - 1.16 sounds (audio2.ts)
+moreSounds((name, g) => { GENS[name] = g; }, { noise, lowpass, highpass, bandpass, env, normalize, tone, mixInto }, SR);
 
 export class Audio {
   ctx: AudioContext | null = null;

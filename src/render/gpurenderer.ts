@@ -25,7 +25,7 @@ import { S, Img } from './pixels';
 type Kind = 'chunk' | 'dyn' | 'entity' | 'sky' | 'sun' | 'cloud' | 'line' | 'overlay' | 'lod';
 type TexKind = 'array' | '2d' | 'none';
 type Blend = 'none' | 'alpha' | 'add';
-interface State { blend?: Blend; depthTest?: boolean; depthWrite?: boolean; cull?: boolean; colorWrite?: boolean; bias?: boolean }
+interface State { blend?: Blend; depthTest?: boolean; depthWrite?: boolean; cull?: boolean; colorWrite?: boolean; bias?: boolean; /** only behind what's drawn (depth greater, not written) */ hidden?: boolean }
 
 const SLOT = 256;
 const DEPTH: GPUTextureFormat = 'depth32float';
@@ -383,7 +383,7 @@ export class GPURenderer extends Renderer {
   }
 
   private pipelineDesc(kind: Kind, s: State, format: GPUTextureFormat, packed: boolean, pk = this.pack): GPURenderPipelineDescriptor {
-    const blend = s.blend ?? 'none', dt = s.depthTest !== false, dw = dt && s.depthWrite !== false, cull = !!s.cull, cw = s.colorWrite !== false, bias = !!s.bias;
+    const blend = s.blend ?? 'none', dt = s.depthTest !== false, dw = dt && s.depthWrite !== false && !s.hidden, cull = !!s.cull, cw = s.colorWrite !== false, bias = !!s.bias;
     const k = KINDS[kind], module = packed ? pk!.modules.get(kind)! : this.module(kind);
     const BLENDS: Record<Blend, GPUBlendState | undefined> = {
       none: undefined,
@@ -397,7 +397,7 @@ export class GPURenderer extends Renderer {
       vertex: { module, entryPoint: 'vs', buffers: k.buffers },
       fragment: { module, entryPoint: 'fs', targets: [{ format, blend: BLENDS[blend], writeMask: cw ? GPUColorWrite.ALL : 0 }] },
       primitive: { topology, cullMode: cull ? 'back' : 'none', frontFace: 'ccw' },
-      depthStencil: { format: DEPTH, depthWriteEnabled: dw, depthCompare: dt ? 'less-equal' : 'always', ...(bias && topology === 'triangle-list' ? { depthBias: -10, depthBiasSlopeScale: -1 } : {}) },
+      depthStencil: { format: DEPTH, depthWriteEnabled: dw, depthCompare: !dt ? 'always' : s.hidden ? 'greater' : 'less-equal', ...(bias && topology === 'triangle-list' ? { depthBias: -10, depthBiasSlopeScale: -1 } : {}) },
     };
   }
 
@@ -826,7 +826,7 @@ export class GPURenderer extends Renderer {
     f.set(mo.model, i);
     f.set(mo.overlay, i + 16);
     f[i + 20] = mo.light[0]; f[i + 21] = mo.light[1]; f[i + 22] = mo.alpha; f[i + 23] = mo.viewProj !== this.viewProj ? 3 : 2;
-    this.bind(this.pipeline('entity', mo.blend ? { blend: 'alpha' } : {}), sc, this.texBG(tex as GPUTex), o);
+    this.bind(this.pipeline('entity', { ...(mo.blend ? { blend: 'alpha' as const } : {}), ...(mo.hidden ? { hidden: true } : {}) }), sc, this.texBG(tex as GPUTex), o);
     this.vertexBufferAt(this.modelBuf(g), 0);
     this.pass.drawIndexed(g.quads * 6);
   }
@@ -1247,7 +1247,7 @@ export class GPURenderer extends Renderer {
 
 function pipelineKey(kind: Kind, s: State, format: string, packed: boolean) {
   const dt = s.depthTest !== false;
-  return `${kind}|${s.blend ?? 'none'}|${+dt}${+(dt && s.depthWrite !== false)}${+!!s.cull}${+(s.colorWrite !== false)}${+!!s.bias}|${format}${packed ? '|pack' : ''}`;
+  return `${kind}|${s.blend ?? 'none'}|${+dt}${+(dt && s.depthWrite !== false)}${+!!s.cull}${+(s.colorWrite !== false)}${+!!s.bias}${+!!s.hidden}|${format}${packed ? '|pack' : ''}`;
 }
 
 /** The shader and state combinations drawn every frame (see the passes below). */

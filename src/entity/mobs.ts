@@ -1,4 +1,7 @@
 // Mob behaviours.
+import { advanceNear } from '../game/advancements';
+import { villagerTick, villagerTrades, villagerSchedule, wakeVillager } from './villagers';
+import { leashTick } from './leash';
 import { LivingEntity, DamageSource } from './living';
 import type { Entity } from './entity';
 import type { World } from '../world/world';
@@ -20,6 +23,10 @@ export abstract class Mob extends LivingEntity {
   skin = 'steve';
   hostile = false;
   persist = true;
+  /** Hostile mobs peaceful difficulty doesn't remove (structure guards placed by the world). */
+  persistentHostile = false;
+  /** Drawn bigger or smaller than the model (wither skeletons). */
+  renderScale = 1;
   /** Stands still and does nothing of its own (tools placing mobs as scenery or test targets); physics still apply. */
   noAi = false;
   target: LivingEntity | null = null;
@@ -52,6 +59,10 @@ export abstract class Mob extends LivingEntity {
   lookTimer = 0;
   heldItem = 0;
   holding = false;
+  /** Its name from a name tag (shown over it; a named mob never despawns). */
+  customName = '';
+  /** What its lead is tied to: a player or a fence knot. */
+  leashHolder: Entity | null = null;
 
   constructor(world: World, public game: Game) {
     super(world);
@@ -85,6 +96,7 @@ export abstract class Mob extends LivingEntity {
       this.ai();
       this.followPath();
     }
+    if (this.leashHolder) leashTick(this);
     this.livingTick();
     this.updateRotations();
     // ambient sound
@@ -230,7 +242,7 @@ export abstract class Mob extends LivingEntity {
     const shooter = (attacker as unknown as { shooter?: Entity })?.shooter;
     const killer = attacker instanceof Player ? attacker : shooter instanceof Player ? shooter : null;
     const byPlayer = !!killer;
-    if (killer) this.game.playerOf(killer)?.achievements.onKill(this.typeName, source === 'arrow' ? this.distanceTo(killer) : undefined, source === 'explosion');
+    if (killer) this.game.playerOf(killer)?.achievements.onKill(this.typeName, source === 'arrow' ? this.distanceTo(killer) : undefined, source === 'explosion', { captain: !!(this as unknown as { captain?: boolean }).captain, weapon: killer.inventory.held() ? getItem(killer.inventory.held()!.id).name : '' });
     if (!this.baby) {
       const looting = killer ? level(killer.inventory.held(), 'looting') : 0;
       for (const s of this.drops(this.fireTicks > 0)) {
@@ -253,7 +265,7 @@ export abstract class Mob extends LivingEntity {
   drops(_burning: boolean): ItemStack[] { return []; }
 
   despawnCheck() {
-    if (!this.hostile) return;
+    if (!this.hostile || this.customName) return;
     const d = this.playerDistance();
     if (d === Infinity) return;
     if (d > 128) this.removed = true;
@@ -281,7 +293,8 @@ export abstract class Mob extends LivingEntity {
   }
 
   toJSON() {
-    return { type: this.typeName.toLowerCase(), x: this.x, y: this.y, z: this.z, yaw: this.yaw, health: this.health, baby: this.baby, ...(this.noAi ? { noAi: true } : {}), ...this.extraJSON() };
+    const knot = this.leashHolder && (this.leashHolder as unknown as { typeName?: string }).typeName === 'Leash Knot' ? [this.leashHolder.x, this.leashHolder.y, this.leashHolder.z] : undefined;
+    return { type: this.typeName.toLowerCase(), x: this.x, y: this.y, z: this.z, yaw: this.yaw, health: this.health, baby: this.baby, ...(this.noAi ? { noAi: true } : {}), ...(this.customName ? { customName: this.customName } : {}), ...(knot ? { knot } : {}), ...this.extraJSON() };
   }
   extraJSON(): Record<string, unknown> { return {}; }
   load(d: { x: number; y: number; z: number; yaw: number; health: number; baby?: boolean } & Record<string, unknown>) {
@@ -290,6 +303,10 @@ export abstract class Mob extends LivingEntity {
     this.health = d.health;
     this.baby = !!d.baby;
     this.noAi = !!d.noAi;
+    this.customName = (d.customName as string) ?? '';
+    // tied to a fence: find the knot once the world has its entities
+    const knot = d.knot as number[] | undefined;
+    if (knot) setTimeout(() => { const k = this.game.entities.find((e) => (e as unknown as { typeName?: string }).typeName === 'Leash Knot' && Math.abs(e.x - knot[0]) < 0.1 && Math.abs(e.y - knot[1]) < 0.1 && Math.abs(e.z - knot[2]) < 0.1); if (k) this.leashHolder = k; }, 0);
     this.loadExtra(d);
   }
   loadExtra(_d: Record<string, unknown>) {}
@@ -338,9 +355,12 @@ export abstract class Monster extends Mob {
       this.swing();
       if (t.damage(Math.max(0, this.attackDamage + this.attackBonus()), 'mob', this)) {
         if (this.fireTicks > 0 && rng.next() < 0.3) t.fireTicks = Math.max(t.fireTicks, 40);
+        this.onAttack(t);
       }
     }
   }
+  /** After a melee hit landed (husks' hunger, cave spiders' poison). */
+  onAttack(_t: LivingEntity) {}
 }
 
 export class Zombie extends Monster {
@@ -363,6 +383,18 @@ export class Zombie extends Monster {
     this.attackDamage = 3;
   }
   override eyeHeight() { return 1.74; }
+  /** Ticks with its head under water: at 600 it starts turning (zombie to drowned, husk to zombie), 300 later it has. */
+  drownTicks = 0;
+  /** What it turns into under water (none for drowned). */
+  drownsInto: string | null = 'drowned';
+  override tick() {
+    super.tick();
+    if (this.dead || this.removed || !this.drownsInto || this.noAi) return;
+    const eye = this.world.getId(Math.floor(this.x), Math.floor(this.y + this.eyeHeight()), Math.floor(this.z));
+    if (eye === B.WATER) this.drownTicks++;
+    else if (this.drownTicks < 600) this.drownTicks = 0;
+    if (this.drownTicks >= 900) convertMob(this, this.drownsInto);
+  }
   override drops(): ItemStack[] {
     const out = [stack(I.ROTTEN_FLESH, rng.int(3))].filter((s) => s.count > 0);
     if (rng.int(40) === 0) out.push(stack([I.IRON_INGOT, I3.CARROT, I3.POTATO][rng.int(3)]));
@@ -386,6 +418,8 @@ export class Skeleton extends Monster {
   override canBreathe = true;
   override heldItem = I.BOW;
   private shootTimer = 40;
+  /** Tipped arrows (strays shoot slowness). */
+  arrowEffect: [string, number, number] | null = null;
   private strafeTimer = 0;
   private strafeDir = 1;
   constructor(world: World, game: Game) {
@@ -422,6 +456,7 @@ export class Skeleton extends Monster {
       a.shoot(dx, dy + h * 0.2, dz, 1.6, 14 - this.game.options.difficulty * 4);
       a.pickup = false;
       a.damageBase = 2 + this.game.options.difficulty * 0.11 + rng.next() * 0.25;
+      a.effect = this.arrowEffect;
       this.game.addEntity(a);
       this.game.audio.play('bow', this, 1, 1 / (rng.next() * 0.4 + 0.8));
     }
@@ -442,6 +477,8 @@ export class Creeper extends Monster {
   swell = 0;
   swellDir = 0;
   fuse = 30;
+  /** Struck by lightning: a charged creeper blows up twice as big (and its kills drop heads). */
+  charged = false;
   constructor(world: World, game: Game) {
     super(world, game);
     this.width = 0.6; this.height = 1.7;
@@ -459,6 +496,14 @@ export class Creeper extends Monster {
     else { this.forward = 0; this.attackCooldown = 20; }
   }
   override ai() {
+    // cats and ocelots scare creepers off (vanilla: within 6 blocks)
+    const cat = this.game.entities.find((e) => ((e as Mob).typeName === 'Cat' || (e as Mob).typeName === 'Ocelot') && e.distanceTo(this) < 6);
+    if (cat) {
+      this.swellDir = -1;
+      this.swell = Math.max(0, this.swell - 1);
+      if (!this.path || rng.int(10) === 0) { const dx = this.x - cat.x, dz = this.z - cat.z, l = Math.hypot(dx, dz) || 1; this.setPathTo(this.x + (dx / l) * 8, this.y, this.z + (dz / l) * 8, this.chaseSpeed * 1.2); }
+      return;
+    }
     super.ai();
     if (!this.target) this.swellDir = -1;
     if (this.swellDir > 0 && this.swell === 0) this.game.audio.play('fuse', this, 1, 0.5);
@@ -467,7 +512,7 @@ export class Creeper extends Monster {
       this.swell = this.fuse;
       this.removed = true;
       this.dead = true;
-      this.game.interact!.explode(this.x, this.y, this.z, 3, false, this);
+      this.game.interact!.explode(this.x, this.y, this.z, this.charged ? 6 : 3, false, this);
     }
   }
   override drops(): ItemStack[] {
@@ -550,6 +595,7 @@ export abstract class Animal extends Mob {
           this.breedCooldown = mate.breedCooldown = 6000;
           const baby = this.game.interact!.spawnMob(this.babyType(mate), this.x, this.y, this.z, true);
           if (baby) this.bred(baby as Mob, mate);
+          if (baby) advanceNear(this.game, this, 'breed', { bred: this.typeName });
           if (baby) for (let i = 0; i < 7; i++) this.game.particles?.heart(this.x + rng.next() - 0.5, this.y + 0.8, this.z + rng.next() - 0.5);
           const o = new XpOrb(this.world, this.game, 1 + rng.int(7));
           o.setPos(this.x, this.y + 0.5, this.z);
@@ -1051,6 +1097,7 @@ export class Wolf extends Animal {
         this.ownerName = game.ctx?.name ?? '';
         this.sitting = true;
         this.maxHealth = this.health = 20;
+        game.achievements.event('tame');
         for (let i = 0; i < 7; i++) game.particles?.heart(this.x + rng.next() - 0.5, this.y + 0.8, this.z + rng.next() - 0.5);
         game.audio.play('wolf.say', this, 1, 1.3);
       } else for (let i = 0; i < 7; i++) game.particles?.smoke(this.x + rng.next() - 0.5, this.y + 0.8, this.z + rng.next() - 0.5);
@@ -1172,7 +1219,7 @@ function bookTrade(r: Random): { ench: Record<string, number>; cost2: [number, n
   const lvl = 1 + r.int(e.max);
   return { ench: { [e.id]: lvl }, cost2: [I.EMERALD, Math.min(64, 2 + r.int(5 + lvl * 10) + 3 * lvl)] };
 }
-export interface Trade { cost: [number, number]; cost2?: [number, number]; result: [number, number]; ench?: Record<string, number>; uses: number; max: number }
+export interface Trade { cost: [number, number]; cost2?: [number, number]; result: [number, number]; ench?: Record<string, number>; /** Extra data on the result (explorer maps). */ tag?: Record<string, unknown>; uses: number; max: number; /** Villager experience for making it. */ xp?: number }
 
 export class Villager extends Mob {
   typeName = 'Villager';
@@ -1181,9 +1228,22 @@ export class Villager extends Mob {
   override hurtName = 'villager.hurt';
   override deathName = 'villager.death';
   override speedAttr = 0.25;
-  profession = 'farmer';
+  /** '' = unemployed (looks for a workstation); 'nitwit' never works. */
+  profession = '';
   trades: Trade[] | null = null;
   tradingWith: LivingEntity | null = null;
+  /** Experience from trading, and the level it unlocks (1 novice .. 5 master). */
+  tradeXp = 0;
+  level = 1;
+  /** The workstation it has claimed. */
+  jobSite: { x: number; y: number; z: number } | null = null;
+  /** The bed it has claimed (its head), where it sleeps at night. */
+  home: { x: number; y: number; z: number } | null = null;
+  sleeping = false;
+  /** Food points carried (bread 4, a carrot, potato or beetroot 1): twelve make it willing to breed. */
+  food = 0;
+  /** When it last saw an iron golem (game ticks): villagers who haven't for a while summon one. */
+  sawGolem = 0;
   constructor(world: World, game: Game) {
     super(world, game);
     this.width = 0.6; this.height = 1.95;
@@ -1201,30 +1261,20 @@ export class Villager extends Mob {
       if (!this.path || rng.int(20) === 0) this.setPathTo(this.x + rng.int(11) - 5, this.y, this.z + rng.int(11) - 5, 0.06);
       return;
     }
+    // asleep, or on the way to bed, work or the bell
+    if (villagerSchedule(this)) return;
     if (p && !p.dead && this.distanceTo(p) < 8 && rng.int(40) === 0) { this.lookTarget = { x: p.x, y: p.y + p.eyeHeight(), z: p.z }; this.lookTimer = 60; }
     this.wander(0.035, 200);
   }
-  override onDamaged() { this.panicTicks = 60; this.path = null; }
-  ensureTrades(): Trade[] {
-    if (this.trades) return this.trades;
-    const r = new Random((this.id * 7919) ^ 0x5eed);
-    const t = (cost: [number, number], result: [number, number], cost2?: [number, number]): Trade => ({ cost, cost2, result, uses: 0, max: 7 + r.int(6) });
-    const E = I.EMERALD;
-    const n = (lo: number, hi: number) => lo + r.int(hi - lo + 1);
-    const T: Record<string, Trade[]> = {
-      farmer: [t([I.WHEAT, n(18, 22)], [E, 1]), t([E, 1], [I.BREAD, n(4, 6)]), t([E, 1], [I.APPLE, n(4, 6)]), t([B.PUMPKIN, n(8, 13)], [E, 1]), t([E, 1], [I.COOKIE, n(7, 10)])],
-      librarian: [t([I.PAPER, n(24, 36)], [E, 1]), { ...t([I.BOOK, 1], [I3.ENCHANTED_BOOK, 1], [E, 0]), ...bookTrade(r) }, t([I.BOOK, n(8, 10)], [E, 1]), t([E, n(3, 4)], [B.BOOKSHELF, 1]), t([E, 1], [B.GLASS, n(3, 5)]), t([E, n(8, 10)], [I.COMPASS, 1]), t([E, n(20, 22)], [I3.NAME_TAG, 1])],
-      priest: [t([I.ROTTEN_FLESH, n(36, 40)], [E, 1]), t([I.GOLD_INGOT, n(8, 10)], [E, 1]), t([E, n(2, 4)], [I3.GLASS_BOTTLE, n(2, 3)]), t([E, 1], [I3.NETHER_WART, n(1, 3)]), t([E, 1], [I.REDSTONE, n(1, 4)]), t([E, 1], [I.LAPIS, n(1, 2)]), t([E, n(4, 7)], [I.ENDER_PEARL, 1]), t([E, n(3, 4)], [I.GLOWSTONE_DUST, n(1, 3)])],
-      smith: [t([I.COAL, n(16, 24)], [E, 1]), t([I.IRON_INGOT, n(7, 9)], [E, 1]), t([E, n(7, 9)], [TOOLS.iron_pickaxe, 1]), t([E, n(9, 12)], [TOOLS.iron_sword, 1]), t([E, n(12, 15)], [TOOLS.diamond_axe, 1])],
-      butcher: [t([I.PORKCHOP, n(14, 18)], [E, 1]), t([I.CHICKEN, n(14, 18)], [E, 1]), t([E, 1], [I.COOKED_PORKCHOP, n(5, 7)]), t([E, 1], [I.COOKED_BEEF, n(5, 7)])],
-    };
-    this.trades = T[this.profession] ?? T.farmer;
-    return this.trades;
-  }
-  useLabel() { return this.baby || this.dead ? null : 'Trade'; }
+  override onDamaged() { this.panicTicks = 60; this.path = null; if (this.sleeping) wakeVillager(this); }
+  /** Its trades (vanilla 1.16 tables by profession and level, see villagers.ts). */
+  ensureTrades(): Trade[] { return villagerTrades(this); }
+  useLabel() { return this.baby || this.dead || !this.profession || this.profession === 'nitwit' ? null : 'Trade'; }
   interact(game: Game, held: ItemStack | null): boolean {
     void held;
     if (this.baby || this.dead) return false;
+    // no job, nothing to sell: it shakes its head
+    if (!this.profession || this.profession === 'nitwit' || !this.ensureTrades().length) { game.audio.play('villager.no', this, 1, 1); this.lookTarget = game.player ? { x: game.player.x, y: game.player.y + 1.6, z: game.player.z } : null; this.lookTimer = 40; return true; }
     this.ensureTrades();
     game.audio.play('villager.trade', this, 1, 1);
     this.tradingWith = game.player;
@@ -1232,13 +1282,39 @@ export class Villager extends Mob {
     return true;
   }
   override despawnCheck() {}
-  override extraJSON() { return { profession: this.profession, trades: this.trades }; }
-  override loadExtra(d: Record<string, unknown>) { this.profession = (d.profession as string) ?? 'farmer'; this.trades = (d.trades as Trade[]) ?? null; }
+  override die(source: DamageSource, attacker: Entity | null) {
+    // killed by a zombie on normal (half the time) or hard: it rises as a zombie villager
+    const d = this.game.options.difficulty;
+    const z = attacker && ['Zombie', 'Husk', 'Drowned', 'Zombie Villager'].includes((attacker as unknown as { typeName?: string }).typeName ?? '');
+    if (z && (d >= 3 || (d === 2 && rng.int(2) === 0))) {
+      const zv = convertMob(this, 'zombie_villager') as (Mob & { profession?: string }) | null;
+      if (zv) { zv.profession = this.profession; this.dead = true; return; }
+    }
+    super.die(source, attacker);
+  }
+  override tick() {
+    super.tick();
+    if (!this.dead) villagerTick(this);
+    this.skin = 'villager_' + (this.profession || 'unemployed');
+  }
+  override extraJSON() { return { profession: this.profession, trades: this.trades, tradeXp: this.tradeXp, level: this.level, jobSite: this.jobSite, home: this.home, food: this.food, sleeping: this.sleeping }; }
+  override loadExtra(d: Record<string, unknown>) {
+    this.profession = (d.profession as string) ?? '';
+    this.trades = (d.trades as Trade[]) ?? null;
+    this.tradeXp = (d.tradeXp as number) ?? 0;
+    this.level = (d.level as number) ?? 1;
+    this.jobSite = (d.jobSite as Villager['jobSite']) ?? null;
+    this.home = (d.home as Villager['home']) ?? null;
+    this.food = (d.food as number) ?? 0;
+    this.sleeping = !!d.sleeping;
+    // villagers saved with the old trades keep them (and their old professions take the new names)
+    if (this.trades && d.level === undefined) this.level = 1;
+  }
 }
 
 // ------------------------------------------------------------------ nether
 export class ZombiePigman extends Monster {
-  typeName = 'Zombie Pigman';
+  typeName = 'Zombified Piglin';
   override skin = 'pigman';
   override sayName = 'pigman.say';
   override hurtName = 'pigman.hurt';
@@ -1466,3 +1542,16 @@ export function woolRgb(color: number) {
   return WOOL_RGB[color] ?? [1, 1, 1];
 }
 void idOf;
+
+/** Replace a mob with another kind where it stands (zombies drowning, piglins zombifying, villagers struck...). Keeps its look, health ratio, babyhood and persistence. */
+export function convertMob(m: Mob, kind: string): Mob | null {
+  const n = m.game.interact!.spawnMob(kind, m.x, m.y, m.z, m.baby) as Mob | null;
+  if (!n) return null;
+  n.yaw = n.bodyYaw = n.headYaw = m.yaw;
+  n.baby = m.baby;
+  n.persistentHostile = m.persistentHostile;
+  n.health = Math.max(1, Math.round((m.health / m.maxHealth) * n.maxHealth));
+  m.removed = true;
+  m.game.audio.play('zombie.say', n, 1, 0.6);
+  return n;
+}

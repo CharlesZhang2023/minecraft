@@ -1,7 +1,7 @@
 // Base entity with Minecraft-style collision and movement.
 import type { World } from '../world/world';
 import { AABB } from '../math';
-import { BLOCKS, B, idOf, metaOf } from '../world/blocks';
+import { BLOCKS, B, B2, idOf, metaOf } from '../world/blocks';
 import { collisionShapes } from '../world/models';
 import { clipAgainstShips, carry, leaveShip, shipsOverlap } from '../sublevel/collide';
 
@@ -70,6 +70,9 @@ export class Entity {
 
   tick() {}
 
+  /** A fluid this entity walks on top of (striders on lava): its blocks count as solid from above. */
+  standsOn = 0;
+
   /** All collision boxes intersecting `box`. */
   collisions(box: AABB): AABB[] {
     const out: AABB[] = [];
@@ -83,7 +86,14 @@ export class Entity {
           const v = w.getForPhysics(x, y, z);
           if (v === 0) continue;
           const def = BLOCKS[idOf(v)];
-          if (!def.solid) continue;
+          if (!def.solid) {
+            // a fluid it can walk on is a floor, as long as the entity is above it (it can still sink in from below)
+            if (this.standsOn && idOf(v) === this.standsOn && w.getId(x, y + 1, z) !== this.standsOn && this.y >= y + 1 - 0.01) {
+              const b = { x0: x, y0: y, z0: z, x1: x + 1, y1: y + 1, z1: z + 1 };
+              if (b.x1 > box.x0 && b.x0 < box.x1 && b.y1 > box.y0 && b.y0 < box.y1 && b.z1 > box.z0 && b.z0 < box.z1) out.push(b);
+            }
+            continue;
+          }
           const shapes = collisionShapes(v, (dx, dy, dz) => w.get(x + dx, y + dy, z + dz));
           for (const s of shapes) {
             const b = { x0: x + s.x0, y0: y + s.y0, z0: z + s.z0, x1: x + s.x1, y1: y + s.y1, z1: z + s.z1 };
@@ -210,7 +220,8 @@ export class Entity {
   /** Update inWater/inLava flags; returns true if touching water. */
   updateFluidState() {
     const b = this.box;
-    const bx = { x0: b.x0 + 0.001, y0: b.y0 + 0.001, z0: b.z0 + 0.001, x1: b.x1 - 0.001, y1: b.y1 - 0.4, z1: b.z1 - 0.001 };
+    // (the top comes down 0.4, but never below the bottom: very short mobs, like fish, keep a sliver)
+    const bx = { x0: b.x0 + 0.001, y0: b.y0 + 0.001, z0: b.z0 + 0.001, x1: b.x1 - 0.001, y1: Math.max(b.y0 + 0.002, b.y1 - 0.4), z1: b.z1 - 0.001 };
     this.inWater = this.fluidIn(bx, B.WATER, true);
     this.inLava = this.fluidIn({ ...bx, y1: b.y1 - 0.4 }, B.LAVA, false);
     // cobwebs
@@ -227,11 +238,14 @@ export class Entity {
       for (let y = y0; y < y1; y++)
         for (let z = z0; z < z1; z++) {
           const v = this.world.get(x, y, z);
-          if (idOf(v) !== fluid) continue;
+          // a bubble column is water (with a current of its own)
+          if (idOf(v) !== fluid && !(fluid === B.WATER && idOf(v) === B2.BUBBLE_COLUMN)) continue;
           let lvl = metaOf(v);
           if (lvl >= 8) lvl = 0;
-          const top = y + 1 - (lvl + 1) / 9;
-          if (b.y1 >= top) {
+          // under more of the same fluid it fills its block (vanilla's fluid height is 1 there)
+          const top = idOf(this.world.get(x, y + 1, z)) === fluid ? y + 1 : y + 1 - (lvl + 1) / 9;
+          // the box dips below the surface (small mobs can sit wholly inside one water block, under its surface)
+          if (b.y1 >= top || b.y0 <= top) {
             found = true;
             if (push) {
               // flow direction: toward lower-level neighbours

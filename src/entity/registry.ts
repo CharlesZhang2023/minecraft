@@ -5,17 +5,42 @@ import { Zombie, Skeleton, Creeper, Spider, Pig, Cow, Sheep, Chicken, ZombiePigm
 import { ItemEntity } from './item';
 import { Boat } from './boat';
 import { Minecart } from './minecart';
-import { Horse, Donkey, Mule } from './horse';
+import { Horse, Donkey, Mule, SkeletonHorse, ZombieHorse } from './horse';
 import { EnderDragon, EndCrystal } from './dragon';
 import { ENTITIES } from '../mod/hooks';
 import { SubLevel } from '../sublevel/ship';
 import { isActive } from '../mod/state';
+import { Piglin, PiglinBrute, Hoglin, Zoglin, Strider, MagmaCube, WitherSkeleton } from './nethermobs';
+import { ItemFrame, Painting } from './hanging';
+import { Shulker, ShulkerBullet, Endermite } from './endmobs';
+import { Mooshroom, Rabbit, Fox, Cat, Ocelot, Parrot, PolarBear, Panda, Llama, TraderLlama, Turtle, Dolphin, Cod, Salmon, Pufferfish, TropicalFish, WanderingTrader } from './animals';
+import { Bee } from './bees';
+import { Wither, WitherSkull } from './wither';
+import { LeashKnot } from './leash';
+import { ArmorStand } from './armorstand';
+import { Husk, Drowned, Stray, ZombieVillager, CaveSpider, Witch, Pillager, Vindicator, Evoker, EvokerFangs, Vex, Ravager, Guardian, ElderGuardian, Phantom, IronGolem, SnowGolem } from './overworldmobs';
 
 type Ctor = new (w: World, g: Game) => Entity;
 export const MOB_TYPES: Record<string, Ctor> = {
   zombie: Zombie, skeleton: Skeleton, creeper: Creeper, spider: Spider, pig: Pig, cow: Cow, sheep: Sheep, chicken: Chicken,
   zombie_pigman: ZombiePigman, 'zombie pigman': ZombiePigman, ghast: Ghast, villager: Villager, enderman: Enderman, slime: Slime, squid: Squid, bat: Bat, wolf: Wolf, blaze: Blaze,
   silverfish: Silverfish, ender_dragon: EnderDragon, end_crystal: EndCrystal, horse: Horse, donkey: Donkey, mule: Mule,
+  // 1.16 (zombified piglins are the old zombie pigmen, under both names)
+  zombified_piglin: ZombiePigman, 'zombified piglin': ZombiePigman, piglin: Piglin, piglin_brute: PiglinBrute, hoglin: Hoglin, zoglin: Zoglin, strider: Strider,
+  magma_cube: MagmaCube, 'magma cube': MagmaCube, wither_skeleton: WitherSkeleton,
+  item_frame: ItemFrame, painting: Painting,
+  shulker: Shulker, shulker_bullet: ShulkerBullet as unknown as Ctor, endermite: Endermite,
+  // the overworld mobs of 1.4-1.16 (Mob-based ones save under their lower-cased name, so those are aliases)
+  husk: Husk, drowned: Drowned, stray: Stray, zombie_villager: ZombieVillager, 'zombie villager': ZombieVillager, cave_spider: CaveSpider, 'cave spider': CaveSpider,
+  witch: Witch, pillager: Pillager, vindicator: Vindicator, evoker: Evoker, evoker_fangs: EvokerFangs as unknown as Ctor, vex: Vex, ravager: Ravager,
+  guardian: Guardian, elder_guardian: ElderGuardian, 'elder guardian': ElderGuardian, phantom: Phantom,
+  iron_golem: IronGolem, snow_golem: SnowGolem,
+  // animals (aliases: Mob-based ones save under their lower-cased display name)
+  mooshroom: Mooshroom, rabbit: Rabbit, fox: Fox, cat: Cat, ocelot: Ocelot, parrot: Parrot, polar_bear: PolarBear, panda: Panda,
+  llama: Llama, trader_llama: TraderLlama, turtle: Turtle, dolphin: Dolphin, cod: Cod, salmon: Salmon, pufferfish: Pufferfish,
+  tropical_fish: TropicalFish, 'tropical fish': TropicalFish, bee: Bee, wandering_trader: WanderingTrader, 'wandering trader': WanderingTrader,
+  wither: Wither, wither_skull: WitherSkull as unknown as Ctor, leash_knot: LeashKnot as unknown as Ctor, armor_stand: ArmorStand as unknown as Ctor,
+  skeleton_horse: SkeletonHorse, 'skeleton horse': SkeletonHorse, zombie_horse: ZombieHorse, 'zombie horse': ZombieHorse,
 };
 
 export function createEntity(type: string, world: World, game: Game): Entity | null {

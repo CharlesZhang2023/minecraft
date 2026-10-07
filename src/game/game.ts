@@ -5,11 +5,13 @@
 // Gameplay code reaches for `game.player`, `game.world`, `game.input`, `game.ui`... as if there were one player.
 // Those follow the current context: the dimension being simulated and, while a player's own action runs (mining,
 // using an item, a click in their chest), that player.
+import { scanAdvancements } from './advscan';
+import { tickMaps } from './maps';
 import { World, Dimension, Chunk } from '../world/world';
 import { Player, GameMode } from './player';
 import { findPortal, buildPortal } from './portal';
 import { raycastBlocks, BlockHit } from './raycast';
-import { BLOCKS, B } from '../world/blocks';
+import { BLOCKS, B, B2, idOf, metaOf, pack } from '../world/blocks';
 import { ItemStack, stack, I, getItem } from './items';
 import { Storage, WorldMeta } from './storage';
 import { Entity } from '../entity/entity';
@@ -35,7 +37,10 @@ import { Brewing } from './brewing';
 import { END_PLATFORM } from '../world/endgen';
 import { GENERATOR_VERSION } from '../world/worldgen';
 import { EnderDragon, buildExitPortal } from '../entity/dragon';
+import { tickDragonRespawn } from './endstuff';
 import { tickFurnaces } from './furnace';
+import { tickStations } from './stations';
+import { chestLoot } from './loot';
 import { SOUND_FOR } from './audio';
 import type { Conn, Msg } from '../net/conn';
 import { ServerPlayer, NetPlayer } from '../server/splayer';
@@ -89,6 +94,8 @@ const NO_INPUT = new VirtualInput();
 
 export class Game {
   meta: WorldMeta | null = null;
+  /** Rolls structure loot when chunks first load. */
+  lootRng = new Random((Date.now() ^ 0x1007) >>> 0);
   dims = new Map<Dimension, Dim>();
   /** The dimension being simulated right now (gameplay code's `world`, `entities`, `ticker`...). */
   dim: Dim | null = null;
@@ -256,13 +263,29 @@ export class Game {
     world.onTileChange = (x, y, z) => { for (const p of this.players) if (p.dim === d) p.tileChanged(x, y, z); };
     world.canUnload = (c: Chunk) => !this.players.some((p) => p.dim === d && p.holdsChunk(((c.cx + 0x8000) * 0x10000) + (c.cz + 0x8000)));
     world.onChunkLoaded = (c, spawns) => this.inDim(dim, () => {
+      // structure hints first: chests get their loot table, spawners their mob
+      if (spawns) for (const sp of spawns) {
+        if (sp.type !== 'loot' && sp.type !== 'spawner' && sp.type !== 'tile') continue;
+        const i = (Math.floor(sp.x) & 15) | ((Math.floor(sp.z) & 15) << 4) | (Math.floor(sp.y) << 8);
+        if (c.tiles.has(i)) continue;
+        if (sp.type === 'loot') {
+          // dispensers and droppers take a nine-slot table (jungle temple traps), everything else is a chest
+          const nine = sp.data?.tile === 'dispenser' || sp.data?.tile === 'dropper';
+          c.tiles.set(i, { type: nine ? (sp.data!.tile as 'dispenser') : 'chest', items: chestLoot(String(sp.data?.table), this.lootRng, nine ? 9 : 27) });
+        }
+        else if (sp.type === 'tile') c.tiles.set(i, structuredClone(sp.data?.tile) as never);
+        else c.tiles.set(i, { type: 'spawner', mob: String(sp.data?.mob ?? 'zombie'), delay: 200 });
+      }
       dim.ticker.onChunkLoaded(c);
       dim.pistons.scanChunk(c.cx, c.cz);
       if (spawns) for (const sp of spawns) {
+        if (sp.type === 'loot' || sp.type === 'spawner' || sp.type === 'tile') continue;
         const e = createEntity(sp.type, world, this);
         if (!e) continue;
         e.setPos(sp.x, sp.y, sp.z);
         if (sp.data) Object.assign(e, sp.data);
+        // entities placed by structures may need to settle (item frames find their wall, items by name)
+        (e as unknown as { fromHint?: () => void }).fromHint?.();
         dim.entities.push(e);
       }
     });
@@ -314,6 +337,7 @@ export class Game {
         meta.gameMode = sp.entity.gameMode;
         meta.dimension = sp.dim;
         meta.achievements = sp.achievements.toJSON();
+        (meta as { stats?: Record<string, number> }).stats = sp.achievements.stats;
       } else players[sp.name] = sp.save();
     }
     for (const dim of this.dims.values()) this.storeEntities(dim);
@@ -353,6 +377,8 @@ export class Game {
       sp.pendingArrival = { x: p.x, y: p.y, z: p.z, toSpawn: false, stay: true };
       dimName = (owner ? meta.dimension : (saved as { dim?: Dimension }).dim) ?? 'overworld';
       sp.achievements.load(owner ? meta.achievements : (saved as { achievements?: string[] }).achievements);
+      sp.send({ t: 'achs', ids: sp.achievements.toJSON() });
+      sp.achievements.stats = { ...((owner ? (meta as { stats?: Record<string, number> }).stats : (saved as { stats?: Record<string, number> }).stats) ?? {}) };
     } else {
       p.setGameMode(meta.gameMode);
       const sp0 = meta.spawn;
@@ -408,7 +434,7 @@ export class Game {
     });
     if (Events.playerLeave.any) this.asActor(sp, () => Events.playerLeave.fire(this, sp.entity));
     if (!sp.owner && this.meta) (this.meta.players ??= {})[sp.name] = sp.save();
-    else if (sp.owner && this.meta) { this.meta.player = sp.entity.toJSON(); this.meta.dimension = sp.dim; this.meta.achievements = sp.achievements.toJSON(); }
+    else if (sp.owner && this.meta) { this.meta.player = sp.entity.toJSON(); this.meta.dimension = sp.dim; this.meta.achievements = sp.achievements.toJSON(); (this.meta as { stats?: Record<string, number> }).stats = sp.achievements.stats; }
     this.players.splice(i, 1);
     const dim = this.dims.get(sp.dim);
     if (dim) { const k = dim.entities.indexOf(sp.entity); if (k >= 0) dim.entities.splice(k, 1); }
@@ -457,7 +483,8 @@ export class Game {
       return;
     }
     p.respawn(this.keepInventory);
-    if (sp.dim !== 'overworld') this.travel(sp, 'overworld', true);
+    const home: Dimension = p.spawnKind === 'anchor' ? 'nether' : 'overworld';
+    if (sp.dim !== home) this.travel(sp, home, true);
     else sp.pendingArrival = { x: p.x, y: p.y, z: p.z, toSpawn: true };
     if (Events.playerRespawn.any) this.asActor(sp, () => Events.playerRespawn.fire(this, p));
   }
@@ -527,6 +554,17 @@ export class Game {
       p.setPos(END_PLATFORM.x + 0.5, END_PLATFORM.y + 1, END_PLATFORM.z + 0.5);
       this.audio.play('portalTravel', null, 0.6, 1);
       this.ensureDragon();
+    } else if (a.toSpawn && p.spawnKind !== 'world') {
+      // a bed or a charged respawn anchor (which spends a charge); gone or empty: back to the world spawn
+      const spot = personalSpawn(w, p);
+      if (spot) p.setPos(spot[0], spot[1], spot[2]);
+      else {
+        this.asActor(sp, () => sp.ui.chat.add(p.spawnKind === 'anchor' ? 'You have no charged respawn anchor, or it was obstructed' : 'You have no home bed or charged respawn anchor, or it was obstructed'));
+        p.spawnKind = 'world';
+        if (this.meta?.spawn) [p.spawnX, p.spawnY, p.spawnZ] = this.meta.spawn;
+        if (sp.dim !== 'overworld') { setTimeout(() => this.travel(sp, 'overworld', true), 0); }
+        else { sp.pendingArrival = { x: p.spawnX + 0.5, y: p.spawnY, z: p.spawnZ + 0.5, toSpawn: true }; return false; }
+      }
     } else if (a.toSpawn) {
       const y = w.topSolidY(Math.floor(a.x), Math.floor(a.z)) + 1;
       p.setPos(a.x, Math.max(a.y, y), a.z);
@@ -669,7 +707,9 @@ export class Game {
     // sub-levels move first: whatever stands on them is carried along when it ticks
     this.sublevels.tick(dim);
     if (w.dimension === 'end' && this.meta?.dragonKilled && this.ticks % 20 === 0) buildExitPortal(this);
-    if (w.dimension === 'end') buildPending(this);
+    if (w.dimension === 'end') { buildPending(this); tickDragonRespawn(this); }
+    here.forEach((sp, i) => { sp.achievements.moveTick(sp.entity as never); if ((this.ticks + i * 7) % 20 === 0) scanAdvancements(this, sp); });
+    tickMaps(this, w, here, this.ticks % 20 === 0 ? (dim.entities.filter((e) => (e as { typeName?: string }).typeName === 'Item Frame') as unknown as { item: null; x: number; z: number }[]) : undefined);
     const list = dim.entities;
     for (let i = list.length - 1; i >= 0; i--) {
       const e = list[i];
@@ -693,6 +733,7 @@ export class Game {
     dim.devices.tick();
     dim.brewing.tick();
     tickFurnaces(this);
+    if (this.ticks % 2 === 0) tickStations(this);
     dim.spawner.tick();
     if (modState.active.size) this.tickModTiles(w);
   }
@@ -781,7 +822,8 @@ export class Game {
     let bestT = sp.target ? sp.target.t : Math.min(reach, 3.5);
     for (const e of this.entities) {
       if (e === p || e === (p.riding as unknown as Entity)) continue;
-      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat) && !(e instanceof Minecart)) continue; }
+      // things that aren't alive are targets when they can be hit or used (vehicles, frames, armor stands, knots)
+      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && typeof (e as unknown as { attacked?: unknown }).attacked !== 'function') continue; }
       if (e instanceof Player && e.spectator) continue;
       for (const b of e.hitBoxes()) {
         const g = 0.1;
@@ -897,3 +939,18 @@ export class Game {
 
 export { stack, I, getItem };
 export type { Msg };
+
+/** The free spot next to a player's bed or respawn anchor to wake up in (the anchor spends a charge); null if it's gone. */
+function personalSpawn(w: World, p: Player): [number, number, number] | null {
+  const x = p.spawnX, y = p.spawnKind === 'bed' ? p.spawnY - 1 : p.spawnY, z = p.spawnZ;
+  const v = w.get(x, y, z), id = idOf(v);
+  if (p.spawnKind === 'bed' && id !== B.BED) return null;
+  if (p.spawnKind === 'anchor') {
+    if (id !== B2.RESPAWN_ANCHOR || metaOf(v) === 0) return null;
+    w.set(x, y, z, pack(id, metaOf(v) - 1));
+  }
+  const free = (cx: number, cy: number, cz: number) => !BLOCKS[w.getId(cx, cy, cz)].solid && !BLOCKS[w.getId(cx, cy + 1, cz)].solid && BLOCKS[w.getId(cx, cy - 1, cz)].solid;
+  for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) for (const dy of [1, 0, -1]) if (free(x + dx, y + dy, z + dz)) return [x + dx + 0.5, y + dy, z + dz + 0.5];
+  return [x + 0.5, y + 1, z + 0.5];
+}
+

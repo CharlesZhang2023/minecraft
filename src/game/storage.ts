@@ -21,6 +21,8 @@ export interface WorldMeta {
   dimension?: 'overworld' | 'nether' | 'end';
   endEntities?: unknown[];
   dragonKilled?: boolean;
+  /** Ticks left of a dragon respawn under way (four crystals on the exit portal). */
+  dragonRespawn?: number;
   /** The first dragon died but the fountain wasn't loaded yet: the egg still has to be placed. */
   dragonEggPending?: boolean;
   enderChest?: unknown[];

@@ -4,7 +4,7 @@ import { Entity } from './entity';
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import { B, BLOCKS, idOf, metaOf } from '../world/blocks';
-import { I, I2, ItemStack } from '../game/items';
+import { I, I2, ItemStack, BOATS } from '../game/items';
 import type { Player } from '../game/player';
 import { carryRider, dismountSpot, turnRider, type Mount } from './mount';
 
@@ -14,6 +14,8 @@ type Status = 'water' | 'under' | 'underFlowing' | 'land' | 'air';
 export const BOAT_SEAT = -0.45;
 
 export class Boat extends Entity implements Mount {
+  /** Its wood (oak, spruce, birch, jungle, acacia, dark oak): the planks it's drawn and dropped as. */
+  wood = 'oak';
   typeName = 'Boat';
   persist = true;
   rider: Player | null = null;
@@ -179,7 +181,7 @@ export class Boat extends Entity implements Mount {
   private breakBoat(drop: boolean) {
     this.dismount();
     this.removed = true;
-    if (drop) this.game.dropItem(this.x, this.y + 0.5, this.z, { id: I2.BOAT, count: 1 } as ItemStack);
+    if (drop) this.game.dropItem(this.x, this.y + 0.5, this.z, { id: this.wood === 'oak' ? I2.BOAT : BOATS[this.wood] ?? I2.BOAT, count: 1 } as ItemStack);
     this.game.playBlockSound(B.OAK_PLANKS, Math.floor(this.x), Math.floor(this.y), Math.floor(this.z), 'break');
   }
 
@@ -187,9 +189,10 @@ export class Boat extends Entity implements Mount {
   get maskY() { return 0.42; }
 
   toJSON() {
-    return { type: 'boat', x: this.x, y: this.y, z: this.z, yaw: this.yaw };
+    return { type: 'boat', x: this.x, y: this.y, z: this.z, yaw: this.yaw, wood: this.wood };
   }
-  load(d: { x: number; y: number; z: number; yaw: number }) {
+  load(d: { x: number; y: number; z: number; yaw: number; wood?: string }) {
+    this.wood = d.wood ?? 'oak';
     this.setPos(d.x, d.y, d.z);
     this.yaw = this.pyaw = d.yaw;
   }

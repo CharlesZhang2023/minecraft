@@ -25,7 +25,7 @@ export interface InputPacket {
   /** position, motion and look (the client moves its own player) */
   x: number; y: number; z: number; vx: number; vy: number; vz: number; yaw: number; pitch: number;
   /** onGround, sneaking, sprinting, flying, jump key held, gliding on elytra */
-  g: boolean; sn: boolean; sp: boolean; fl: boolean; jp: boolean; gl?: boolean;
+  g: boolean; sn: boolean; sp: boolean; fl: boolean; jp: boolean; gl?: boolean; sw?: boolean;
   /** damage from gliding into a wall since the last packet */
   wh?: number;
   /** movement keys (steering mounts) */
@@ -178,9 +178,10 @@ export class ServerPlayer {
     this.interact = new Interaction(game);
     this.ui = new ServerUI(this, game);
     this.achievements = new Achievements(game);
-    this.achievements.onUnlock = (id, title) => {
+    this.achievements.onUnlock = (id, title, kind) => {
       this.send({ t: 'ach', id });
-      for (const p of game.players) p.send({ t: 'chat', msg: `${this.name} has just earned the achievement §a[${title}]` });
+      const what = kind === 'achievement' ? 'has just earned the achievement §a' : kind === 'challenge' ? 'has completed the challenge §5' : kind === 'goal' ? 'has reached the goal §a' : 'has made the advancement §a';
+      for (const p of game.players) p.send({ t: 'chat', msg: `${this.name} ${what}[${title}]` });
     };
   }
 
@@ -230,6 +231,7 @@ export class ServerPlayer {
       case 'close': g.asActor(this, () => { this.ui.fromClient = true; this.ui.open(null); this.ui.fromClient = false; }); break;
       case 'respawn': g.respawn(this); break;
       case 'wake': this.wake(); break;
+      case 'stats': this.send({ t: 'stats', s: { ...this.achievements.stats } }); break;
       case 'need': {
         // the client's own generation didn't match: send the real chunk
         const k = chunkKey(Number(m.cx), Number(m.cz));
@@ -384,6 +386,8 @@ export class ServerPlayer {
     p.sprinting = inp.sp && p.food > 6;
     p.flying = inp.fl && p.canFly;
     p.gliding = !!inp.gl && p.hasElytra() && !p.riding;
+    p.swimming = !!inp.sw && p.inWater;
+    p.updatePose();
     // falling is tracked here, so fall damage stays the server's call
     const wasOnGround = p.onGround;
     p.onGround = inp.g;
@@ -637,7 +641,7 @@ export class ServerPlayer {
 
   /** What's saved for this player between sessions. */
   save() {
-    return { ...this.entity.toJSON(), dim: this.dim, achievements: this.achievements.toJSON() };
+    return { ...this.entity.toJSON(), dim: this.dim, achievements: this.achievements.toJSON(), stats: this.achievements.stats };
   }
 }
 

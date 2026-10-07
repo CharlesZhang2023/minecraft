@@ -94,7 +94,7 @@ export class IconCache {
       }
       if (!src && it.block) {
         const def = BLOCKS[it.block];
-        const layer = def.faces[0];
+        const layer = def.icon ?? def.faces[0];
         src = layerCanvas(layer, def.tint !== 'none' ? tintOf(def.id) : undefined);
       }
       if (src) ctx.drawImage(src, 0, 0, S, S);

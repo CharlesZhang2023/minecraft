@@ -1,7 +1,7 @@
 // Village generation. Layouts are a pure function of (seed, region) so every chunk can
 // independently rebuild the pieces that overlap it.
 import { Random, hash2 } from '../noise';
-import { B, pack, SEA_LEVEL, CHUNK_H, BLOCKS } from './blocks';
+import { B, B2, WOOD, STONE2, TERRACOTTA_COLORS, pack, SEA_LEVEL, CHUNK_H, BLOCKS } from './blocks';
 import { BIOME } from './biomes';
 import type { WorldGen } from './worldgen';
 
@@ -12,7 +12,7 @@ type Piece =
 
 export interface Village {
   x: number; z: number;
-  style: 'oak' | 'spruce' | 'sand';
+  style: 'oak' | 'spruce' | 'sand' | 'acacia' | 'snow';
   pieces: Piece[];
 }
 
@@ -31,11 +31,12 @@ export function regionVillage(gen: WorldGen, rx: number, rz: number): Village | 
     const x = cx * 16 + 8, z = cz * 16 + 8;
     const sh = gen.surfaceY(x, z);
     const b = gen.biomeAt(x, z, sh, gen.params(x, z));
-    const ok = sh >= SEA_LEVEL && sh < 100 && [BIOME.PLAINS, BIOME.SAVANNA, BIOME.DESERT, BIOME.TAIGA, BIOME.SNOWY_PLAINS, BIOME.FOREST].includes(b);
+    const ok = sh >= SEA_LEVEL && sh < 100 && [BIOME.PLAINS, BIOME.SAVANNA, BIOME.DESERT, BIOME.TAIGA, BIOME.SNOWY_PLAINS, BIOME.FOREST, BIOME.SUNFLOWER_PLAINS, BIOME.SNOWY_TAIGA].includes(b);
     // reject steep sites
     let flat = ok;
     if (ok) for (const [dx, dz] of [[20, 0], [-20, 0], [0, 20], [0, -20]]) if (Math.abs(gen.surfaceY(x + dx, z + dz) - sh) > 7) flat = false;
-    if (flat) v = layout(x, z, b === BIOME.DESERT ? 'sand' : b === BIOME.TAIGA || b === BIOME.SNOWY_PLAINS ? 'spruce' : 'oak', r);
+    // 1.14: each biome builds in its own style
+    if (flat) v = layout(x, z, b === BIOME.DESERT ? 'sand' : b === BIOME.SAVANNA ? 'acacia' : b === BIOME.SNOWY_PLAINS || b === BIOME.SNOWY_TAIGA ? 'snow' : b === BIOME.TAIGA ? 'spruce' : 'oak', r);
   }
   if (cache.size > 64) cache.clear();
   cache.set(key, v);
@@ -145,7 +146,7 @@ export function placeVillage(gen: WorldGen, v: Village, cx: number, cz: number, 
         }
     }
     switch (p.kind) {
-      case 'well': buildWell(L, S); break;
+      case 'well': buildWell(L, S); L(0, 0, 0, B2.BELL); break;
       case 'lamp': buildLamp(L); break;
       case 'farm': buildFarm(L, p, r); break;
       case 'house': buildHouse(L, p, S, r, 5, 5, 4); break;
@@ -153,11 +154,22 @@ export function placeVillage(gen: WorldGen, v: Village, cx: number, cz: number, 
       case 'smithy': buildHouse(L, p, S, r, 7, 7, 5, 'smith'); break;
       case 'library': buildHouse(L, p, S, r, 7, 7, 5, 'library'); break;
     }
+    // 1.14: every home has a bed and a workstation (which gives its villager a profession)
+    const job = jobFor(p.kind, new Random(p.seed ^ 0x10b));
+    if (p.kind === 'house' || p.kind === 'bighouse' || p.kind === 'smithy' || p.kind === 'library') {
+      const site = siteBlock(job);
+      if (site) L(p.kind === 'house' ? 3 : 4, 1, 1, site);
+      // (small houses keep their chance of a bed by the wall)
+      if (p.kind !== 'house') { L(3, 1, 3, pack(B.BED, p.rot)); L(3, 1, 2, pack(B.BED, p.rot | 8)); }
+    } else if (p.kind === 'farm') L(0, 0, 0, B2.COMPOSTER);
     // villagers (spawned by the chunk that contains the piece origin)
     if ((p.kind === 'house' || p.kind === 'bighouse' || p.kind === 'smithy' || p.kind === 'library' || p.kind === 'farm') && inChunk(p.x, p.z)) {
-      const prof = p.kind === 'smithy' ? 'smith' : p.kind === 'library' ? 'librarian' : p.kind === 'farm' ? 'farmer' : ['farmer', 'priest', 'butcher', 'librarian'][r.int(4)];
+      const prof = jobFor(p.kind, new Random(p.seed ^ 0x10b));
       const [sx, sz] = rotate(p, Math.floor(p.w / 2), Math.floor(p.d / 2));
       spawns.push({ type: 'villager', x: sx + 0.5, y: y + 1, z: sz + 0.5, data: { profession: prof } });
+      // stray cats live in villages (1.14), and every village has its iron golem
+      if (r.int(4) === 0) spawns.push({ type: 'cat', x: sx + 0.5, y: y + 1, z: sz + 0.5 });
+      if (p.kind === 'smithy') spawns.push({ type: 'iron_golem', x: sx + 0.5, y: y + 1, z: sz + 2.5 });
     }
   }
 }
@@ -184,7 +196,22 @@ function rotate(p: Piece, lx: number, lz: number): [number, number] {
   }
 }
 
+/** The profession a building's workstation is for. */
+function jobFor(kind: string, r: Random): string {
+  if (kind === 'smithy') return ['armorer', 'toolsmith', 'weaponsmith'][r.int(3)];
+  if (kind === 'library') return 'librarian';
+  if (kind === 'farm') return 'farmer';
+  return ['farmer', 'cleric', 'butcher', 'librarian', 'fisherman', 'fletcher', 'leatherworker', 'mason', 'shepherd', 'cartographer', 'toolsmith', 'armorer', 'weaponsmith'][r.int(13)];
+}
+const SITE_NAMES: Record<string, string> = {
+  armorer: 'blast_furnace', butcher: 'smoker', cartographer: 'cartography_table', cleric: 'brewing_stand', farmer: 'composter', fisherman: 'barrel',
+  fletcher: 'fletching_table', leatherworker: 'cauldron', librarian: 'lectern', mason: 'stonecutter', shepherd: 'loom', toolsmith: 'smithing_table', weaponsmith: 'grindstone',
+};
+const siteBlock = (job: string) => BLOCKS.find((b) => b?.name === SITE_NAMES[job])?.id ?? 0;
+
 function styleBlocks(style: Village['style']) {
+  if (style === 'acacia') return { road: B2.GRASS_PATH, bridge: WOOD.acacia.planks, foundation: B.COBBLESTONE, floorBase: B.COBBLESTONE, wall: WOOD.acacia.planks, corner: WOOD.acacia.log, floor: WOOD.acacia.planks, roof: pack(TERRACOTTA_COLORS[1], 0), stairs: WOOD.acacia.stairs, planks: WOOD.acacia.planks };
+  if (style === 'snow') return { road: B.GRAVEL, bridge: B.SPRUCE_PLANKS, foundation: B.COBBLESTONE, floorBase: B.COBBLESTONE, wall: B.SNOW_BLOCK, corner: B.SPRUCE_LOG, floor: B.SPRUCE_PLANKS, roof: B2.PACKED_ICE, stairs: B.SPRUCE_STAIRS, planks: B.SPRUCE_PLANKS };
   if (style === 'sand') return { road: B.SMOOTH_SANDSTONE, bridge: B.SMOOTH_SANDSTONE, foundation: B.SANDSTONE, floorBase: B.SANDSTONE, wall: B.SMOOTH_SANDSTONE, corner: B.SANDSTONE, floor: B.SMOOTH_SANDSTONE, roof: B.SANDSTONE, stairs: B.COBBLESTONE_STAIRS, planks: B.SANDSTONE };
   if (style === 'spruce') return { road: B.GRAVEL, bridge: B.SPRUCE_PLANKS, foundation: B.COBBLESTONE, floorBase: B.COBBLESTONE, wall: B.SPRUCE_PLANKS, corner: B.SPRUCE_LOG, floor: B.SPRUCE_PLANKS, roof: B.SPRUCE_PLANKS, stairs: B.SPRUCE_STAIRS, planks: B.SPRUCE_PLANKS };
   return { road: B.GRAVEL, bridge: B.OAK_PLANKS, foundation: B.COBBLESTONE, floorBase: B.COBBLESTONE, wall: B.OAK_PLANKS, corner: B.OAK_LOG, floor: B.OAK_PLANKS, roof: B.OAK_PLANKS, stairs: B.OAK_STAIRS, planks: B.OAK_PLANKS };

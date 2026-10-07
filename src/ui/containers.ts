@@ -1,12 +1,19 @@
 // Container screens with Minecraft's slot-click semantics.
+import { mapIdOf, type MapData } from '../game/maps';
+import { bound } from '../game/combat';
+import { isShulkerBox } from '../game/stations';
 import { Screen, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, I6, POTION_ITEMS, itemByName, HORSE_ARMOR, FIREWORK_DYES, FIREWORK_SHAPES, FireworkExplosion } from '../game/items';
-import { craft, SMELTING } from '../game/recipes';
+import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4, I5, I6, I7, BOATS, POTION_ITEMS, itemByName, HORSE_ARMOR, FIREWORK_DYES, FIREWORK_SHAPES, FireworkExplosion, I9, I11 } from '../game/items';
+import { craft, craftRemainder, SMELTING } from '../game/recipes';
 import { addToSlots } from '../game/inventory';
-import { BLOCKS, Render, B, isLeaves, isSapling, isStairs, isSlab } from '../world/blocks';
-import { COOK_TIME, FurnaceTile } from '../game/furnace';
+import { PATTERNS } from '../game/banners';
+import { RecipeBook } from './recipebook';
+import { GENERATIONS } from './book';
+import { BLOCKS, Render, B, B2, STONE2, WOOD, isLeaves, isSapling, isStairs, isSlab, DYE_COLORS, idOf, metaOf } from '../world/blocks';
+import { chestPartnerDir } from '../world/models';
+import { FurnaceTile, cooks, cookTime } from '../game/furnace';
 import { enchName, ENCHANTS } from '../game/enchant';
 import { drawEffectList } from './effects';
 import { POTION_BY_KEY, effectLine } from '../game/potiondata';
@@ -20,6 +27,8 @@ export interface Slot {
   get(): ItemStack | null;
   set(s: ItemStack | null): void;
   canPlace?(s: ItemStack): boolean;
+  /** False while the item can't be taken out (cursed with binding). */
+  canTake?(): boolean;
   output?: boolean;
   group: string;
   limit?: number;
@@ -190,6 +199,7 @@ export abstract class ContainerScreen extends Screen {
 
   click(s: Slot, button: number) {
     const cur = s.get();
+    if (cur && s.canTake && !s.canTake()) return;
     if (s.infinite) {
       if (this.cursor) { this.cursor = null; return; }
       if (cur) this.cursor = { ...cur, count: button === 0 ? getItem(cur.id).maxStack : 1 };
@@ -278,6 +288,7 @@ export abstract class ContainerScreen extends Screen {
       }
       return;
     }
+    if (s.canTake && !s.canTake()) return;
     const targets = this.quickTargets(s, st);
     const left = this.insertInto(st, targets);
     if (left <= 0) s.set(null);
@@ -397,6 +408,25 @@ export function tooltipLines(s: ItemStack): string[] {
     else lines.push('§7No Effects');
   }
   if (s.ench) for (const [k, v] of Object.entries(s.ench)) lines.push('§7' + enchName(k, v));
+  if (typeof s.tag?.color === 'number') lines.push('§7Dyed');
+  if (s.id === I7.SHIELD && s.tag?.shieldBase !== undefined) lines.push(`§7${DYE_COLORS[s.tag.shieldBase as number].split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')}`);
+  for (const l of s.banner ?? []) lines.push(`§7${DYE_COLORS[l.c].split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')} ${PATTERNS[l.p]?.[0] ?? l.p}`);
+  if (s.id === I9.OMINOUS_BANNER) lines[0] = '§6§o' + (s.name ?? 'Ominous Banner');
+  if (s.id === I11.WRITTEN_BOOK) {
+    const t = s.tag as { title?: string; author?: string; generation?: number } | undefined;
+    if (t?.title) lines[0] = (s.name ?? t.title);
+    lines.push(`§7by ${t?.author ?? 'Unknown'}`, `§7${GENERATIONS[t?.generation ?? 0] ?? 'Tattered'}`);
+  }
+  if (mapIdOf(s) !== null) {
+    const d = (globalThis as { game?: { maps?: Map<number, MapData> } }).game?.maps?.get(mapIdOf(s)!);
+    lines.push(`§7Id #${mapIdOf(s)}`);
+    if (d) lines.push(`§7Scaling at 1:${1 << d.scale}`, ...(d.locked ? ['§7Locked'] : []));
+  }
+  if (s.box) {
+    const inside = s.box.filter((x): x is ItemStack => !!x);
+    for (const it of inside.slice(0, 5)) lines.push(`§7${getItem(it.id).display} x${it.count}`);
+    if (inside.length > 5) lines.push(`§7§oand ${inside.length - 5} more...`);
+  }
   if (s.id === I6.FIREWORK_ROCKET) lines.push(`§7Flight Duration: ${s.fw?.flight ?? 1}`);
   for (const e of s.fw?.ex ?? []) {
     const pad = s.id === I6.FIREWORK_ROCKET ? '  ' : '';
@@ -422,6 +452,8 @@ export function tooltipLines(s: ItemStack): string[] {
 class CraftGrid {
   items: (ItemStack | null)[];
   result: ItemStack | null = null;
+  /** Where remainders go that can't stay in their slot (a stack of honey bottles leaves glass bottles). */
+  spill?: (s: ItemStack) => void;
   constructor(public size: number) {
     this.items = new Array(size * size).fill(null);
   }
@@ -432,20 +464,24 @@ class CraftGrid {
     for (let i = 0; i < this.items.length; i++) {
       const s = this.items[i];
       if (!s) continue;
+      // buckets and bottles are given back (a written book being copied stays where it was)
+      const rest = craftRemainder(s);
       s.count--;
-      if (s.count <= 0) this.items[i] = null;
+      if (s.count <= 0) this.items[i] = rest;
+      else if (rest) this.spill?.(rest);
     }
     this.update();
   }
 }
 
 function addGridSlots(scr: ContainerScreen, g: CraftGrid, x0: number, y0: number, rx: number, ry: number, big = true) {
+  g.spill = (s) => scr.giveBack([s]);
   for (let r = 0; r < g.size; r++)
     for (let c = 0; c < g.size; c++) {
       const i = r * g.size + c;
       scr.slots.push({ x: x0 + c * 18, y: y0 + r * 18, get: () => g.items[i], set: (s) => { g.items[i] = s; }, group: 'craft' });
     }
-  scr.slots.push({ x: big ? rx - 4 : rx, y: big ? ry - 4 : ry, get: () => g.result, set: (s) => { g.result = s; }, output: true, big, group: 'result', onTake: (t) => { scr.game.achievements.onCraft(t.id); g.consume(); } });
+  scr.slots.push({ x: big ? rx - 4 : rx, y: big ? ry - 4 : ry, get: () => g.result, set: (s) => { g.result = s; }, output: true, big, group: 'result', onTake: (t) => { scr.game.achievements.onCraft(t.id, t.count); g.consume(); } });
 }
 
 export function arrow(ctx: Ctx, x: number, y: number, progress = 0, len = 22) {
@@ -473,21 +509,28 @@ export class InventoryScreen extends ContainerScreen {
   override buildSlots() {
     const armor = this.inv.armor;
     for (let i = 0; i < 4; i++)
-      this.slots.push({ x: 8, y: 8 + i * 18, get: () => armor[i], set: (s) => (armor[i] = s), group: 'armor', limit: 1, canPlace: (s) => getItem(s.id).armor?.slot === i || (i === 0 && s.id === B.PUMPKIN) });
+      this.slots.push({ x: 8, y: 8 + i * 18, get: () => armor[i], set: (s) => (armor[i] = s), group: 'armor', limit: 1, canPlace: (s) => getItem(s.id).armor?.slot === i || (i === 0 && (s.id === B.PUMPKIN || s.id === B2.CARVED_PUMPKIN)), canTake: () => !bound(armor[i], this.player) });
+    // the off hand (1.9)
+    this.slots.push({ x: 77, y: 62, get: () => this.inv.offhand, set: (s) => (this.inv.offhand = s), group: 'offhand' });
     addGridSlots(this, this.grid, 98, 18, 154, 28, false);
     this.addPlayerSlots();
   }
   override changed() { this.grid.update(); }
+  book = new RecipeBook(this as never, [104, 61]);
   override init() {
     super.init();
     // 1.8: the inventory shifts right to make room for the effect list
     if (this.player.effects.size) this.left += 60;
+    this.widgets = this.widgets.filter((w) => w !== this.book);
+    this.widgets.push(this.book);
   }
   override quickTargets(s: Slot, st: ItemStack): string[] {
     if ((s.group === 'main' || s.group === 'hotbar') && getItem(st.id).armor) {
       const slot = getItem(st.id).armor!.slot;
       if (!this.inv.armor[slot]) return ['armor'];
     }
+    // shields shift-click into a free off hand
+    if ((s.group === 'main' || s.group === 'hotbar') && st.id === I7.SHIELD && !this.inv.offhand) return ['offhand'];
     return super.quickTargets(s, st);
   }
   override drawBackground(ctx: Ctx, mx: number, my: number) {
@@ -513,6 +556,12 @@ export class InventoryScreen extends ContainerScreen {
 export class CraftingScreen extends ContainerScreen {
   title = 'Crafting';
   grid = new CraftGrid(3);
+  book = new RecipeBook(this as never, [5, 34]);
+  override init() {
+    super.init();
+    this.widgets = this.widgets.filter((w) => w !== this.book);
+    this.widgets.push(this.book);
+  }
   override buildSlots() {
     addGridSlots(this, this.grid, 30, 17, 124, 35);
     this.addPlayerSlots();
@@ -537,14 +586,15 @@ export class FurnaceScreen extends ContainerScreen {
     const w = this.game.world!;
     let t = w.getTile(this.x, this.y, this.z) as unknown as FurnaceTile | undefined;
     if (!t) {
-      t = { type: 'furnace', slots: [null, null, null], burn: 0, burnMax: 0, cook: 0 };
+      const id = w.getId(this.x, this.y, this.z);
+      t = { type: 'furnace', slots: [null, null, null], burn: 0, burnMax: 0, cook: 0, ...(id === B2.SMOKER ? { kind: 'smoker' as const } : id === B2.BLAST_FURNACE ? { kind: 'blast' as const } : {}) };
       w.setTile(this.x, this.y, this.z, t as unknown as { type: 'furnace' });
     }
     this.tile = t;
     const sl = t.slots;
     this.slots.push({ x: 56, y: 17, get: () => sl[0], set: (s) => (sl[0] = s), group: 'input' });
     this.slots.push({ x: 56, y: 53, get: () => sl[1], set: (s) => (sl[1] = s), group: 'fuel', canPlace: (s) => !!getItem(s.id).fuel });
-    this.slots.push({ x: 112, y: 31, get: () => sl[2], set: (s) => (sl[2] = s), group: 'out', output: true, big: true, onTake: (t) => { this.game.achievements.onSmelt(t.id); this.takeXp(); } });
+    this.slots.push({ x: 112, y: 31, get: () => sl[2], set: (s) => (sl[2] = s), group: 'out', output: true, big: true, onTake: (t) => { this.game.achievements.onSmelt(t.id, t.count); this.takeXp(); } });
     this.addPlayerSlots();
   }
   takeXp() {
@@ -553,7 +603,7 @@ export class FurnaceScreen extends ContainerScreen {
   }
   override quickTargets(s: Slot, st: ItemStack): string[] {
     if (s.group === 'main' || s.group === 'hotbar') {
-      if (SMELTING[st.id]) return ['input'];
+      if (cooks(this.tile.kind, st.id)) return ['input'];
       if (getItem(st.id).fuel) return ['fuel'];
     }
     return super.quickTargets(s, st);
@@ -571,31 +621,69 @@ export class FurnaceScreen extends ContainerScreen {
       ctx.fillStyle = '#ffd84a';
       ctx.fillRect(L + 60, T + 37 + 13 - Math.max(0, h - 3), 7, Math.max(0, h - 3));
     }
-    arrow(ctx, L + 79, T + 34, t.cook / COOK_TIME);
+    arrow(ctx, L + 79, T + 34, t.cook / cookTime(t));
   }
   override drawForeground(ctx: Ctx) {
-    this.label(ctx, 'Furnace', 88 - this.gui.font.width('Furnace') / 2, 6);
+    const name = this.tile.kind === 'smoker' ? 'Smoker' : this.tile.kind === 'blast' ? 'Blast Furnace' : 'Furnace';
+    this.label(ctx, name, 88 - this.gui.font.width(name) / 2, 6);
     this.label(ctx, 'Inventory', 8, 72);
   }
 }
 
 export class ChestScreen extends ContainerScreen {
   title = 'Chest';
+  /** The other half of a large chest (its 27 slots go below or above ours). */
+  partner: [number, number, number] | null = null;
   constructor(ui: UI, public x: number, public y: number, public z: number) { super(ui); }
-  override buildSlots() {
+  override init() {
+    const w = this.game.world!, v = w.get(this.x, this.y, this.z), id = idOf(v);
+    const d = id === B.CHEST || id === B2.TRAPPED_CHEST ? chestPartnerDir(id, metaOf(v), (dx, dz) => w.get(this.x + dx, this.y, this.z + dz)) : null;
+    this.partner = d ? [this.x + d[0], this.y, this.z + d[1]] : null;
+    this.ph = this.partner ? 222 : 166;
+    super.init();
+  }
+  private tileAt(x: number, y: number, z: number) {
     const w = this.game.world!;
-    let t = w.getTile(this.x, this.y, this.z) as unknown as { type: 'chest'; items: (ItemStack | null)[] } | undefined;
-    if (!t) {
-      t = { type: 'chest', items: new Array(27).fill(null) };
-      w.setTile(this.x, this.y, this.z, t);
+    let t = w.getTile(x, y, z) as unknown as { type: 'chest'; items: (ItemStack | null)[] } | undefined;
+    if (!t) { t = { type: 'chest', items: new Array(27).fill(null) }; w.setTile(x, y, z, t as never); }
+    return t;
+  }
+  override buildSlots() {
+    if (this.partner) { this.buildLarge(); return; }
+    const w = this.game.world!;
+    const t = this.tileAt(this.x, this.y, this.z);
+    // the same 27 slots serve chests, trapped chests and barrels
+    this.title = BLOCKS[w.getId(this.x, this.y, this.z)]?.display ?? 'Chest';
+    // a trapped chest powers redstone while someone looks inside (counted on the server)
+    if (w.getId(this.x, this.y, this.z) === B2.TRAPPED_CHEST && (this.ui as unknown as { isServer?: boolean }).isServer && !this.counted) {
+      this.counted = true;
+      (t as { viewers?: number }).viewers = ((t as { viewers?: number }).viewers ?? 0) + 1;
+      (this.game as unknown as { redstone?: { update(x: number, y: number, z: number): void } }).redstone?.update(this.x, this.y, this.z);
     }
     const items = t.items;
+    // nothing goes into a shulker box that is itself a shulker box
+    const shulker = isShulkerBox(w.getId(this.x, this.y, this.z));
     for (let r = 0; r < 3; r++)
       for (let c = 0; c < 9; c++) {
         const i = r * 9 + c;
-        this.slots.push({ x: 8 + c * 18, y: 18 + r * 18, get: () => items[i], set: (s) => (items[i] = s), group: 'chest' });
+        this.slots.push({ x: 8 + c * 18, y: 18 + r * 18, get: () => items[i], set: (s) => (items[i] = s), group: 'chest', canPlace: shulker ? (s) => !isShulkerBox(s.id) : undefined });
       }
     this.addPlayerSlots();
+  }
+  /** A large chest: the half with the lower coordinates on top, then the other; the inventory below both. */
+  private buildLarge() {
+    const w = this.game.world!, p = this.partner!;
+    const first = p[0] + p[2] < this.x + this.z ? p : [this.x, this.y, this.z];
+    const second = first === p ? [this.x, this.y, this.z] : p;
+    this.title = 'Large ' + (BLOCKS[w.getId(this.x, this.y, this.z)]?.display ?? 'Chest');
+    [first, second].forEach(([x, y, z], half) => {
+      const items = this.tileAt(x, y, z).items;
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 9; c++) {
+        const i = r * 9 + c;
+        this.slots.push({ x: 8 + c * 18, y: 18 + (half * 3 + r) * 18, get: () => items[i], set: (s) => (items[i] = s), group: 'chest' });
+      }
+    });
+    this.addPlayerSlots(8, 140, 198);
   }
   override quickTargets(s: Slot): string[] {
     return s.group === 'chest' ? ['hotbar', 'main'] : ['chest'];
@@ -603,13 +691,21 @@ export class ChestScreen extends ContainerScreen {
   override changed() {
     const c = this.game.world!.chunkAt(this.x, this.z);
     if (c) c.modified = true;
+    if (this.partner) { const c2 = this.game.world!.chunkAt(this.partner[0], this.partner[2]); if (c2) c2.modified = true; }
   }
   override drawForeground(ctx: Ctx) {
-    this.label(ctx, 'Chest', 8, 6);
-    this.label(ctx, 'Inventory', 8, 72);
+    this.label(ctx, this.title, 8, 6);
+    this.label(ctx, 'Inventory', 8, this.partner ? 128 : 72);
   }
+  private counted = false;
   override onClose() {
     this.changed();
+    if (this.counted) {
+      const t = this.game.world!.getTile(this.x, this.y, this.z) as { viewers?: number } | undefined;
+      if (t) t.viewers = Math.max(0, (t.viewers ?? 1) - 1);
+      (this.game as unknown as { redstone?: { update(x: number, y: number, z: number): void } }).redstone?.update(this.x, this.y, this.z);
+      this.counted = false;
+    }
     this.game.audio.play('chestClose', { x: this.x + 0.5, y: this.y + 0.5, z: this.z + 0.5 }, 0.5, 0.9 + Math.random() * 0.1);
     super.onClose();
   }
@@ -681,7 +777,7 @@ export class HorseScreen extends ContainerScreen {
     if (!this.horse.saddle) this.ui.drawItem(ctx, { id: I5.SADDLE, count: 1 }, L + 8, T + 18);
     if (this.horse.canWearArmor && !this.horse.armorItem) this.ui.drawItem(ctx, { id: I5.IRON_HORSE_ARMOR, count: 1 }, L + 8, T + 36);
     ctx.restore();
-    const name = (this.horse as unknown as { customName?: string }).customName ?? { horse: 'Horse', donkey: 'Donkey', mule: 'Mule' }[this.horse.kind];
+    const name = (this.horse as unknown as { customName?: string }).customName || ({ horse: 'Horse', donkey: 'Donkey', mule: 'Mule', skeleton: 'Skeleton Horse', zombie: 'Zombie Horse' } as Record<string, string>)[this.horse.kind] || 'Horse';
     this.label(ctx, name, 8, 6);
     this.label(ctx, 'Inventory', 8, 72);
   }
@@ -704,7 +800,11 @@ const defs = () => [...ITEMS.values()].filter((d) => d.id !== 0 && !d.mod && !d.
 const modDefs = () => [...ITEMS.values()].filter((d) => d.mod && !d.missing);
 const REDSTONE_IDS = [I.REDSTONE, B.REDSTONE_TORCH, I3.REPEATER, I3.COMPARATOR, B.REDSTONE_BLOCK, B.LEVER, B.STONE_BUTTON, B.STONE_PRESSURE_PLATE,
   B.PISTON, B.STICKY_PISTON, B.SLIME_BLOCK, B.OBSERVER, B.DISPENSER, B.DROPPER, B.HOPPER, B.REDSTONE_LAMP, B.TNT, I.OAK_DOOR, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL];
-const TRANSPORT_IDS = [B.RAIL, B.POWERED_RAIL, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL, I5.MINECART, I2.BOAT, I5.SADDLE, I5.IRON_HORSE_ARMOR, I5.GOLDEN_HORSE_ARMOR, I5.DIAMOND_HORSE_ARMOR, I6.ELYTRA];
+REDSTONE_IDS.push(...Object.values(WOOD).flatMap((w) => [w.button, w.plate, w.door, w.trapdoor, w.gate]).filter((id) => id !== B.OAK_DOOR),
+  STONE2.POLISHED_BLACKSTONE_BUTTON, STONE2.POLISHED_BLACKSTONE_PRESSURE_PLATE, B2.HEAVY_WEIGHTED_PRESSURE_PLATE, B2.LIGHT_WEIGHTED_PRESSURE_PLATE,
+  B2.IRON_DOOR, B2.IRON_TRAPDOOR, B2.TARGET, B2.DAYLIGHT_DETECTOR, B2.TRIPWIRE_HOOK, B2.NOTE_BLOCK, B2.TRAPPED_CHEST, B2.LECTERN);
+const TRANSPORT_IDS = [B.RAIL, B.POWERED_RAIL, B.DETECTOR_RAIL, B.ACTIVATOR_RAIL, I5.MINECART, I7.CHEST_MINECART, I7.FURNACE_MINECART, I7.HOPPER_MINECART, I7.TNT_MINECART,
+  ...Object.values(BOATS), I5.SADDLE, I7.CARROT_ON_A_STICK, I7.WARPED_FUNGUS_ON_A_STICK, I7.LEAD, I7.LEATHER_HORSE_ARMOR, I5.IRON_HORSE_ARMOR, I5.GOLDEN_HORSE_ARMOR, I5.DIAMOND_HORSE_ARMOR, I6.ELYTRA];
 const FIREWORK_IDS = [I6.FIREWORK_ROCKET, I6.FIREWORK_STAR];
 /** Rockets of each flight duration, then a few ready-made shows (the creative menu's fireworks). */
 const fireworks = (): ItemStack[] => {
@@ -727,7 +827,7 @@ const TOOL_ENCH = ['efficiency', 'silk_touch', 'unbreaking', 'fortune', 'luck_of
 const special = new Set<number>([...REDSTONE_IDS, ...BREWING_IDS, ...MISC_IDS, ...TRANSPORT_IDS, ...FIREWORK_IDS, I3.ENCHANTED_BOOK]);
 const isFood = (d: ItemDef) => !!d.food && !d.potion;
 const isTool = (d: ItemDef) => (!!d.tool && d.tool.type !== 'sword') || [I.FLINT_AND_STEEL, I.COMPASS, I.CLOCK, I2.FISHING_ROD, I3.NAME_TAG].includes(d.id);
-const isCombat = (d: ItemDef) => d.tool?.type === 'sword' || !!d.armor || d.id === I.BOW || d.id === I.ARROW || d.id === I.EGG || d.id === I.ENDER_PEARL;
+const isCombat = (d: ItemDef) => d.tool?.type === 'sword' || !!d.armor || d.id === I.BOW || d.id === I.ARROW || d.id === I.EGG || d.id === I.ENDER_PEARL || [I7.TRIDENT, I7.SHIELD, I7.CROSSBOW, I7.SPECTRAL_ARROW, I7.TOTEM_OF_UNDYING].includes(d.id);
 const isDecoration = (d: ItemDef) => {
   if (d.block === undefined || d.sprite) return d.id === I.RED_BED || d.id === I3.NETHER_WART && false;
   const b = BLOCKS[d.block];
@@ -742,7 +842,7 @@ const books = (filter: (id: string) => boolean, allLevels: boolean): ItemStack[]
   }
   return out;
 };
-const potions = (): ItemStack[] => [...defs().filter((d) => d.potion && !d.splash), ...defs().filter((d) => d.splash)].map((d) => one(d.id));
+const potions = (): ItemStack[] => [...defs().filter((d) => d.potion && !d.splash && !d.lingering && !d.name.startsWith('tipped_')), ...defs().filter((d) => d.splash), ...defs().filter((d) => d.lingering), ...defs().filter((d) => d.name.startsWith('tipped_arrow'))].map((d) => one(d.id));
 const general = (f: (d: ItemDef) => boolean) => () => defs().filter((d) => !special.has(d.id) && !d.egg && !d.potion && f(d)).map((d) => one(d.id));
 const TABS: Tab[] = [
   { name: 'Building Blocks', icon: B.BRICKS, items: general(isBuilding) },

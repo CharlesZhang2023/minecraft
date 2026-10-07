@@ -5,6 +5,7 @@ import { FRAME_RING } from '../world/stronghold';
 import { EyeOfEnder } from '../entity/eye';
 import { EndCrystal } from '../entity/dragon';
 import { Random } from '../noise';
+import { END_CENTER_Y, endPillars } from '../world/endgen';
 
 const rng = new Random(Date.now() & 0xffff);
 
@@ -68,5 +69,43 @@ export function placeCrystal(g: Game, x: number, y: number, z: number): boolean 
   c.setPos(x + 0.5, y + 1, z + 0.5);
   g.addEntity(c);
   g.audio.play('dig.glass', { x: x + 0.5, y: y + 1, z: z + 0.5 }, 0.7, 1);
+  checkDragonRespawn(g);
   return true;
+}
+
+// ------------------------------------------------------------------ respawning the dragon (1.9)
+/** The four spots on the exit portal's rim where crystals summon the dragon back. */
+const RIM = [[3, 0], [-3, 0], [0, 3], [0, -3]];
+const rimCrystals = (g: Game) => RIM.map(([dx, dz]) => g.entities.find((e) => e instanceof EndCrystal && !e.removed && Math.abs(e.x - (dx + 0.5)) < 0.6 && Math.abs(e.z - (dz + 0.5)) < 0.6 && Math.abs(e.y - (END_CENTER_Y + 1)) < 1.5) as EndCrystal | undefined);
+/** A crystal was placed: with all four on the rim of a dead dragon's portal, the respawn begins. */
+export function checkDragonRespawn(g: Game) {
+  const meta = g.meta, w = g.world!;
+  if (w.dimension !== 'end' || !meta?.dragonKilled || meta.dragonRespawn) return;
+  if (rimCrystals(g).every(Boolean)) { meta.dragonRespawn = 200; g.audio.play('dragon.growl', null, 1, 0.6); }
+}
+/** Each tick in the End while the respawn runs: sparks rise from the crystals, then the pillars get their crystals
+ * back, the portal shuts, the four crystals burst and a new dragon appears. */
+export function tickDragonRespawn(g: Game) {
+  const meta = g.meta, w = g.world!;
+  if (!meta?.dragonRespawn || w.dimension !== 'end') return;
+  const rim = rimCrystals(g);
+  if (!rim.every(Boolean)) { meta.dragonRespawn = 0; return; }
+  for (const c of rim) if (g.ticks % 2 === 0) g.particles?.spark(c!.x, c!.y + 1 + Math.random() * 8, c!.z, 0, 0.2, 0, 0xe080ff, 10);
+  if (--meta.dragonRespawn > 0) return;
+  // the pillars' crystals (and caps) come back
+  for (const p of endPillars(meta.seed)) {
+    w.set(p.x, p.h, p.z, B.BEDROCK);
+    if (!g.entities.some((e) => e instanceof EndCrystal && !e.removed && Math.abs(e.x - (p.x + 0.5)) < 1 && Math.abs(e.z - (p.z + 0.5)) < 1)) {
+      const c = new EndCrystal(w, g);
+      c.setPos(p.x + 0.5, p.h + 1, p.z + 0.5);
+      g.addEntity(c);
+    }
+  }
+  // the exit portal goes dark
+  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) if (w.getId(dx, END_CENTER_Y + 1, dz) === B.END_PORTAL) w.set(dx, END_CENTER_Y + 1, dz, 0);
+  for (const c of rim) { c!.removed = true; g.interact!.explode(c!.x, c!.y, c!.z, 2, false, null); }
+  meta.dragonKilled = false;
+  meta.dragonRespawn = 0;
+  g.ensureDragon();
+  for (const sp of g.players) if (sp.dim === 'end') sp.achievements.event('dragon_respawn');
 }

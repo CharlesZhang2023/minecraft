@@ -3,24 +3,36 @@ import { makeRenderContext, drawModTiles, modEntityRenderer, type RenderContext 
 import { Events } from '../mod/events';
 import { modState, guard } from '../mod/state';
 import type { Client } from '../client/client';
-import type { Renderer, Tex, ModelMesh } from './renderer';
+import type { Renderer, Tex, ModelMesh, ModelOpts } from './renderer';
 import type { Client as Game } from '../client/client';
 import { Mat4, mat4, identity, translate, rotateX, rotateY, rotateZ, scale, multiply } from '../math';
 import * as M from './models';
+import { MOB_MODELS, MOB_SKINS } from './mobmodels';
+import { MOB_MODELS2, MOB_SKINS2, MOB_POSES as MOB_POSES2 } from './mobmodels2';
+import { MOB_MODELS3, MOB_SKINS3, MOB_POSES3, lazySkin } from './mobmodels3';
+const MOB_POSES = { ...MOB_POSES2, ...MOB_POSES3 };
+import { EvokerFangs, Guardian } from '../entity/overworldmobs';
+import { WitherSkull } from '../entity/wither';
+import { LeashKnot } from '../entity/leash';
+import { ArmorStand } from '../entity/armorstand';
+import { Hanging, ItemFrame, Painting } from '../entity/hanging';
+import { ShulkerBullet } from '../entity/endmobs';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball } from '../entity/item';
 import { ThrownPotion } from '../entity/potion';
-import { getItem, I, I6 } from '../game/items';
+import { getItem, I, I6, I7, DYE_RGB } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
-import { BLOCKS, TEXTURES, Render, B, T, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE } from '../world/blocks';
+import { BLOCKS, TEXTURES, Render, B, B2, WOOD, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX, Shape, metaOf, idOf, OPAQUE, isBanner, bannerColor } from '../world/blocks';
+import { bannerPixels } from '../game/banners';
+import { mapIdOf, mapRGB, MAP_SIZE, drawMapMarks } from '../game/maps';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './dynmesh';
 import { poseMat4 } from '../sublevel/pose';
 import { getTexture } from './textures';
 import { Player } from '../game/player';
 import { Boat } from '../entity/boat';
-import { Minecart } from '../entity/minecart';
+import { Minecart, CART_BLOCK } from '../entity/minecart';
 import { Horse } from '../entity/horse';
 import { HORSE_ARMOR } from '../game/items';
 import { FishingHook } from '../entity/fishing';
@@ -62,6 +74,7 @@ export class EntityRenderer {
       horse: M.horseModel(false), donkey: M.horseModel(true), horseArmor: M.horseModel(false, 0.35),
       player: M.playerModel(false), playerSlim: M.playerModel(true), elytra: M.elytraModel(),
     };
+    for (const [k, make] of Object.entries({ ...MOB_MODELS, ...MOB_MODELS2, ...MOB_MODELS3 })) defs[k] = make();
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
@@ -69,6 +82,7 @@ export class EntityRenderer {
       ghast: M.ghastSkin(false), blaze: M.blazeSkin(), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(), wolf: M.wolfSkin('wild'), wolfTame: M.wolfSkin('tame'), wolfAngry: M.wolfSkin('angry'),
       silverfish: M.silverfishSkin(), crystal: M.crystalSkin(), dragon: dragonSkin(), elytra: M.elytraSkin(),
     };
+    for (const [k, make] of Object.entries({ ...MOB_SKINS, ...MOB_SKINS2, ...MOB_SKINS3 })) skins[k] = make();
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     for (const k of ['iron', 'gold', 'diamond']) { const sk = M.horseArmorSkin(k); this.skins.set('horseArmor_' + k, r.makeTexture(sk.data, sk.w)); }
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
@@ -144,19 +158,24 @@ export class EntityRenderer {
   private drawModel(model: string, skin: string, base: Mat4, pose: Record<string, [number, number, number]>, light: [number, number], overlay: [number, number, number, number], skip?: Set<string>, alpha = 1, offsets?: Record<string, [number, number, number]>) {
     const m = this.models.get(model)!;
     const tex = this.skins.get(skin)!;
-    for (const [name, part] of m.parts) {
-      if (skip?.has(name)) continue;
-      const d = part.def;
-      const rot = pose[name] ?? [d.rx ?? 0, d.ry ?? 0, d.rz ?? 0];
-      const off = offsets?.[name] ?? [0, 0, 0];
-      const mm = this.tmp;
-      translate(mm, base, (d.px + off[0]) / 16, (d.py + off[1]) / 16, (d.pz + off[2]) / 16);
-      if (rot[2]) rotateZ(mm, mm, rot[2]);
-      if (rot[1]) rotateY(mm, mm, rot[1]);
-      if (rot[0]) rotateX(mm, mm, rot[0]);
-      scale(mm, mm, 1 / 16, 1 / 16, 1 / 16);
-      this.r.drawModel(part.mesh, tex, { viewProj: this.currentVP, model: mm, light, overlay, alpha, blend: this.blend });
-    }
+    const parts = (o: ModelOpts) => {
+      for (const [name, part] of m.parts) {
+        if (skip?.has(name)) continue;
+        const d = part.def;
+        const rot = pose[name] ?? [d.rx ?? 0, d.ry ?? 0, d.rz ?? 0];
+        const off = offsets?.[name] ?? [0, 0, 0];
+        const mm = this.tmp;
+        translate(mm, base, (d.px + off[0]) / 16, (d.py + off[1]) / 16, (d.pz + off[2]) / 16);
+        if (rot[2]) rotateZ(mm, mm, rot[2]);
+        if (rot[1]) rotateY(mm, mm, rot[1]);
+        if (rot[0]) rotateX(mm, mm, rot[0]);
+        scale(mm, mm, 1 / 16, 1 / 16, 1 / 16);
+        this.r.drawModel(part.mesh, tex, { ...o, model: mm });
+      }
+    };
+    parts({ viewProj: this.currentVP, model: this.tmp, light, overlay, alpha, blend: this.blend });
+    // the glowing effect: whatever of it is hidden behind blocks shows as a pale silhouette
+    if (this.glow) parts({ viewProj: this.currentVP, model: this.tmp, light: [15, 15], overlay: [1, 1, 1, 0.85], alpha, blend: this.blend, hidden: true });
   }
 
   private currentVP: Mat4 = mat4();
@@ -193,7 +212,10 @@ export class EntityRenderer {
       const x = e.lerpX(t) - cam.x, y = e.lerpY(t) - cam.y, z = e.lerpZ(t) - cam.z;
       if (x * x + y * y + z * z > 96 * 96) continue;
       if (!this.r.boxVisible(x - e.width, y - 0.5, z - e.width, x + e.width, y + e.height + 0.5, z + e.width)) continue;
-      const [sky, blk] = w.getLight(Math.floor(e.x), Math.floor(e.y + e.height * 0.5), Math.floor(e.z));
+      // light at the middle of the entity, or (when that's inside a solid block) the first open cell above it
+      let ly = Math.floor(e.y + e.height * 0.5);
+      for (let k = 0; k < 3 && OPAQUE[w.getId(Math.floor(e.x), ly, Math.floor(e.z))]; k++) ly++;
+      const [sky, blk] = w.getLight(Math.floor(e.x), ly, Math.floor(e.z));
       const mr = modEntityRenderer(e);
       if (mr) { modCtx ??= makeRenderContext(game as unknown as Client, this, dyn, t); guard(mr.mod, 'entity renderer', () => mr.draw(modCtx!, e), undefined); continue; }
       if (e instanceof FireworkRocket) {
@@ -215,14 +237,25 @@ export class EntityRenderer {
       else if (e instanceof XpOrb) this.billboard(dyn, x, y + 0.25, z, 0.25, TEXTURES.indexOf('particle_spell'), 0x9ffc3a, 15, 15);
       else if (e instanceof Snowball) this.billboard(dyn, x, y + 0.125, z, 0.25, TEXTURES.indexOf('item/' + e.kind), 0xffffff, sky, blk);
       else if (e instanceof EyeOfEnder) this.billboard(dyn, x, y + 0.12, z, 0.4, TEXTURES.indexOf('item/ender_eye'), 0xffffff, 15, 15);
+      else if (e instanceof WitherSkull) this.blockModel(dyn, pack(B2.WITHER_SKELETON_SKULL, 0), x - 0.5, y - 0.1, z - 0.5, 15, 15);
       else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, e.small ? 0.35 : 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
+      else if (e instanceof Hanging) { this.drawHanging(dyn, e, x, y, z, sky, blk); if (e instanceof ItemFrame && mapIdOf(e.item) !== null) this.drawFramedMap(game, e, x, y, z, sky, blk); }
+      else if (e instanceof EvokerFangs) this.drawFangs(e, x, y, z, t, sky, blk);
+      else if (e instanceof ArmorStand) {
+        const base = this.entityBase(this.tmp2, x, y, z, e.yaw, 0, 1);
+        const pose: Record<string, [number, number, number]> = { head: [0, 0, 0], body: [0, 0, 0], rightArm: [-0.17, 0, 0.17], leftArm: [-0.17, 0, -0.17], rightLeg: [0, 0, 0.02], leftLeg: [0, 0, -0.02] };
+        this.drawModel('armor_stand', 'armor_stand', base, pose, [sky, blk], [0, 0, 0, 0]);
+        this.drawArmor(e.armorItems, base, pose, [sky, blk], [0, 0, 0, 0]);
+      }
+      else if (e instanceof LeashKnot) this.blockCube(dyn, B.OAK_PLANKS, x - 0.12, y - 0.12, z - 0.12, 0.25, sky, blk, 0);
+      else if (e instanceof ShulkerBullet) this.billboard(dyn, x, y + 0.15, z, 0.35, TEXTURES.indexOf('item/nether_star'), 0xffffff, 15, 15);
       else if (e instanceof Boat) this.drawBoat(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof Minecart) this.drawMinecart(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof FishingHook) {
         this.billboard(dyn, x, y + 0.12, z, 0.35, TEXTURES.indexOf('item/fishing_bobber'), 0xffffff, sky, blk);
         this.fishingLine(game, e, x, y, z, t);
       }
-      else if (e instanceof LivingEntity) { if (!e.effects.has('invisibility')) this.drawLiving(game, e, x, y, z, t, sky, blk); }
+      else if (e instanceof LivingEntity) { if (!e.effects.has('invisibility')) { this.glow = e.effects.has('glowing'); this.drawLiving(game, e, x, y, z, t, sky, blk); this.glow = false; } }
     }
     // beams from healing crystals to the dragon
     for (const e of list) {
@@ -230,6 +263,35 @@ export class EntityRenderer {
       const d = e.beam as EnderDragon;
       if (d.dead) continue;
       this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + 1.2 - cam.y, e.lerpZ(t) - cam.z, d.lerpX(t) - cam.x, d.lerpY(t) - 0.5 - cam.y, d.lerpZ(t) - cam.z, e.age + t);
+    }
+    // leads: a rope from each leashed mob to whoever holds it (or the fence knot)
+    for (const e of list) {
+      const h = (e as unknown as { leashHolder?: Entity | null }).leashHolder;
+      if (!h || e.removed || h.removed) continue;
+      const hy = h instanceof Player ? h.lerpY(t) + 1.0 : h.lerpY(t) + 0.2;
+      this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + e.height * 0.7 - cam.y, e.lerpZ(t) - cam.z, h.lerpX(t) - cam.x, hy - cam.y, h.lerpZ(t) - cam.z, 0, 0x6a4a2a, 0.03);
+    }
+    // guardians' lasers: blue while charging, warming to yellow just before they hit
+    for (const e of list) {
+      if (!(e instanceof Guardian) || !e.beamTarget || e.dead || e.removed) continue;
+      const tg = e.beamTarget, k = Math.min(1, e.beam / e.chargeTime());
+      const col = (Math.round(64 + 191 * k) << 16) | (Math.round(64 + 160 * k) << 8) | Math.round(255 - 128 * k);
+      this.beam(dyn, e.lerpX(t) - cam.x, e.lerpY(t) + e.height / 2 - cam.y, e.lerpZ(t) - cam.z, tg.lerpX(t) - cam.x, tg.lerpY(t) + tg.height / 2 - cam.y, tg.lerpZ(t) - cam.z, e.age + t, col, 0.06 + 0.06 * k);
+    }
+    this.drawSignTexts(game, t);
+    this.drawBanners(game);
+    // beacon beams (the beacons' tiles keep their colour; 0 is off)
+    if (w.dimension === 'overworld' || w.dimension === 'nether' || w.dimension === 'end') {
+      const ccx = Math.floor(cam.x) >> 4, ccz = Math.floor(cam.z) >> 4;
+      for (const c of w.chunks.values()) {
+        if (!c.tiles.size || Math.abs(c.cx - ccx) > 8 || Math.abs(c.cz - ccz) > 8) continue;
+        for (const [i, tl] of c.tiles) {
+          const bt = tl as unknown as { type: string; beam?: number };
+          if (bt.type !== 'beacon' || !bt.beam) continue;
+          const bx = c.cx * 16 + (i & 15) + 0.5 - cam.x, by = (i >> 8) + 1 - cam.y, bz = c.cz * 16 + ((i >> 4) & 15) + 0.5 - cam.z;
+          this.beam(dyn, bx, by, bz, bx, 256 - cam.y, bz, game.ticks + t, bt.beam, 0.2);
+        }
+      }
     }
     // an End gateway that was just opened or used: a beam straight up and down through it
     const gb = game.gatewayBeam;
@@ -318,21 +380,20 @@ export class EntityRenderer {
   }
 
   /** A camera-facing ribbon between two camera-relative points (end crystal healing beam). */
-  private beam(dyn: DynMesh, ax: number, ay: number, az: number, bx: number, by: number, bz: number, time: number) {
+  private beam(dyn: DynMesh, ax: number, ay: number, az: number, bx: number, by: number, bz: number, time: number, col = 0xffffff, w = 0.28) {
     const dx = bx - ax, dy = by - ay, dz = bz - az;
     const mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
     // side = dir x view
     let sx = dy * mz - dz * my, sy = dz * mx - dx * mz, sz = dx * my - dy * mx;
     const sl = Math.hypot(sx, sy, sz) || 1;
-    const w = 0.28;
     sx = (sx / sl) * w; sy = (sy / sl) * w; sz = (sz / sl) * w;
     const len = Math.hypot(dx, dy, dz);
     const layer = TEXTURES.indexOf('end_beam');
     const v0 = -time * 0.08, v1 = v0 + len * 0.25;
-    dyn.v(ax - sx, ay - sy, az - sz, 0, v0, layer, 0xffffff, 1, 15, 15);
-    dyn.v(ax + sx, ay + sy, az + sz, 1, v0, layer, 0xffffff, 1, 15, 15);
-    dyn.v(bx + sx, by + sy, bz + sz, 1, v1, layer, 0xffffff, 1, 15, 15);
-    dyn.v(bx - sx, by - sy, bz - sz, 0, v1, layer, 0xffffff, 1, 15, 15);
+    dyn.v(ax - sx, ay - sy, az - sz, 0, v0, layer, col, 1, 15, 15);
+    dyn.v(ax + sx, ay + sy, az + sz, 1, v0, layer, col, 1, 15, 15);
+    dyn.v(bx + sx, by + sy, bz + sz, 1, v1, layer, col, 1, 15, 15);
+    dyn.v(bx - sx, by - sy, bz - sz, 0, v1, layer, col, 1, 15, 15);
   }
 
   /** Draw one part of a model with an explicit, fully prepared matrix (already scaled by 1/16). */
@@ -425,7 +486,7 @@ export class EntityRenderer {
   private drawLiving(game: Game, e: LivingEntity, x: number, y: number, z: number, t: number, sky: number, blk: number) {
     const anyE = e as unknown as Record<string, unknown>;
     const model = (anyE.model as string) ?? 'biped';
-    const skin = model === 'villager' ? 'villager_' + (anyE.profession as string) : (anyE.skin as string) ?? 'steve';
+    const skin = model === 'villager' && anyE.profession ? 'villager_' + (anyE.profession as string) : (anyE.skin as string) ?? 'steve';
     const bodyYaw = e.pBodyYaw + wrapDelta(e.bodyYaw - e.pBodyYaw) * t;
     const headYaw = e.pHeadYaw + wrapDelta(e.headYaw - e.pHeadYaw) * t;
     const pitch = e.ppitch + (e.pitch - e.ppitch) * t;
@@ -442,7 +503,7 @@ export class EntityRenderer {
     }
     const overlay: [number, number, number, number] = e.hurtTime > 0 || e.deathTime > 0 ? [1, 0, 0, 0.3] : [0, 0, 0, 0];
     const baby = !!anyE.baby;
-    let sc = baby ? 0.5 : 1;
+    let sc = (baby ? 0.5 : 1) * ((anyE.renderScale as number) ?? 1);
     // creeper swell
     const swell = (anyE.swell as number) ?? 0;
     if (swell > 0) {
@@ -454,7 +515,9 @@ export class EntityRenderer {
       if (Math.floor(s / 30 * 10) % 2) overlay[0] = overlay[1] = overlay[2] = 1, overlay[3] = Math.max(overlay[3], s / 30 * 0.6);
     }
     let tilt: [number, number] | undefined;
-    if (e instanceof Player && e.gliding) {
+    if (e instanceof Player && e.swimming && !e.gliding) tilt = [-90 - pitch, 0];
+    else if (anyE.sleeping && (e instanceof Player || anyE.typeName === 'Villager')) tilt = [-90, 0];
+    else if (e instanceof Player && e.gliding) {
       // vanilla RenderPlayer: swing level over the first second, then bank by the angle between look and motion
       const f = e.glideTicks + t, k = Math.min(1, (f * f) / 100);
       const yaw = (e.pyaw + wrapDelta(e.yaw - e.pyaw) * t) * DEG;
@@ -471,6 +534,18 @@ export class EntityRenderer {
     const swing = e.pSwingProgress + (e.swingProgress - e.pSwingProgress) * t;
     const pose: Record<string, [number, number, number]> = {};
     const c = Math.cos;
+    // the mobs whose models come with their own pose (mobmodels2)
+    const gp = MOB_POSES[model];
+    if (gp) {
+      const o = gp({ e: anyE, hp, netHead, ls, lsa, age, t });
+      const sk = o.skin ?? skin;
+      if (!this.skins.has(sk)) { const made = lazySkin(sk); this.skins.set(sk, made ? this.r.makeTexture(made.data, made.w) : this.skins.get('steve')!); }
+      this.drawModel(model, sk, base, o.pose, o.fullBright ? [15, 15] : light, overlay, o.skip, 1, o.offs);
+      // what's held in the mouth (foxes) or paws (pandas)
+      const held = anyE.heldItem as number | undefined;
+      if (held && (model === 'fox' || model === 'panda')) this.drawHeldThirdPerson(held, base, [model === 'fox' ? -Math.PI / 2 : -1.2, 0, 0], light, model === 'fox' ? [5, -6, -11] : [5, -8, -16]);
+      return;
+    }
     switch (model) {
       case 'horse': this.drawHorse(e as Horse, base, t, light, overlay, hp, netHead, ls, lsa, age); break;
       case 'dragon': this.drawDragon(e as EnderDragon, x, y, z, t, sky, blk); return;
@@ -479,11 +554,14 @@ export class EntityRenderer {
         for (let i = 0; i < 7; i++) pose['s' + i] = [0, Math.cos(age * 0.9 + i * 0.35) * Math.PI * 0.05 * (1 + lsa * 3), 0];
         const offs: Record<string, [number, number, number]> = {};
         for (let i = 0; i < 7; i++) offs['s' + i] = [Math.cos(age * 0.9 + i * 0.35 + 1) * 0.5 * (0.5 + lsa * 2), 0, 0];
-        this.drawModel('silverfish', 'silverfish', base, pose, light, overlay, undefined, 1, offs);
+        this.drawModel('silverfish', skin, base, pose, light, overlay, undefined, 1, offs);
         break;
       }
       case 'biped':
-      case 'bipedThin': {
+      case 'bipedThin':
+      case 'illager':
+      case 'illager_robed':
+      case 'piglin': {
         const sneak = e.sneaking;
         pose.head = [hp, netHead, 0];
         // gliding: head up to look ahead, limbs nearly still once going fast
@@ -496,6 +574,19 @@ export class EntityRenderer {
         const arms = anyE.armsPose as string | undefined;
         if (arms === 'zombie') { ra = la = -Math.PI / 2; raY = -0.1; laY = 0.1; }
         if (arms === 'bow') { ra = -Math.PI / 2 + hp; la = -Math.PI / 2 + hp; raY = -0.1 + netHead; laY = 0.1 + netHead + 0.4; }
+        // spellcasting (evokers): both arms up, waving
+        if (arms === 'cast') { ra = la = c(age * 0.6662) * 0.25; raZ = (Math.PI * 3) / 4; laZ = -(Math.PI * 3) / 4; }
+        // 1.9+ item poses: bows drawn, crossbows charging or aimed, tridents raised, shields up
+        const using = anyE.using as string | undefined;
+        const heldStack = e instanceof Player ? e.inventory.held() : null;
+        if (using === 'bow') { ra = -Math.PI / 2 + hp; la = -Math.PI / 2 + hp; raY = -0.1 + netHead; laY = 0.1 + netHead + 0.4; }
+        else if (using === 'crossbow') { const k = Math.min(1, ((anyE.useTicks as number) ?? 0) / 25); ra = -0.97; raY = -0.8; la = -0.97 + k * 0.4; laY = 0.85 - k * 0.6; }
+        else if (heldStack?.charged || (arms === 'bow' && (anyE.heldItem as number) === I7.CROSSBOW)) { ra = -1.5 + hp; raY = -0.3 + netHead; la = -1.5 + hp; laY = 0.6 + netHead; }
+        else if (using === 'trident') { ra = ra * 0.5 - Math.PI; raY = 0; }
+        if (anyE.blocking) {
+          if (e instanceof Player && e.inventory.offhand?.id === I7.SHIELD && heldStack?.id !== I7.SHIELD) { la = la * 0.5 - 0.9424778; laY = -0.5235988; }
+          else { ra = ra * 0.5 - 0.9424778; raY = 0.5235988; }
+        }
         if (swing > 0) {
           const f1 = Math.sin(Math.sqrt(swing) * Math.PI * 2) * 0.2;
           let f = 1 - swing;
@@ -509,7 +600,7 @@ export class EntityRenderer {
         laZ -= c(age * 0.09) * 0.05 + 0.05;
         ra += Math.sin(age * 0.067) * 0.05;
         la -= Math.sin(age * 0.067) * 0.05;
-        if (anyE.holding && arms !== 'bow' && arms !== 'zombie') ra = ra * 0.5 - Math.PI / 10;
+        if (anyE.holding && arms !== 'bow' && arms !== 'zombie' && !using && !anyE.blocking) ra = ra * 0.5 - Math.PI / 10;
         pose.rightArm = [ra + (sneak ? 0.4 : 0), raY, raZ];
         pose.leftArm = [la + (sneak ? 0.4 : 0), laY, laZ];
         pose.rightLeg = [(c(ls * 0.6662) * 1.4 * lsa) / lf, 0, 0];
@@ -535,10 +626,20 @@ export class EntityRenderer {
         if (held) this.drawHeldThirdPerson(held, base, pose.rightArm, light, offs?.rightArm);
         if (Array.isArray(anyE.armorItems)) this.drawArmor(anyE.armorItems as ({ id: number } | null)[], base, pose, light, overlay, offs);
         if (e instanceof Player) {
+          // parrots riding on the shoulders
+          for (const [side, sx] of [['shoulderLeft', 6], ['shoulderRight', -6]] as const) {
+            const sp = e[side];
+            if (!sp) continue;
+            const po: Record<string, [number, number, number]> = {};
+            for (const k of ['head', 'crest', 'body', 'wingL', 'wingR', 'tail', 'legL', 'legR']) po[k] = [sx, -24 + (sneak ? 3 : 0), 0];
+            this.drawModel('parrot', 'parrot_' + ['red', 'blue', 'green', 'cyan', 'grey'][sp.variant % 5], base, { head: [hp * 0.5, netHead * 0.5, 0], crest: [hp * 0.5 - 0.21, netHead * 0.5, 0] }, light, overlay, undefined, 1, po);
+          }
           this.drawArmor(e.inventory.armor, base, pose, light, overlay, offs);
           if (e.inventory.armor[1]?.id === I6.ELYTRA) this.drawElytra(e, base, light, overlay);
           const it = e.inventory.held();
           if (it) this.drawHeldThirdPerson(it.id, base, pose.rightArm, light);
+          const oh = e.inventory.offhand;
+          if (oh) this.drawHeldThirdPerson(oh.id, base, pose.leftArm, light, undefined, true);
         }
         break;
       }
@@ -551,7 +652,7 @@ export class EntityRenderer {
         this.drawModel('creeper', 'creeper', base, pose, light, overlay);
         break;
       }
-      case 'pig': case 'cow': case 'sheep': {
+      case 'pig': case 'cow': case 'sheep': case 'hoglin': {
         const eat = (anyE.eatTimer as number) ?? 0;
         pose.head = [hp, netHead, 0];
         const offs: Record<string, [number, number, number]> = {};
@@ -644,10 +745,34 @@ export class EntityRenderer {
         scale(sb, sb, size * f, size / f, size * f);
         scale(sb, sb, -1, -1, 1);
         translate(sb, sb, 0, -1.501, 0);
-        this.drawModel('slimeInner', 'slime', sb, pose, light, overlay);
+        this.drawModel('slimeInner', skin, sb, pose, light, overlay);
         this.blend = true;
-        this.drawModel('slimeOuter', 'slime', sb, pose, light, overlay, undefined, 1);
+        this.drawModel('slimeOuter', skin, sb, pose, light, overlay, undefined, 1);
         this.blend = false;
+        break;
+      }
+      case 'shulker': {
+        // the lid rises and turns as it peeks; the head looks out from inside
+        const pk = ((anyE.pPeek as number) ?? 0) + (((anyE.peek as number) ?? 0) - ((anyE.pPeek as number) ?? 0)) * t;
+        pose.lid = [0, pk * Math.PI * 0.75, 0];
+        pose.head = [hp, netHead, 0];
+        const offs: Record<string, [number, number, number]> = { lid: [0, -pk * 8, 0], head: [0, -pk * 4, 0] };
+        const sb = this.entityBase(this.tmp2, x, y, z, 0, deathRoll, 1);
+        this.drawModel('shulker', skin, sb, pose, light, overlay, undefined, 1, offs);
+        break;
+      }
+      case 'strider': {
+        // legs stride in turn, the body bobs with them; cold striders shiver
+        const cold = !!anyE.cold;
+        const sw = c(ls * 1.5) * 2 * lsa;
+        pose.rightLeg = [sw * 0.5, 0, 0.1];
+        pose.leftLeg = [-sw * 0.5, 0, -0.1];
+        const offs: Record<string, [number, number, number]> = { body: [cold ? Math.sin(age * 2) * 0.2 : 0, -Math.abs(c(ls * 1.5)) * 2 * lsa, 0] };
+        offs.bristle1 = offs.bristle2 = offs.bristle3 = offs.body;
+        pose.bristle1 = [0, 0, 0.9 + Math.sin(age * 0.1) * 0.1];
+        pose.bristle2 = [0, 0, -0.9 - Math.sin(age * 0.1) * 0.1];
+        this.drawModel('strider', cold ? 'strider_cold' : 'strider', base, pose, light, overlay, undefined, 1, offs);
+        if (anyE.saddled) { /* the saddle shows as a darker band on top of the body */ }
         break;
       }
       case 'blaze': {
@@ -722,12 +847,17 @@ export class EntityRenderer {
         this.drawModel('bat', 'bat', bm, pose, light, overlay);
         break;
       }
-      case 'villager': {
+      case 'villager':
+      case 'witch': {
         pose.head = [hp, netHead, 0];
         pose.arms = [-0.75, 0, 0];
         pose.rightLeg = [c(ls * 0.6662) * 1.4 * lsa * 0.5, 0, 0];
         pose.leftLeg = [c(ls * 0.6662 + Math.PI) * 1.4 * lsa * 0.5, 0, 0];
-        this.drawModel('villager', skin, base, pose, light, overlay);
+        pose.hat = pose.head;
+        this.drawModel(model, skin, base, pose, light, overlay);
+        // a witch drinking holds the bottle up
+        const held = anyE.heldItem as number | undefined;
+        if (held) this.drawHeldThirdPerson(held, base, [-1.2, 0, 0], light);
         break;
       }
       case 'spider': {
@@ -741,14 +871,14 @@ export class EntityRenderer {
         const dy = [f3, -f3, f4, -f4, f5, -f5, f6, -f6];
         const dz = [f7, -f7, f8, -f8, f9, -f9, f10, -f10];
         for (let i = 0; i < 8; i++) pose['leg' + (i + 1)] = [0, yr[i] + dy[i], zr[i] + dz[i]];
-        this.drawModel('spider', 'spider', base, pose, light, overlay);
+        this.drawModel('spider', skin, base, pose, light, overlay);
         break;
       }
     }
   }
 
   /** Armor layers over a biped pose. */
-  private drawArmor(armor: ({ id: number } | null)[], base: Mat4, pose: Record<string, [number, number, number]>, light: [number, number], overlay: [number, number, number, number], offs?: Record<string, [number, number, number]>) {
+  private drawArmor(armor: ({ id: number; tag?: Record<string, unknown> } | null)[], base: Mat4, pose: Record<string, [number, number, number]>, light: [number, number], overlay: [number, number, number, number], offs?: Record<string, [number, number, number]>) {
     const all = ['head', 'hat', 'body', 'rightArm', 'leftArm', 'rightLeg', 'leftLeg'];
     const parts: [number, number, string[]][] = [[0, 1, ['head']], [1, 1, ['body', 'rightArm', 'leftArm']], [2, 2, ['body', 'rightLeg', 'leftLeg']], [3, 1, ['rightLeg', 'leftLeg']]];
     for (const [slot, layer, show] of parts) {
@@ -758,7 +888,10 @@ export class EntityRenderer {
       const mat = name.split('_')[0];
       const skin = `armor_${mat}_${layer}`;
       if (!this.skins.has(skin)) continue;
-      this.drawModel(layer === 1 ? 'armor1' : 'armor2', skin, base, pose, light, overlay, new Set(all.filter((p) => !show.includes(p))), 1, offs);
+      // dyed leather: washed towards its colour (unless the hurt flash is showing)
+      const col = typeof a.tag?.color === 'number' ? (a.tag.color as number) : undefined;
+      const ov: [number, number, number, number] = col !== undefined && overlay[3] === 0 ? [((col >> 16) & 255) / 255, ((col >> 8) & 255) / 255, (col & 255) / 255, 0.55] : overlay;
+      this.drawModel(layer === 1 ? 'armor1' : 'armor2', skin, base, pose, light, ov, new Set(all.filter((p) => !show.includes(p))), 1, offs);
     }
   }
 
@@ -782,13 +915,15 @@ export class EntityRenderer {
     this.drawModel('elytra', 'elytra', base, pose, light, overlay, undefined, 1, offs);
   }
 
-  private drawHeldThirdPerson(id: number, base: Mat4, armRot: [number, number, number], light: [number, number], off?: [number, number, number]) {
+  private drawHeldThirdPerson(id: number, base: Mat4, armRot: [number, number, number], light: [number, number], off?: [number, number, number], left = false) {
     const m = mat4();
-    translate(m, base, -5 / 16 + (off?.[0] ?? 0) / 16, 2 / 16 + (off?.[1] ?? 0) / 16, (off?.[2] ?? 0) / 16);
+    const side = left ? -1 : 1;
+    translate(m, base, (-5 * side) / 16 + (off?.[0] ?? 0) / 16, 2 / 16 + (off?.[1] ?? 0) / 16, (off?.[2] ?? 0) / 16);
     rotateZ(m, m, armRot[2]);
     rotateY(m, m, armRot[1]);
     rotateX(m, m, armRot[0]);
-    translate(m, m, -1 / 16, 7 / 16, 1 / 16);
+    translate(m, m, (-1 * side) / 16, 7 / 16, 1 / 16);
+    if (left) scale(m, m, -1, 1, 1);
     const it = getItem(id);
     if (it.block !== undefined && !it.flatBlock && !it.sprite) {
       // LayerHeldItem (1.8) block transform, in model space, then flip back to y-up
@@ -843,7 +978,7 @@ export class EntityRenderer {
       let layer: number;
       let img: Uint8ClampedArray;
       if (it.sprite) { layer = TEXTURES.indexOf('item/' + it.sprite); img = getTexture('item/' + it.sprite); }
-      else { layer = BLOCKS[it.block!].faces[0]; img = getTexture(TEXTURES[layer]); }
+      else { layer = BLOCKS[it.block!].icon ?? BLOCKS[it.block!].faces[0]; img = getTexture(TEXTURES[layer]); }
       if (layer < 0) layer = 0;
       const tintFlag = !it.sprite && BLOCKS[it.block!].tint !== 'none' ? 10 : 0;
       const d = 1 / 32;
@@ -987,7 +1122,7 @@ export class EntityRenderer {
 
   private drawBoat(mesh: DynMesh, e: Boat, x: number, y: number, z: number, t: number, sky: number, blk: number) {
     const m = this.boatMatrix(e, x, y, z, t);
-    const layer = BLOCKS[B.OAK_PLANKS].faces[0];
+    const layer = BLOCKS[e.wood === 'oak' ? B.OAK_PLANKS : (WOOD as Record<string, { planks: number }>)[e.wood]?.planks ?? B.OAK_PLANKS].faces[0];
     // hull (1.9 proportions: 1.75 long along z, 1.25 wide): floor, two long sides, bow and stern
     const hull: number[][] = [
       [-0.5, 0.125, -0.75, 0.5, 0.3, 0.75],
@@ -1013,6 +1148,45 @@ export class EntityRenderer {
     }
   }
 
+  /** Item frames (a wooden square with the item turned inside it) and paintings (their cells' pictures). */
+  private drawHanging(mesh: DynMesh, e: Hanging, x: number, y: number, z: number, sky: number, blk: number) {
+    const [dx, dz] = HORIZ[e.facing];
+    // the entity sits against its wall; what's drawn below is laid out from the middle of its cell
+    x -= dx * 0.46; z -= dz * 0.46;
+    const along = dx === 0; // the wall runs along x
+    const m = mat4();
+    identity(m);
+    if (e instanceof ItemFrame) {
+      const t = 1 / 16, hw = 0.375;
+      const bx = along ? [x - hw, y, z + dz * 0.5 - (dz > 0 ? t : 0), x + hw, y + 0.75, z + dz * 0.5 + (dz < 0 ? t : 0)] : [x + dx * 0.5 - (dx > 0 ? t : 0), y, z - hw, x + dx * 0.5 + (dx < 0 ? t : 0), y + 0.75, z + hw];
+      this.woodBox(mesh, m, bx, T2.itemFrame, sky, blk);
+      if (e.item && mapIdOf(e.item) === null) {
+        const im = mat4();
+        identity(im);
+        translate(im, im, x - dx * 0.02 + dx * 0.43, y + 0.375, z - dz * 0.02 + dz * 0.43);
+        rotateY(im, im, [Math.PI, Math.PI / 2, 0, -Math.PI / 2][e.facing]);
+        rotateZ(im, im, (-e.rotation * Math.PI) / 4);
+        scale(im, im, 0.5, 0.5, 0.5);
+        this.appendItem(mesh, e.item.id, im, sky, blk);
+      }
+      return;
+    }
+    if (e instanceof Painting) {
+      const [w, h] = e.size;
+      const layers = PAINTING_TEX[e.motif];
+      const [rx, rz] = HORIZ[(e.facing + 1) & 3];
+      const t = 1 / 16;
+      for (let i = 0; i < w; i++)
+        for (let j = 0; j < h; j++) {
+          // cells from the left as seen from the room
+          const off = i - (w - 1) / 2;
+          const cx = x + rx * -off, cz = z + rz * -off, cy = y + (h - 1 - j);
+          const bx = along ? [cx - 0.5, cy, cz + dz * 0.5 - (dz > 0 ? t : 0), cx + 0.5, cy + 1, cz + dz * 0.5 + (dz < 0 ? t : 0)] : [cx + dx * 0.5 - (dx > 0 ? t : 0), cy, cz - 0.5, cx + dx * 0.5 + (dx < 0 ? t : 0), cy + 1, cz + 0.5];
+          this.woodBox(mesh, m, bx, layers[j * w + i] ?? T2.paintingBack, sky, blk);
+        }
+    }
+  }
+
   /** Iron tub, 20 x 16 px and 10 px deep, lying along its direction of travel and tipped on slopes. */
   private drawMinecart(mesh: DynMesh, e: Minecart, x: number, y: number, z: number, t: number, sky: number, blk: number) {
     let dy = e.yaw - e.pyaw;
@@ -1030,13 +1204,16 @@ export class EntityRenderer {
     this.woodBox(mesh, m, [-0.625, 0.0625, 0.375, 0.625, 0.6875, 0.5], out, sky, blk);
     this.woodBox(mesh, m, [-0.625, 0.0625, -0.375, -0.5, 0.6875, 0.375], out, sky, blk);
     this.woodBox(mesh, m, [0.5, 0.0625, -0.375, 0.625, 0.6875, 0.375], out, sky, blk);
+    // the cargo sits inside (a TNT cart flashes as its fuse burns)
+    const cargo = e.kind !== 'minecart' ? CART_BLOCK[e.kind]() : 0;
+    if (cargo) this.blockCube(mesh, cargo, x - 0.375, y + 0.25, z - 0.375, 0.75, sky, blk, e.kind === 'tnt' && e.fuse >= 0 && Math.floor(e.fuse / 5) % 2 === 0 ? 1 : 0);
   }
 
   /** Skin texture for a horse, made the first time that coat is seen. */
   private horseSkin(h: Horse): string {
     const key = h.skinKey;
     if (!this.skins.has(key)) {
-      const sk = h.kind === 'horse' ? M.horseSkin(h.color, h.markings) : M.donkeySkin(h.kind === 'mule');
+      const sk = h.kind === 'horse' ? M.horseSkin(h.color, h.markings) : h.kind === 'skeleton' || h.kind === 'zombie' ? undeadHorseSkin(h.kind) : M.donkeySkin(h.kind === 'mule');
       this.skins.set(key, this.r.makeTexture(sk.data, sk.w));
     }
     return key;
@@ -1070,7 +1247,7 @@ export class EntityRenderer {
     const skip = new Set<string>();
     if (!h.saddle) skip.add('saddle');
     if (!h.chest) skip.add('bags');
-    const model = h.kind === 'horse' ? 'horse' : 'donkey';
+    const model = h.kind === 'donkey' || h.kind === 'mule' ? 'donkey' : 'horse';
     this.drawModel(model, this.horseSkin(h), b, pose, light, overlay, skip);
     const ar = h.armorItem ? HORSE_ARMOR[h.armorItem.id] : undefined;
     if (ar) this.drawModel('horseArmor', 'horseArmor_' + ar.kind, b, pose, light, overlay, new Set(['saddle', 'bags', 'tail']));
@@ -1122,6 +1299,155 @@ export class EntityRenderer {
     this.r.drawDyn(mesh, { cull: false, alphaCut: -1, fullbright: true, colorWrite: false });
   }
 
+  /** The words on signs within 24 blocks: each sign's text as a texture on a sheet just in front of its board. */
+  private signTextures = new Map<string, Tex>();
+  private drawSignTexts(game: Game, t: number) {
+    const w = game.world!, cam = this.r.cam;
+    void t;
+    const ccx = Math.floor(cam.x) >> 4, ccz = Math.floor(cam.z) >> 4;
+    for (const c of w.chunks.values()) {
+      if (!c.tiles.size || Math.abs(c.cx - ccx) > 2 || Math.abs(c.cz - ccz) > 2) continue;
+      for (const [i, tl] of c.tiles) {
+        const st = tl as unknown as { type: string; lines?: string[]; color?: number };
+        if (st.type !== 'sign' || !st.lines?.some((l) => l)) continue;
+        const bx = c.cx * 16 + (i & 15), by = i >> 8, bz = c.cz * 16 + ((i >> 4) & 15);
+        if ((bx + 0.5 - cam.x) ** 2 + (by - cam.y) ** 2 + (bz + 0.5 - cam.z) ** 2 > 24 * 24) continue;
+        const v = w.get(bx, by, bz), def = BLOCKS[idOf(v)];
+        const wall = def?.shape === Shape.WallSign;
+        if (!def || (!wall && def.shape !== Shape.Sign)) continue;
+        const key = 'sign:' + (st.color ?? 15) + ':' + st.lines.join('\n');
+        let tex = this.signTextures.get(key);
+        if (!tex) {
+          if (this.signTextures.size > 200) {
+            for (const [k, old] of this.signTextures) { this.r.freeTexture(old); this.skins.delete(k); }
+            this.signTextures.clear();
+          }
+          const cv = document.createElement('canvas');
+          cv.width = 224; cv.height = 64;
+          const ctx = cv.getContext('2d')!;
+          ctx.imageSmoothingEnabled = false;
+          ctx.save();
+          ctx.scale(1, 1.6);
+          // dyed text: vanilla darkens the dye a little (black stays black)
+          const dc = st.color === undefined || st.color === 15 ? 0 : DYE_RGB[st.color];
+          const ink = '#' + (0x1000000 + ((Math.round(((dc >> 16) & 255) * 0.4) << 16) | (Math.round(((dc >> 8) & 255) * 0.4) << 8) | Math.round((dc & 255) * 0.4))).toString(16).slice(1);
+          st.lines.slice(0, 4).forEach((l, k) => game.ui.gui.font.drawCentered(ctx as never, l, 56, 1 + k * 10, ink, false));
+          ctx.restore();
+          tex = this.canvasTexture(cv);
+          this.signTextures.set(key, tex);
+          this.skins.set(key, tex);
+        }
+        // the board faces: wall signs by their wall, standing ones by their quarter turn (as their model is drawn)
+        const quarter = wall ? metaOf(v) & 3 : Math.round(metaOf(v) / 4) & 3;
+        const top = wall ? 12 / 16 : 17 / 16;
+        const m = mat4();
+        identity(m);
+        translate(m, m, bx + 0.5 - cam.x, by + top - cam.y, bz + 0.5 - cam.z);
+        rotateY(m, m, (180 - quarter * 90) * DEG);
+        scale(m, m, -1, -1, 1);
+        // the sheet sits a hair in front of the board's face
+        translate(m, m, 0, 0.5 / 16, wall ? 5.9 / 16 : -1.1 / 16);
+        const [sky, blk] = w.getLight(bx, by, bz);
+        this.drawModel('signText', key, m, {}, [sky, blk], [0, 0, 0, 0]);
+      }
+    }
+  }
+
+  /** Banners: the cloth with its patterns (a texture per design), the crossbar and, standing, the upper pole. */
+  private drawBanners(game: Game) {
+    const w = game.world!, cam = this.r.cam;
+    const ccx = Math.floor(cam.x) >> 4, ccz = Math.floor(cam.z) >> 4;
+    for (const c of w.chunks.values()) {
+      if (!c.tiles.size || Math.abs(c.cx - ccx) > 4 || Math.abs(c.cz - ccz) > 4) continue;
+      for (const [i, tl] of c.tiles) {
+        const st = tl as unknown as { type: string; patterns?: { p: string; c: number }[] };
+        if (st.type !== 'banner') continue;
+        const bx = c.cx * 16 + (i & 15), by = i >> 8, bz = c.cz * 16 + ((i >> 4) & 15);
+        if ((bx + 0.5 - cam.x) ** 2 + (by - cam.y) ** 2 + (bz + 0.5 - cam.z) ** 2 > 64 * 64) continue;
+        const v = w.get(bx, by, bz), id = idOf(v);
+        if (!isBanner(id)) continue;
+        const wall = BLOCKS[id].shape === Shape.WallBanner;
+        const layers = st.patterns ?? [];
+        const key = 'banner:' + bannerColor(id) + ':' + layers.map((l) => l.p + l.c).join(',');
+        if (!this.skins.has(key)) {
+          if (this.bannerKeys.length > 200) for (const k of this.bannerKeys.splice(0, 100)) { this.r.freeTexture(this.skins.get(k)!); this.skins.delete(k); }
+          this.skins.set(key, this.canvasTexture(bannerSkin(bannerColor(id), layers)));
+          this.bannerKeys.push(key);
+        }
+        const yaw = wall ? (metaOf(v) & 3) * 90 : metaOf(v) * 22.5;
+        const m = mat4();
+        identity(m);
+        translate(m, m, bx + 0.5 - cam.x, by + (wall ? 1 : 28 / 16) - cam.y, bz + 0.5 - cam.z);
+        rotateY(m, m, (180 - yaw) * DEG);
+        scale(m, m, -1, -1, 1);
+        // a wall banner hangs from its bar against the wall
+        if (wall) translate(m, m, 0, 0, 6.6 / 16);
+        scale(m, m, 2 / 3, 2 / 3, 2 / 3);
+        const [sky, blk] = w.getLight(bx, by, bz);
+        this.drawModel('banner', key, m, {}, [sky, blk], [0, 0, 0, 0], wall ? new Set(['pole']) : undefined);
+      }
+    }
+  }
+  private bannerKeys: string[] = [];
+  /** The entity being drawn has the glowing effect (drawModel adds its silhouette through walls). */
+  private glow = false;
+
+  /** A map in an item frame fills the frame, turned in quarter turns. */
+  private drawFramedMap(game: Game, e: ItemFrame, x: number, y: number, z: number, sky: number, blk: number) {
+    const id = mapIdOf(e.item)!, d = game.maps.get(id);
+    const key = 'map:' + id;
+    const tex = this.mapTextures.get(id);
+    if (!tex || tex.ver !== (d?.ver ?? 0)) {
+      const cv = document.createElement('canvas');
+      cv.width = 256; cv.height = 128;
+      const ctx = cv.getContext('2d')!;
+      ctx.fillStyle = '#d8c8a0';
+      ctx.fillRect(0, 0, 256, 128);
+      if (d) {
+        const img = ctx.getImageData(0, 0, MAP_SIZE, MAP_SIZE);
+        for (let i = 0; i < d.colors.length; i++) {
+          const rgb = mapRGB(d.colors[i]);
+          if (rgb < 0) continue;
+          img.data[i * 4] = rgb >> 16; img.data[i * 4 + 1] = (rgb >> 8) & 255; img.data[i * 4 + 2] = rgb & 255;
+        }
+        ctx.putImageData(img, 0, 0);
+        drawMapMarks(ctx, d, 0, 0, 1);
+        // the side facing the room is the sheet's back, which shows its picture the other way round
+        ctx.save(); ctx.translate(256, 0); ctx.scale(-1, 1); ctx.drawImage(cv, 0, 0, 128, 128, 0, 0, 128, 128); ctx.restore();
+      }
+      if (tex) this.r.freeTexture(tex.t);
+      const t = this.canvasTexture(cv);
+      this.mapTextures.set(id, { ver: d?.ver ?? 0, t });
+      this.skins.set(key, t);
+    }
+    const [dx, dz] = HORIZ[e.facing];
+    const m = mat4();
+    identity(m);
+    translate(m, m, x - dx * 0.035, y + 0.375, z - dz * 0.035);
+    rotateY(m, m, [Math.PI, Math.PI / 2, 0, -Math.PI / 2][e.facing]);
+    rotateZ(m, m, (-(e.rotation >> 1) * Math.PI) / 2);
+    scale(m, m, -0.75, -0.75, 0.75);
+    this.drawModel('mapSheet', key, m, {}, [sky, blk], [0, 0, 0, 0]);
+  }
+  private mapTextures = new Map<number, { ver: number; t: Tex }>();
+  /** A skin drawn on a canvas (sign words, banner designs, maps). */
+  private canvasTexture(cv: HTMLCanvasElement): Tex {
+    return this.r.makeTexture(cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data, cv.width);
+  }
+
+  /** Evoker fangs: the jaws rise out of the ground, snap shut and sink back. */
+  private drawFangs(e: EvokerFangs, x: number, y: number, z: number, t: number, sky: number, blk: number) {
+    if (e.warmup >= 0) return;
+    const f = Math.min(20, e.life + t);
+    const open = 1 - Math.min(1, f / 10);
+    const rise = f > 18 ? (f - 18) / 4 : 0;
+    const base = this.entityBase(this.tmp2, x, y - rise * 0.8, z, 90 - e.yaw, 0, 1);
+    const jaw = Math.sin(Math.min(1, (1 - open) * 2) * Math.PI) * 0.6 + 0.2;
+    const pose: Record<string, [number, number, number]> = { upperJaw: [0, 0, Math.PI - jaw], lowerJaw: [0, Math.PI, Math.PI + jaw] };
+    const lift = (1 - Math.min(1, f / 4)) * 12;
+    this.drawModel('fangs', 'fangs', base, pose, [sky, blk], [0, 0, 0, 0], new Set(['base']), 1, { upperJaw: [0, lift, 0], lowerJaw: [0, lift, 0] });
+  }
+
   private drawArrow(mesh: DynMesh, e: Arrow, x: number, y: number, z: number, t: number, sky: number, blk: number) {
     const yaw = e.pyaw + (e.yaw - e.pyaw) * t, pitch = e.ppitch + (e.pitch - e.ppitch) * t;
     const m = mat4();
@@ -1133,7 +1459,7 @@ export class EntityRenderer {
     rotateY(m, m, -Math.PI / 2);
     rotateZ(m, m, -Math.PI / 4);
     scale(m, m, 0.7, 0.7, 0.7);
-    this.appendItem(mesh, I.ARROW, m, sky, blk);
+    this.appendItem(mesh, e.itemId || I.ARROW, m, sky, blk);
   }
 
   /** Player model in the inventory screen, drawn into a GUI rectangle. */
@@ -1252,6 +1578,8 @@ export class EntityRenderer {
       const s = Math.sqrt(swing);
       translate(m, m, -0.4 * Math.sin(s * Math.PI), 0.2 * Math.sin(s * Math.PI * 2), -0.2 * Math.sin(swing * Math.PI));
     }
+    // a raised shield comes up toward the middle
+    if (p.blocking && held.id === I7.SHIELD) { translate(m, m, -0.2, 0.18, 0); rotateY(m, m, 30 * DEG); }
     // transformFirstPersonItem
     translate(m, m, 0.56, -0.52, -0.71999997);
     translate(m, m, 0, eq * -0.6, 0);
@@ -1295,7 +1623,41 @@ export class EntityRenderer {
     this.appendItem(dm, held.id, m, sky, blk);
     const glint: [number, number, number, number] | undefined = held.ench ? [0.55, 0.3, 1, 0.22 + Math.sin(performance.now() / 300) * 0.08] : undefined;
     this.r.drawDyn(dm, { cull: false, viewProj: proj, overlay: glint });
+    this.drawOffhand(game, t, proj, sky, blk);
     this.currentVP = this.r.viewProj;
+  }
+
+  /** The off-hand item in first person: the main hand's transform mirrored to the left (a raised shield comes up in front). */
+  private drawOffhand(game: Game, t: number, proj: Mat4, sky: number, blk: number) {
+    const p = game.player!;
+    const off = p.inventory.offhand;
+    if (!off) return;
+    const m = mat4();
+    identity(m);
+    const dyaw = (p.yaw - p.pyaw) * (1 - t), dpitch = (p.pitch - p.ppitch) * (1 - t);
+    rotateX(m, m, dpitch * 0.1 * DEG);
+    rotateY(m, m, dyaw * 0.1 * DEG);
+    scale(m, m, -1, 1, 1);
+    const up = p.blocking && off.id === I7.SHIELD && p.inventory.held()?.id !== I7.SHIELD;
+    translate(m, m, 0.56 - (up ? 0.2 : 0), -0.52 + (up ? 0.18 : 0), -0.72);
+    rotateY(m, m, 45 * DEG);
+    if (up) rotateY(m, m, -30 * DEG);
+    scale(m, m, 0.4, 0.4, 0.4);
+    const it = getItem(off.id);
+    if (it.block !== undefined && !it.flatBlock && !it.sprite) {
+      translate(m, m, 0, 0.1, 0);
+      rotateY(m, m, 45 * DEG);
+      scale(m, m, 0.42, 0.42, 0.42);
+    } else {
+      translate(m, m, 0, 4 / 16 * 1.7 * 0.5, 2 / 16 * 1.7 * 0.5);
+      rotateY(m, m, -135 * DEG);
+      rotateZ(m, m, 25 * DEG);
+      scale(m, m, 1.7 * 0.8, 1.7 * 0.8, 1.7 * 0.8);
+    }
+    const dm = this.handMesh;
+    dm.reset();
+    this.appendItem(dm, off.id, m, sky, blk);
+    this.r.drawDyn(dm, { cull: false, viewProj: proj });
   }
 }
 
@@ -1324,3 +1686,34 @@ export function faceUV16(f: number, px: number, py: number, pz: number): [number
     default: return [px, 16 - py];
   }
 }
+
+/** Skeleton and zombie horses: a horse's coat redone in bone or rotten green. */
+function undeadHorseSkin(kind: 'skeleton' | 'zombie'): M.Skin {
+  const s = M.horseSkin(3, 0);
+  for (let i = 0; i < s.data.length; i += 4) {
+    if (!s.data[i + 3]) continue;
+    const l = (s.data[i] * 0.3 + s.data[i + 1] * 0.59 + s.data[i + 2] * 0.11) / 255;
+    const [r, g, b] = kind === 'skeleton' ? [200 * (0.55 + l * 0.6), 200 * (0.55 + l * 0.6), 195 * (0.55 + l * 0.6)] : [90 * (0.5 + l), 140 * (0.5 + l), 80 * (0.5 + l)];
+    s.data[i] = Math.min(255, r); s.data[i + 1] = Math.min(255, g); s.data[i + 2] = Math.min(255, b);
+  }
+  return s;
+}
+
+/** A banner's 64 x 64 skin: the cloth front and back (its design), and wood for the bar and pole. */
+function bannerSkin(base: number, layers: { p: string; c: number }[]): HTMLCanvasElement {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const ctx = cv.getContext('2d')!;
+  ctx.fillStyle = '#7a5a32';
+  ctx.fillRect(0, 42, 44, 4);
+  ctx.fillRect(44, 0, 8, 44);
+  ctx.fillStyle = '#5e4424';
+  for (let y = 0; y < 44; y += 3) ctx.fillRect(44 + (y % 7), y, 1, 2);
+  const img = new ImageData(20, 40);
+  img.data.set(bannerPixels(base, layers));
+  ctx.putImageData(img, 0, 0);
+  // the back shows the design the other way round
+  ctx.save(); ctx.translate(40, 0); ctx.scale(-1, 1); ctx.drawImage(cv, 0, 0, 20, 40, 0, 0, 20, 40); ctx.restore();
+  return cv;
+}
+

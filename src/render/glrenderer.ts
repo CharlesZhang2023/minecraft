@@ -524,14 +524,15 @@ export class GLRenderer extends Renderer {
     gl.uniform1i(p.u.u_skin, 0);
     gl.uniformMatrix4fv(p.u.u_model, false, o.model);
     gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-    gl.depthMask(true);
+    gl.depthFunc(o.hidden ? gl.GREATER : gl.LEQUAL);
+    gl.depthMask(!o.hidden);
     gl.disable(gl.CULL_FACE);
     if (o.blend) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); }
     gl.bindVertexArray(g.vao);
     gl.drawElements(gl.TRIANGLES, g.quads * 6, gl.UNSIGNED_INT, 0);
     gl.bindVertexArray(null);
     if (o.blend) gl.disable(gl.BLEND);
+    if (o.hidden) { gl.depthFunc(gl.LEQUAL); gl.depthMask(true); }
   }
 
   drawLines(verts: Float32Array, color: [number, number, number, number], xray = false) {

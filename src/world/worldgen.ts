@@ -1,7 +1,12 @@
 // Terrain generation. Runs inside workers; pure functions of (seed, chunk coords).
 import { Octaves, Random, hash2, Noise } from '../noise';
-import { B, CHUNK_H, SEA_LEVEL, pack, BLOCKS, OPAQUE, isLeaves } from './blocks';
-import { BIOME, BIOMES } from './biomes';
+import { B, B2, STONE2, WOOD, CORAL, TERRACOTTA_COLORS, CHUNK_H, SEA_LEVEL, pack, BLOCKS, OPAQUE, isLeaves } from './blocks';
+import { BIOME, BIOMES, isOceanBiome } from './biomes';
+import { jungleTree, megaJungleTree, jungleBush, acaciaTree, darkOakTree, megaSpruceTree, hugeMushroom } from './features';
+import { chunkCtx, startsNear, buildStarts, type GenAccess } from './structure';
+/** A world-generated bee nest's tile: three bees inside. (Kept here so the generator worker needn't load the bee code.) */
+const nestTile = () => ({ type: 'beehive', bees: [0, 1, 2].map(() => ({ nectar: false, ticksIn: 600, minTicks: 600, health: 10 })), honey: 0 });
+import { OVERWORLD_STRUCTURES } from './structures/overworld';
 import { smoothstep, lerp } from '../math';
 import { villagesNear, placeVillage, Spawn } from './village';
 import { buildStrongholds } from './stronghold';
@@ -30,9 +35,10 @@ export type Setter = (x: number, y: number, z: number, v: number, force?: boolea
  * produces. Worlds record the version they were made with, so old saves can be recognised (and, if ever needed,
  * generated the old way) after the generator changes.
  */
-export const GENERATOR_VERSION = 1;
+const SURFACE_STRUCTURES = OVERWORLD_STRUCTURES.filter((t) => ['desert_pyramid', 'jungle_temple', 'swamp_hut', 'igloo', 'pillager_outpost', 'woodland_mansion', 'desert_well', 'ruined_portal'].includes(t.name));
+export const GENERATOR_VERSION = 2;
 
-export class WorldGen {
+export class WorldGen implements GenAccess {
   private cont: Octaves;
   private erosion: Octaves;
   private peaks: Octaves;
@@ -43,6 +49,10 @@ export class WorldGen {
   private d3: Octaves;
   private surf: Noise;
   private patch: Noise;
+  /** 1.16 biomes: a large-scale "weirdness" field picks the special variants (badlands, dark forest...). */
+  private special: Octaves;
+  private bandNoise: Noise;
+  private bands: number[];
   private gridCache = new Map<string, Float32Array>();
 
   constructor(public seed: number) {
@@ -57,7 +67,18 @@ export class WorldGen {
     this.d3 = new Octaves(r.nextU32(), 3);
     this.surf = new Noise(r.nextU32());
     this.patch = new Noise(r.nextU32());
+    // (drawn after the original fields so those stay what they were)
+    this.special = new Octaves(r.nextU32(), 2);
+    this.bandNoise = new Noise(r.nextU32());
+    // badlands terracotta bands, 64 layers (vanilla's generateBands: plain terracotta with coloured stripes)
+    const br = new Random(r.nextU32());
+    this.bands = new Array(64).fill(B.TERRACOTTA);
+    for (let i = 0; i < 64; i++) { i += br.int(5) + 1; if (i < 64) this.bands[i] = TERRACOTTA_COLORS[1]; }
+    for (const [col, n] of [[4, 2 + br.int(3)], [14, 2 + br.int(3)], [0, 1 + br.int(3)], [8, 2 + br.int(2)], [12, 1 + br.int(2)]] as const)
+      for (let k = 0; k < n; k++) { const at = br.int(64), len = 1 + br.int(3); for (let j = 0; j < len && at + j < 64; j++) this.bands[at + j] = TERRACOTTA_COLORS[col]; }
   }
+  height(x: number, z: number): number { return this.surfaceY(x, z); }
+  biome(x: number, z: number): number { const sh = this.surfaceY(x, z); return this.biomeAt(x, z, sh, this.params(x, z)); }
 
   params(x: number, z: number): ColumnParams {
     const c = this.cont.sample2(x / 900, z / 900) * 1.5 + 0.12;
@@ -81,6 +102,11 @@ export class WorldGen {
     const rv = Math.abs(this.riverN.sample2(x / 480, z / 480));
     const rf = (1 - smoothstep(0.0, 0.045, rv)) * land * (1 - mount * 0.7);
     if (base > SEA_LEVEL - 4) base = lerp(base, SEA_LEVEL - 5, rf);
+    // mushroom islands: low hills raised out of the deep sea where the 'special' noise peaks (see biomeAt)
+    if (c < -0.4) {
+      const isl = smoothstep(0.56, 0.72, this.special.sample2(x / 700 + 900, z / 700) * 1.6) * smoothstep(-0.4, -0.5, c);
+      if (isl > 0) base = lerp(base, 66 + hill * 5, isl);
+    }
     const amp = (2.5 + hilly * 4 + mount * 13) * (1 - rf * 0.9);
     return { base, amp, mount, river: rf, cont: c };
   }
@@ -204,25 +230,62 @@ export class WorldGen {
 
   biomeAt(x: number, z: number, sh: number, p: ColumnParams): number {
     const [t, h] = this.climate(x, z);
+    const w = this.special.sample2(x / 700 + 900, z / 700) * 1.6;
     if (sh < SEA_LEVEL - 1) {
       if (p.river > 0.4 && p.cont > -0.1) return t < -0.45 ? BIOME.FROZEN_RIVER : BIOME.RIVER;
-      return t < -0.45 ? BIOME.FROZEN_OCEAN : BIOME.OCEAN;
+      // mushroom islands rise out of the deep sea now and then
+      if (p.cont < -0.4 && w > 0.62) return BIOME.MUSHROOM_FIELDS;
+      const deep = sh < SEA_LEVEL - 20;
+      if (t < -0.45) return deep ? BIOME.DEEP_FROZEN_OCEAN : BIOME.FROZEN_OCEAN;
+      if (t < -0.2) return deep ? BIOME.DEEP_COLD_OCEAN : BIOME.COLD_OCEAN;
+      if (t > 0.6) return BIOME.WARM_OCEAN;
+      if (t > 0.3) return deep ? BIOME.DEEP_LUKEWARM_OCEAN : BIOME.LUKEWARM_OCEAN;
+      return deep ? BIOME.DEEP_OCEAN : BIOME.OCEAN;
     }
-    if (sh <= SEA_LEVEL + 2 && p.cont < 0.06 && p.mount < 0.2 && p.river < 0.3) return t < -0.45 ? BIOME.SNOWY_BEACH : t > 0.45 && h < 0.1 ? BIOME.DESERT : BIOME.BEACH;
-    if (p.mount > 0.35 && sh > 92) return t < -0.45 ? BIOME.SNOWY_TAIGA : BIOME.MOUNTAINS;
-    if (t > 0.42) return h < 0.05 ? BIOME.DESERT : h < 0.3 ? BIOME.SAVANNA : BIOME.FOREST;
-    if (t < -0.42) return h > 0.05 ? BIOME.SNOWY_TAIGA : BIOME.SNOWY_PLAINS;
-    if (t < -0.18) return BIOME.TAIGA;
+    if (p.cont < -0.4 && w > 0.62) return BIOME.MUSHROOM_FIELDS;
+    if (sh <= SEA_LEVEL + 2 && p.cont < 0.06 && p.mount < 0.2 && p.river < 0.3) {
+      if (p.mount > 0.1 || w < -0.75) return BIOME.STONE_SHORE;
+      return t < -0.45 ? BIOME.SNOWY_BEACH : t > 0.45 && h < 0.1 ? BIOME.DESERT : BIOME.BEACH;
+    }
+    if (p.mount > 0.35 && sh > 92) {
+      if (t < -0.45) return w > 0.3 ? BIOME.SNOWY_MOUNTAINS : BIOME.SNOWY_TAIGA;
+      if (t > 0.42 && h < 0.05 && w > 0.25) return BIOME.WOODED_BADLANDS;
+      return w > 0.45 ? BIOME.GRAVELLY_MOUNTAINS : BIOME.MOUNTAINS;
+    }
+    if (t > 0.42) {
+      if (h < 0.05) return w > 0.35 ? (sh > 88 ? BIOME.WOODED_BADLANDS : BIOME.BADLANDS) : BIOME.DESERT;
+      if (h < 0.3) return sh > 90 ? BIOME.SAVANNA_PLATEAU : BIOME.SAVANNA;
+      if (h < 0.38) return BIOME.JUNGLE_EDGE;
+      return w > 0.35 ? BIOME.BAMBOO_JUNGLE : BIOME.JUNGLE;
+    }
+    if (t < -0.42) return h > 0.05 ? BIOME.SNOWY_TAIGA : w > 0.5 ? BIOME.ICE_SPIKES : BIOME.SNOWY_PLAINS;
+    if (t < -0.18) return h > 0.32 ? BIOME.GIANT_TREE_TAIGA : BIOME.TAIGA;
     if (h > 0.45 && sh < 67 && t > 0) return BIOME.SWAMP;
-    if (h > 0.2) return t < 0.05 ? BIOME.BIRCH_FOREST : h > 0.55 ? BIOME.FLOWER_FOREST : BIOME.FOREST;
+    if (h > 0.2) {
+      if (w > 0.3 && h > 0.35) return BIOME.DARK_FOREST;
+      return t < 0.05 ? (w < -0.4 ? BIOME.TALL_BIRCH_FOREST : BIOME.BIRCH_FOREST) : h > 0.55 ? BIOME.FLOWER_FOREST : BIOME.FOREST;
+    }
     if (h > 0.08) return BIOME.FOREST;
-    return BIOME.PLAINS;
+    return w > 0.55 ? BIOME.SUNFLOWER_PLAINS : BIOME.PLAINS;
   }
 
   /** Block placed on the very top of a column (used for trees / plants deciding validity). */
   topBlock(biome: number, sh: number, x: number, z: number): number {
-    if (sh < SEA_LEVEL - 1) return this.patch.noise2(x / 12, z / 12) > 0.35 ? B.GRAVEL : sh > SEA_LEVEL - 10 ? B.SAND : B.DIRT;
+    if (sh < SEA_LEVEL - 1) {
+      if (biome === BIOME.MUSHROOM_FIELDS) return B.DIRT;
+      if (biome === BIOME.WARM_OCEAN || biome === BIOME.LUKEWARM_OCEAN || biome === BIOME.DEEP_LUKEWARM_OCEAN) return B.SAND;
+      if (biome === BIOME.DEEP_OCEAN || biome === BIOME.DEEP_COLD_OCEAN || biome === BIOME.DEEP_FROZEN_OCEAN) return this.patch.noise2(x / 12, z / 12) > -0.2 ? B.GRAVEL : B.SAND;
+      return this.patch.noise2(x / 12, z / 12) > 0.35 ? B.GRAVEL : sh > SEA_LEVEL - 10 ? B.SAND : B.DIRT;
+    }
     switch (biome) {
+      case BIOME.BADLANDS: case BIOME.WOODED_BADLANDS:
+        return biome === BIOME.WOODED_BADLANDS && sh > 86 ? (this.patch.noise2(x / 8, z / 8) > 0.2 ? B.COARSE_DIRT : B.GRASS) : STONE2.RED_SAND;
+      case BIOME.MUSHROOM_FIELDS: return B2.MYCELIUM;
+      case BIOME.GRAVELLY_MOUNTAINS: return this.patch.noise2(x / 14, z / 14) > -0.2 ? B.GRAVEL : sh > 120 ? B.STONE : B.GRASS;
+      case BIOME.STONE_SHORE: return B.STONE;
+      case BIOME.GIANT_TREE_TAIGA: { const n = this.patch.noise2(x / 9, z / 9); return n > 0.3 ? B.PODZOL : n < -0.4 ? B.COARSE_DIRT : B.GRASS; }
+      case BIOME.ICE_SPIKES: return B.SNOW_BLOCK;
+      case BIOME.SNOWY_MOUNTAINS: return sh > 110 ? B.SNOW_BLOCK : B.GRASS;
       case BIOME.DESERT:
       case BIOME.BEACH:
       case BIOME.SNOWY_BEACH:
@@ -270,6 +333,20 @@ export class WorldGen {
         biomes[lz * 16 + lx] = biome;
         const top = this.topBlock(biome, sh, wx, wz);
         const depth = 3 + (rng.next() < 0.5 ? 1 : 0) + (this.surf.noise2(wx / 8, wz / 8) > 0.3 ? 1 : 0);
+        if ((biome === BIOME.BADLANDS || biome === BIOME.WOODED_BADLANDS) && sh >= SEA_LEVEL - 1) {
+          // badlands: a skin of red sand (or the plateau's soil), then the terracotta bands down the slopes
+          const off = Math.round(this.bandNoise.noise2(wx / 64, wz / 64) * 2);
+          for (let y = sh; y > Math.max(1, sh - 50); y--) {
+            const i = idx(lx, y, lz);
+            if (blocks[i] !== B.STONE) { if (y < sh - 3) break; continue; }
+            if (y === sh) blocks[i] = top === STONE2.RED_SAND && sh > 80 && this.patch.noise2(wx / 6, wz / 6) > 0.3 ? this.bands[(y + off + 64) % 64] : top;
+            else if (y > sh - 2 && top === STONE2.RED_SAND && sh < 80) blocks[i] = STONE2.RED_SAND;
+            else if (y > 50) blocks[i] = this.bands[(y + off + 64) % 64];
+          }
+          blocks[idx(lx, 0, lz)] = B.BEDROCK;
+          for (let y = 1; y < 5; y++) if (y <= rng.int(5)) blocks[idx(lx, y, lz)] = B.BEDROCK;
+          continue;
+        }
         const sandy = top === B.SAND;
         const filler = top === B.SAND ? B.SAND : top === B.GRAVEL ? B.GRAVEL : top === B.STONE ? B.STONE : B.DIRT;
         let run = -1;
@@ -342,11 +419,14 @@ export class WorldGen {
       const cur = blocks[i] & 0xfff;
       if (force || cur === B.AIR || BLOCKS[cur].replaceable && cur !== B.WATER && cur !== B.LAVA || (isLeaves(cur) && !isLeaves(v & 0xfff))) blocks[i] = v;
     };
+    const spawns: Spawn[] = [];
+    this.nestSink = (x, y, z) => { if (x >> 4 === cx && z >> 4 === cz && y > 0 && y < CHUNK_H) spawns.push({ type: 'tile', x, y, z, data: { tile: nestTile() } }); };
     for (let dz = -1; dz <= 1; dz++)
       for (let dx = -1; dx <= 1; dx++) this.placeTrees(cx + dx, cz + dz, set);
+    this.nestSink = null;
     this.plants(cx, cz, blocks, biomes, heights);
-    const spawns: Spawn[] = [];
     for (const v of villagesNear(this, cx, cz)) placeVillage(this, v, cx, cz, blocks, spawns);
+    buildStarts(startsNear(OVERWORLD_STRUCTURES, this, cx, cz), chunkCtx(blocks, cx, cz, spawns));
     this.snowAndIce(blocks, biomes);
     buildStrongholds(this.seed, cx, cz, (x, y, z) => blocks[idx(x - wx0, y, z - wz0)], (x, y, z, v) => { blocks[idx(x - wx0, y, z - wz0)] = v; });
     return { blocks, biomes, spawns };
@@ -579,6 +659,15 @@ export class WorldGen {
 
   // ------------------------------------------------------------------ trees
   /** Deterministic list of trees for a chunk; each tree writes via `set`, which clips to the target chunk. */
+  /** Where generate() collects the bee nests trees put in the chunk (their bees are tile hints). */
+  private nestSink: ((x: number, y: number, z: number) => void) | null = null;
+  /** Whether a surface structure claims this column (trees don't grow there: vanilla places structures first). */
+  private onStructure(x: number, z: number) {
+    for (const st of startsNear(SURFACE_STRUCTURES, this, x >> 4, z >> 4))
+      if (x >= st.box.x0 - 3 && x <= st.box.x1 + 3 && z >= st.box.z0 - 3 && z <= st.box.z1 + 3) return true;
+    return false;
+  }
+
   private placeTrees(cx: number, cz: number, set: Setter) {
     const r = new Random(hash2(this.seed ^ 0x7eee, cx, cz));
     const cp = this.params(cx * 16 + 8, cz * 16 + 8);
@@ -596,11 +685,46 @@ export class WorldGen {
       const p = this.params(x, z);
       const biome = this.biomeAt(x, z, sh, p);
       const top = this.topBlock(biome, sh, x, z);
-      if (top !== B.GRASS && top !== B.PODZOL && top !== B.COARSE_DIRT) continue;
+      if (top !== B.GRASS && top !== B.PODZOL && top !== B.COARSE_DIRT && !(top === B2.MYCELIUM && biome === BIOME.MUSHROOM_FIELDS)) continue;
       if (this.caveAtSurface(x, sh, z)) continue;
+      if (this.onStructure(x, z)) continue;
       const tr = new Random(treeSeed);
       const y = sh + 1;
       switch (biome) {
+        case BIOME.JUNGLE: case BIOME.JUNGLE_EDGE: case BIOME.BAMBOO_JUNGLE: {
+          const k = tr.int(10);
+          if (k === 0 && biome === BIOME.JUNGLE) megaJungleTree(tr, x, y, z, set);
+          else if (k < 5) jungleBush(tr, x, y, z, set);
+          else if (k < 6) WorldGen.bigOak(tr, x, y, z, set);
+          else jungleTree(tr, x, y, z, set);
+          break;
+        }
+        case BIOME.DARK_FOREST: {
+          const k = tr.int(12);
+          if (k < 2) hugeMushroom(tr, x, y, z, set, k === 0);
+          else if (k < 3) WorldGen.oakTree(tr, x, y, z, set, B.BIRCH_LOG, B.BIRCH_LEAVES, 5);
+          else darkOakTree(tr, x, y, z, set);
+          break;
+        }
+        case BIOME.GIANT_TREE_TAIGA:
+          if (tr.int(3) === 0) megaSpruceTree(tr, x, y, z, set);
+          else if (tr.int(3) === 0) WorldGen.pineTree(tr, x, y, z, set);
+          else WorldGen.spruceTree(tr, x, y, z, set);
+          break;
+        case BIOME.SAVANNA: case BIOME.SAVANNA_PLATEAU:
+          if (tr.int(5)) acaciaTree(tr, x, y, z, set);
+          else WorldGen.oakTree(tr, x, y, z, set, B.OAK_LOG, B.OAK_LEAVES, 4);
+          break;
+        case BIOME.TALL_BIRCH_FOREST:
+          WorldGen.oakTree(tr, x, y, z, set, B.BIRCH_LOG, B.BIRCH_LEAVES, 8);
+          break;
+        case BIOME.MUSHROOM_FIELDS:
+          hugeMushroom(tr, x, y, z, set, tr.bool());
+          break;
+        case BIOME.SNOWY_MOUNTAINS: case BIOME.GRAVELLY_MOUNTAINS:
+          if (tr.bool()) WorldGen.spruceTree(tr, x, y, z, set);
+          else WorldGen.oakTree(tr, x, y, z, set, B.OAK_LOG, B.OAK_LEAVES, 4);
+          break;
         case BIOME.TAIGA:
         case BIOME.SNOWY_TAIGA:
         case BIOME.SNOWY_PLAINS:
@@ -621,6 +745,12 @@ export class WorldGen {
           if (biome === BIOME.FOREST && tr.int(5) === 0) WorldGen.oakTree(tr, x, y, z, set, B.BIRCH_LOG, B.BIRCH_LEAVES, 5);
           else if (tr.int(10) === 0) WorldGen.bigOak(tr, x, y, z, set);
           else WorldGen.oakTree(tr, x, y, z, set, B.OAK_LOG, B.OAK_LEAVES, 4);
+      }
+      // bee nests hang off the trunks of plains and flower-forest trees (1.15: 5% and 2%; rare in forests)
+      const nestOdds = biome === BIOME.PLAINS || biome === BIOME.SUNFLOWER_PLAINS ? 0.05 : biome === BIOME.FLOWER_FOREST ? 0.02 : biome === BIOME.FOREST || biome === BIOME.BIRCH_FOREST ? 0.002 : 0;
+      if (nestOdds && tr.next() < nestOdds) {
+        set(x, y + 1, z + 1, pack(B2.BEE_NEST, 0), true);
+        this.nestSink?.(x, y + 1, z + 1);
       }
     }
   }
@@ -729,25 +859,56 @@ export class WorldGen {
       blocks[idx(lx, y + 1, lz)] = block;
       return true;
     };
+    /** A two-block plant (sunflowers, lilacs, tall grass...) on grass. */
+    const place2 = (lx: number, lz: number, block: number) => {
+      const y = topAt(lx, lz);
+      if ((blocks[idx(lx, y, lz)] & 0xfff) !== B.GRASS || blocks[idx(lx, y + 1, lz)] !== B.AIR || blocks[idx(lx, y + 2, lz)] !== B.AIR || y + 2 >= CHUNK_H) return false;
+      blocks[idx(lx, y + 1, lz)] = pack(block, 0);
+      blocks[idx(lx, y + 2, lz)] = pack(block, 8);
+      return true;
+    };
     const biome = biomes[8 * 16 + 8];
+    // swamps: shallow pools wherever the ground sits at the water line (vanilla's swamp surface noise)
+    for (let lz = 0; lz < 16; lz++)
+      for (let lx = 0; lx < 16; lx++) {
+        if (biomes[lz * 16 + lx] !== BIOME.SWAMP) continue;
+        const y = topAt(lx, lz);
+        if (y < SEA_LEVEL - 1 || y > SEA_LEVEL || blocks[idx(lx, y + 1, lz)] !== B.AIR) continue;
+        if (this.patch.noise2((cx * 16 + lx) / 9, (cz * 16 + lz) / 9) < 0.05) continue;
+        const t = blocks[idx(lx, y, lz)] & 0xfff;
+        if (t !== B.GRASS && t !== B.DIRT) continue;
+        for (let k = y; k <= SEA_LEVEL; k++) blocks[idx(lx, k, lz)] = B.WATER;
+        blocks[idx(lx, y - 1, lz)] = B.DIRT;
+      }
     const grassSoil = [B.GRASS, B.PODZOL, B.COARSE_DIRT];
-    let grassCount = 0, flowerCount = 0;
+    let grassCount = 0, flowerCount = 0, doubles = 0;
+    let doubleTypes: number[] = [B2.LILAC, B2.ROSE_BUSH, B2.PEONY];
     switch (biome) {
-      case BIOME.PLAINS: grassCount = 40; flowerCount = 3; break;
-      case BIOME.SAVANNA: grassCount = 50; break;
-      case BIOME.FOREST: grassCount = 12; flowerCount = 2; break;
-      case BIOME.FLOWER_FOREST: grassCount = 10; flowerCount = 14; break;
-      case BIOME.BIRCH_FOREST: grassCount = 12; flowerCount = 2; break;
-      case BIOME.TAIGA: case BIOME.SNOWY_TAIGA: grassCount = 14; break;
-      case BIOME.MOUNTAINS: grassCount = 6; break;
-      case BIOME.SWAMP: grassCount = 8; break;
+      case BIOME.PLAINS: grassCount = 40; flowerCount = 3; doubles = r.int(4) === 0 ? 2 : 0; doubleTypes = [B2.TALL_GRASS2]; break;
+      case BIOME.SUNFLOWER_PLAINS: grassCount = 40; flowerCount = 3; doubles = 10; doubleTypes = [B2.SUNFLOWER]; break;
+      case BIOME.SAVANNA: case BIOME.SAVANNA_PLATEAU: grassCount = 50; doubles = 7; doubleTypes = [B2.TALL_GRASS2]; break;
+      case BIOME.FOREST: grassCount = 12; flowerCount = 2; doubles = r.int(2) ? 3 : 0; break;
+      case BIOME.FLOWER_FOREST: grassCount = 10; flowerCount = 14; doubles = 5; break;
+      case BIOME.BIRCH_FOREST: case BIOME.TALL_BIRCH_FOREST: grassCount = 12; flowerCount = 2; doubles = r.int(3) === 0 ? 2 : 0; break;
+      case BIOME.DARK_FOREST: grassCount = 6; flowerCount = 1; doubles = r.int(3) === 0 ? 3 : 0; break;
+      case BIOME.TAIGA: case BIOME.SNOWY_TAIGA: grassCount = 14; doubles = r.int(3) === 0 ? 3 : 0; doubleTypes = [B2.LARGE_FERN]; break;
+      case BIOME.GIANT_TREE_TAIGA: grassCount = 20; doubles = 6; doubleTypes = [B2.LARGE_FERN]; break;
+      case BIOME.JUNGLE: case BIOME.JUNGLE_EDGE: case BIOME.BAMBOO_JUNGLE: grassCount = 25; flowerCount = 1; doubles = 4; doubleTypes = [B2.LARGE_FERN, B2.TALL_GRASS2]; break;
+      case BIOME.MOUNTAINS: case BIOME.GRAVELLY_MOUNTAINS: grassCount = 6; break;
+      case BIOME.SWAMP: grassCount = 8; flowerCount = 1; break;
       case BIOME.SNOWY_PLAINS: grassCount = 2; break;
       case BIOME.RIVER: case BIOME.BEACH: grassCount = 3; break;
+      case BIOME.WOODED_BADLANDS: grassCount = 4; break;
     }
-    const fernish = biome === BIOME.TAIGA || biome === BIOME.SNOWY_TAIGA;
+    const fernish = biome === BIOME.TAIGA || biome === BIOME.SNOWY_TAIGA || biome === BIOME.GIANT_TREE_TAIGA || biome === BIOME.JUNGLE;
     for (let i = 0; i < grassCount; i++) place(r.int(16), r.int(16), fernish && r.int(3) > 0 ? B.FERN : B.TALL_GRASS, grassSoil);
-    // flower patches
-    const flowerTypes = biome === BIOME.FLOWER_FOREST ? [B.DANDELION, B.POPPY, B.ALLIUM, B.CORNFLOWER, B.OXEYE_DAISY] : biome === BIOME.PLAINS ? [B.DANDELION, B.POPPY, B.OXEYE_DAISY, B.CORNFLOWER] : [B.DANDELION, B.POPPY];
+    // flower patches (the kinds each biome has, vanilla 1.16)
+    const tulips = [B2.RED_TULIP, B2.ORANGE_TULIP, B2.WHITE_TULIP, B2.PINK_TULIP];
+    const flowerTypes = biome === BIOME.FLOWER_FOREST ? [B.DANDELION, B.POPPY, B.ALLIUM, B2.AZURE_BLUET, B.CORNFLOWER, B.OXEYE_DAISY, B2.LILY_OF_THE_VALLEY, ...tulips]
+      : biome === BIOME.PLAINS || biome === BIOME.SUNFLOWER_PLAINS ? [B.DANDELION, B.POPPY, B2.AZURE_BLUET, B.OXEYE_DAISY, B.CORNFLOWER, ...tulips]
+      : biome === BIOME.SWAMP ? [B2.BLUE_ORCHID]
+      : biome === BIOME.FOREST || biome === BIOME.BIRCH_FOREST || biome === BIOME.DARK_FOREST ? [B.DANDELION, B.POPPY, B2.LILY_OF_THE_VALLEY]
+      : [B.DANDELION, B.POPPY];
     for (let i = 0; i < flowerCount; i++) {
       const f = flowerTypes[r.int(flowerTypes.length)];
       const px = r.int(16), pz = r.int(16);
@@ -756,14 +917,17 @@ export class WorldGen {
         if (lx >= 0 && lz >= 0 && lx < 16 && lz < 16) place(lx, lz, f, [B.GRASS]);
       }
     }
-    // mushrooms in dark/cold places
-    if ((biome === BIOME.TAIGA || biome === BIOME.SWAMP || biome === BIOME.FOREST) && r.int(4) === 0) place(r.int(16), r.int(16), r.bool() ? B.BROWN_MUSHROOM : B.RED_MUSHROOM, [B.GRASS, B.PODZOL]);
-    // desert
-    if (biome === BIOME.DESERT) {
-      for (let i = 0; i < 2; i++) place(r.int(16), r.int(16), B.DEAD_BUSH, [B.SAND]);
-      for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < doubles; i++) place2(r.int(16), r.int(16), doubleTypes[r.int(doubleTypes.length)]);
+    // mushrooms in dark/cold places; everywhere on mushroom islands
+    if ((biome === BIOME.TAIGA || biome === BIOME.SWAMP || biome === BIOME.FOREST || biome === BIOME.DARK_FOREST || biome === BIOME.GIANT_TREE_TAIGA) && r.int(4) === 0) place(r.int(16), r.int(16), r.bool() ? B.BROWN_MUSHROOM : B.RED_MUSHROOM, [B.GRASS, B.PODZOL]);
+    if (biome === BIOME.MUSHROOM_FIELDS) for (let i = 0; i < 3; i++) place(r.int(16), r.int(16), r.bool() ? B.BROWN_MUSHROOM : B.RED_MUSHROOM, [B2.MYCELIUM]);
+    // desert and badlands
+    if (biome === BIOME.DESERT || biome === BIOME.BADLANDS) {
+      const sands = [B.SAND, STONE2.RED_SAND];
+      for (let i = 0; i < (biome === BIOME.BADLANDS ? 5 : 2); i++) place(r.int(16), r.int(16), B.DEAD_BUSH, [...sands, ...TERRACOTTA_COLORS, B.TERRACOTTA]);
+      for (let i = 0; i < (biome === BIOME.BADLANDS ? 5 : 3); i++) {
         const lx = r.int(16), lz = r.int(16);
-        if (place(lx, lz, B.CACTUS, [B.SAND])) {
+        if (place(lx, lz, B.CACTUS, sands)) {
           const y = topAt(lx, lz);
           const h = r.int(3);
           const ok = (x: number, z: number) => x < 0 || z < 0 || x > 15 || z > 15 || !SOLIDISH(blocks[idx(x, y, z)]);
@@ -774,6 +938,44 @@ export class WorldGen {
       }
     }
     if (biome === BIOME.SAVANNA || biome === BIOME.BEACH) if (r.int(3) === 0) place(r.int(16), r.int(16), B.DEAD_BUSH, [B.SAND, B.COARSE_DIRT]);
+    // jungles: melons and, in bamboo jungles, bamboo; taigas: sweet berry bushes
+    if ((biome === BIOME.JUNGLE || biome === BIOME.BAMBOO_JUNGLE) && r.int(3) === 0) for (let k = 0; k < 6; k++) place(r.int(16), r.int(16), B.MELON, [B.GRASS]);
+    if (biome === BIOME.BAMBOO_JUNGLE || (biome === BIOME.JUNGLE && r.int(4) === 0)) {
+      for (let k = 0; k < (biome === BIOME.BAMBOO_JUNGLE ? 40 : 8); k++) {
+        const lx = r.int(16), lz = r.int(16), y = topAt(lx, lz);
+        if (![B.GRASS, B.PODZOL, B.DIRT].includes(blocks[idx(lx, y, lz)] & 0xfff) || blocks[idx(lx, y + 1, lz)] !== B.AIR) continue;
+        const h = 4 + r.int(12);
+        for (let i = 1; i <= h && y + i < CHUNK_H - 1 && blocks[idx(lx, y + i, lz)] === B.AIR; i++) blocks[idx(lx, y + i, lz)] = B2.BAMBOO;
+        if (biome === BIOME.BAMBOO_JUNGLE && r.bool()) blocks[idx(lx, y, lz)] = B.PODZOL;
+      }
+    }
+    if ((biome === BIOME.TAIGA || biome === BIOME.SNOWY_TAIGA || biome === BIOME.GIANT_TREE_TAIGA) && r.int(5) === 0)
+      for (let k = 0; k < 4; k++) place(r.int(16), r.int(16), pack(B2.SWEET_BERRY_BUSH, 2 + r.int(2)), [B.GRASS, B.PODZOL]);
+    // giant tree taigas: mossy boulders
+    if (biome === BIOME.GIANT_TREE_TAIGA && r.int(3) === 0) {
+      const lx = 2 + r.int(12), lz = 2 + r.int(12), y = topAt(lx, lz);
+      for (let k = 0; k < 3; k++) {
+        const bx = lx + r.int(3) - 1, bz = lz + r.int(3) - 1, by = y + r.int(2), rad = 1 + r.int(2);
+        for (let dx = -rad; dx <= rad; dx++) for (let dz = -rad; dz <= rad; dz++) for (let dy = -rad; dy <= rad; dy++) {
+          const px = bx + dx, pz = bz + dz, py = by + dy;
+          if (px < 0 || pz < 0 || px > 15 || pz > 15 || dx * dx + dy * dy + dz * dz > rad * rad + 1) continue;
+          blocks[idx(px, py, pz)] = B.MOSSY_COBBLESTONE;
+        }
+      }
+    }
+    // ice spikes: tall spikes of packed ice, now and then a huge one
+    if (biome === BIOME.ICE_SPIKES && r.int(3) === 0) {
+      const lx = 3 + r.int(10), lz = 3 + r.int(10), y = topAt(lx, lz);
+      const huge = r.int(10) === 0, h = huge ? 30 + r.int(25) : 7 + r.int(10), base = huge ? 3 : 1 + r.int(2);
+      for (let dy = -2; dy < h; dy++) {
+        const rad = Math.max(0, Math.round(base * (1 - dy / h)));
+        for (let dx = -rad; dx <= rad; dx++) for (let dz = -rad; dz <= rad; dz++) {
+          const px = lx + dx, pz = lz + dz;
+          if (px < 0 || pz < 0 || px > 15 || pz > 15 || dx * dx + dz * dz > rad * rad + 0.5 || y + dy >= CHUNK_H) continue;
+          blocks[idx(px, y + dy, pz)] = B2.PACKED_ICE;
+        }
+      }
+    }
     // sugar cane next to water
     for (let i = 0; i < 10; i++) {
       const lx = 1 + r.int(14), lz = 1 + r.int(14);
@@ -796,9 +998,60 @@ export class WorldGen {
     }
     // lily pads in swamps
     if (biome === BIOME.SWAMP) {
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 10; i++) {
         const lx = r.int(16), lz = r.int(16);
         if (blocks[idx(lx, SEA_LEVEL, lz)] === B.WATER && blocks[idx(lx, SEA_LEVEL + 1, lz)] === B.AIR) blocks[idx(lx, SEA_LEVEL + 1, lz)] = B.LILY_PAD;
+      }
+    }
+    // the sea floor: seagrass, kelp forests (not in warm or frozen seas), coral reefs and sea pickles in warm ones
+    if (isOceanBiome(biome) || biome === BIOME.RIVER || biome === BIOME.SWAMP) this.seaFloor(r, blocks, biome);
+  }
+
+  /** The sea floor's plants (vanilla 1.13): seagrass, kelp, coral reefs, sea pickles. */
+  private seaFloor(r: Random, blocks: Uint16Array, biome: number) {
+    const floorAt = (lx: number, lz: number) => {
+      for (let y = SEA_LEVEL - 1; y > 1; y--) {
+        const b = blocks[idx(lx, y, lz)];
+        if (b !== B.WATER) return b !== B.AIR && blocks[idx(lx, y + 1, lz)] === B.WATER ? y : -1;
+      }
+      return -1;
+    };
+    const warm = biome === BIOME.WARM_OCEAN, frozen = biome === BIOME.FROZEN_OCEAN || biome === BIOME.DEEP_FROZEN_OCEAN;
+    const grassN = warm ? 40 : biome === BIOME.RIVER || biome === BIOME.SWAMP ? 24 : 32;
+    for (let i = 0; i < grassN; i++) {
+      const lx = r.int(16), lz = r.int(16), y = floorAt(lx, lz);
+      if (y < 0 || !OPAQUE[blocks[idx(lx, y, lz)] & 0xfff]) continue;
+      if (r.int(4) === 0 && blocks[idx(lx, y + 2, lz)] === B.WATER) { blocks[idx(lx, y + 1, lz)] = pack(B2.TALL_SEAGRASS, 0); blocks[idx(lx, y + 2, lz)] = pack(B2.TALL_SEAGRASS, 8); }
+      else blocks[idx(lx, y + 1, lz)] = B2.SEAGRASS;
+    }
+    if (!warm && !frozen && biome !== BIOME.RIVER && biome !== BIOME.SWAMP && r.int(2) === 0) {
+      for (let i = 0; i < 18; i++) {
+        const lx = r.int(16), lz = r.int(16), y = floorAt(lx, lz);
+        if (y < 0 || !OPAQUE[blocks[idx(lx, y, lz)] & 0xfff]) continue;
+        const h = 1 + r.int(Math.max(1, SEA_LEVEL - y - 2));
+        for (let k = 1; k <= h; k++) {
+          if (blocks[idx(lx, y + k + 1, lz)] !== B.WATER) { blocks[idx(lx, y + k, lz)] = B2.KELP; break; }
+          blocks[idx(lx, y + k, lz)] = k === h ? B2.KELP : B2.KELP_PLANT;
+        }
+      }
+    }
+    if (warm) {
+      // coral reefs: blobs of coral blocks with corals and fans on them
+      for (let k = 0; k < 3; k++) {
+        const kind = CORAL[r.int(CORAL.length)];
+        const lx = 2 + r.int(12), lz = 2 + r.int(12), y = floorAt(lx, lz);
+        if (y < 0) continue;
+        const rad = 1 + r.int(2);
+        for (let dx = -rad; dx <= rad; dx++) for (let dz = -rad; dz <= rad; dz++) for (let dy = 0; dy <= rad; dy++) {
+          const px = lx + dx, pz = lz + dz, py = y + dy;
+          if (px < 0 || pz < 0 || px > 15 || pz > 15 || dx * dx + dz * dz + dy * dy > rad * rad + 1 || (blocks[idx(px, py, pz)] !== B.WATER && dy > 0)) continue;
+          blocks[idx(px, py, pz)] = kind.block;
+          if (blocks[idx(px, py + 1, pz)] === B.WATER && r.int(3) === 0) blocks[idx(px, py + 1, pz)] = pack(r.bool() ? kind.plant : kind.fan, 8);
+        }
+      }
+      for (let k = 0; k < 4; k++) {
+        const lx = r.int(16), lz = r.int(16), y = floorAt(lx, lz);
+        if (y >= 0 && OPAQUE[blocks[idx(lx, y, lz)] & 0xfff]) blocks[idx(lx, y + 1, lz)] = pack(B2.SEA_PICKLE, 4 | r.int(4));
       }
     }
   }

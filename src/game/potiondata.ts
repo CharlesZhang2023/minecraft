@@ -20,6 +20,22 @@ export const EFFECTS: Record<string, EffectDef> = {
   weakness: { id: 'weakness', name: 'Weakness', color: 0x484d48, bad: true, icon: 14 },
   poison: { id: 'poison', name: 'Poison', color: 0x4e9331, bad: true, icon: 15 },
   absorption: { id: 'absorption', name: 'Absorption', color: 0x2552a5, bad: false, icon: 16 },
+  // the rest of vanilla 1.16's effects
+  mining_fatigue: { id: 'mining_fatigue', name: 'Mining Fatigue', color: 0x4a4217, bad: true, icon: 17 },
+  nausea: { id: 'nausea', name: 'Nausea', color: 0x551d4a, bad: true, icon: 18 },
+  blindness: { id: 'blindness', name: 'Blindness', color: 0x1f1f23, bad: true, icon: 19 },
+  wither: { id: 'wither', name: 'Wither', color: 0x352a27, bad: true, icon: 20 },
+  health_boost: { id: 'health_boost', name: 'Health Boost', color: 0xf87d23, bad: false, icon: 21 },
+  saturation: { id: 'saturation', name: 'Saturation', color: 0xf82423, bad: false, instant: true, icon: 22 },
+  glowing: { id: 'glowing', name: 'Glowing', color: 0x94a061, bad: false, icon: 23 },
+  levitation: { id: 'levitation', name: 'Levitation', color: 0xceffff, bad: true, icon: 24 },
+  luck: { id: 'luck', name: 'Luck', color: 0x339900, bad: false, icon: 25 },
+  unluck: { id: 'unluck', name: 'Bad Luck', color: 0xc0a44d, bad: true, icon: 26 },
+  slow_falling: { id: 'slow_falling', name: 'Slow Falling', color: 0xfffefe, bad: false, icon: 27 },
+  conduit_power: { id: 'conduit_power', name: 'Conduit Power', color: 0x1dc2d1, bad: false, icon: 28 },
+  dolphins_grace: { id: 'dolphins_grace', name: "Dolphin's Grace", color: 0x88a3be, bad: false, icon: 29 },
+  bad_omen: { id: 'bad_omen', name: 'Bad Omen', color: 0x0b6138, bad: false, icon: 30 },
+  hero_of_the_village: { id: 'hero_of_the_village', name: 'Hero of the Village', color: 0x44ff44, bad: false, icon: 31 },
 };
 
 /** [effect id, duration ticks, amplifier] */
@@ -72,7 +88,16 @@ export const POTIONS: PotionType[] = [
   { key: 'long_leaping', name: 'Potion of Leaping', effects: [['jump_boost', 8 * M, 0]], sprite: 'leaping' },
   { key: 'strong_leaping', name: 'Potion of Leaping', effects: [['jump_boost', 90 * S, 1]], sprite: 'leaping' },
 ];
-export const POTION_BY_KEY = new Map(POTIONS.map((p) => [p.key, p]));
+/** Potions added in 1.9-1.13 (kept apart so the older potions' items keep their ids). */
+export const POTIONS2: PotionType[] = [
+  { key: 'turtle_master', name: 'Potion of the Turtle Master', effects: [['slowness', 20 * S, 3], ['resistance', 20 * S, 2]], sprite: 'turtle_master' },
+  { key: 'long_turtle_master', name: 'Potion of the Turtle Master', effects: [['slowness', 40 * S, 3], ['resistance', 40 * S, 2]], sprite: 'turtle_master' },
+  { key: 'strong_turtle_master', name: 'Potion of the Turtle Master', effects: [['slowness', 20 * S, 5], ['resistance', 20 * S, 3]], sprite: 'turtle_master' },
+  { key: 'slow_falling', name: 'Potion of Slow Falling', effects: [['slow_falling', 90 * S, 0]], sprite: 'slow_falling' },
+  { key: 'long_slow_falling', name: 'Potion of Slow Falling', effects: [['slow_falling', 4 * M, 0]], sprite: 'slow_falling' },
+  { key: 'luck', name: 'Potion of Luck', effects: [['luck', 5 * M, 0]], sprite: 'luck' },
+];
+export const POTION_BY_KEY = new Map([...POTIONS, ...POTIONS2].map((p) => [p.key, p]));
 
 /** Liquid colour: vanilla mixes effect colours weighted by amplifier + 1. */
 export function potionColor(effects: EffectSpec[]): number {
@@ -87,7 +112,7 @@ export function potionColor(effects: EffectSpec[]): number {
 
 /** Distinct bottle sprites (one per colour group). */
 export const POTION_SPRITES: Record<string, number> = {};
-for (const p of POTIONS) if (!(p.sprite in POTION_SPRITES)) POTION_SPRITES[p.sprite] = potionColor(p.effects);
+for (const p of [...POTIONS, ...POTIONS2]) if (!(p.sprite in POTION_SPRITES)) POTION_SPRITES[p.sprite] = potionColor(p.effects);
 
 export const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 export function formatDuration(ticks: number): string {

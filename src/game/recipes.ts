@@ -1,6 +1,9 @@
 // Crafting & smelting recipes.
-import { B, WOOL_COLORS, blockByName } from '../world/blocks';
-import { I, I2, I3, I4, I5, I6, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion, itemByName } from './items';
+import { B, WOOL_COLORS, BANNERS, blockByName } from '../world/blocks';
+import { I, I2, I3, I4, I5, I6, I7, I11, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion, itemByName, isDyeable, leatherColor, DYES, DYE_RGB } from './items';
+import { ITEM_TAGS } from './tags';
+import { registerRecipes116, type Smelt } from './recipes2';
+export { STONECUTTING, SMITHING } from './recipes2';
 
 interface Shaped { pattern: string[]; key: Record<string, number | number[]>; out: ItemStack }
 interface Shapeless { ingredients: (number | number[])[]; out: ItemStack }
@@ -10,9 +13,10 @@ const shapeless: Shapeless[] = [];
 const S = (pattern: string[], key: Record<string, number | number[]>, id: number, count = 1) => shaped.push({ pattern, key, out: stack(id, count) });
 const L = (ingredients: (number | number[])[], id: number, count = 1) => shapeless.push({ ingredients, out: stack(id, count) });
 
-const PLANKS = [B.OAK_PLANKS, B.SPRUCE_PLANKS, B.BIRCH_PLANKS];
-const LOGS = [B.OAK_LOG, B.SPRUCE_LOG, B.BIRCH_LOG];
-const STONEISH = [B.COBBLESTONE];
+// every wood's planks and logs, and blackstone where cobblestone goes (tags.ts)
+const PLANKS = ITEM_TAGS.planks;
+const LOGS = ITEM_TAGS.logs;
+const STONEISH = ITEM_TAGS.stone_crafting_materials;
 const COAL = [I.COAL, I.CHARCOAL];
 
 // basic materials
@@ -25,8 +29,8 @@ S(['###', '# #', '###'], { '#': STONEISH }, B.FURNACE);
 S(['###', '# #', '###'], { '#': PLANKS }, B.CHEST);
 S(['C', 'S'], { C: COAL, S: I.STICK }, B.TORCH, 4);
 S(['# #', '###', '# #'], { '#': I.STICK }, B.LADDER, 3);
-S(['##', '##', '##'], { '#': PLANKS }, I.OAK_DOOR, 3);
-S(['#S#', '#S#'], { '#': PLANKS, S: I.STICK }, B.OAK_FENCE, 3);
+S(['##', '##', '##'], { '#': B.OAK_PLANKS }, I.OAK_DOOR, 3);
+S(['#S#', '#S#'], { '#': B.OAK_PLANKS, S: I.STICK }, B.OAK_FENCE, 3);
 S(['###'], { '#': B.OAK_PLANKS }, B.OAK_SLAB, 6);
 S(['###'], { '#': [B.STONE, B.DOUBLE_STONE_SLAB] }, B.STONE_SLAB, 6);
 S(['###'], { '#': B.COBBLESTONE }, B.COBBLESTONE_SLAB, 6);
@@ -62,7 +66,7 @@ S(['A', 'B'], { A: B.PUMPKIN, B: B.TORCH }, B.JACK_O_LANTERN);
 L([B.COBBLESTONE, B.STONE], B.MOSSY_COBBLESTONE); // simplified (vines absent)
 
 // tools
-const toolMats: [string, number[]][] = [['wooden', PLANKS], ['stone', [B.COBBLESTONE]], ['iron', [I.IRON_INGOT]], ['golden', [I.GOLD_INGOT]], ['diamond', [I.DIAMOND]]];
+const toolMats: [string, number[]][] = [['wooden', PLANKS], ['stone', STONEISH], ['iron', [I.IRON_INGOT]], ['golden', [I.GOLD_INGOT]], ['diamond', [I.DIAMOND]]];
 for (const [m, mat] of toolMats) {
   S(['XXX', ' # ', ' # '], { X: mat, '#': I.STICK }, TOOLS[m + '_pickaxe']);
   S(['XX', 'X#', ' #'], { X: mat, '#': I.STICK }, TOOLS[m + '_axe']);
@@ -83,7 +87,7 @@ S(['# #', ' # '], { '#': I.IRON_INGOT }, I.BUCKET);
 L([I.IRON_INGOT, I.FLINT], I.FLINT_AND_STEEL);
 S([' #', '# '], { '#': I.IRON_INGOT }, I.SHEARS);
 S(['# #', ' # '], { '#': PLANKS }, I.BOWL, 4);
-S(['# #', '###'], { '#': PLANKS }, I2.BOAT);
+S(['# #', '###'], { '#': B.OAK_PLANKS }, I2.BOAT);
 S(['R', 'S'], { R: I.REDSTONE, S: I.STICK }, B.REDSTONE_TORCH);
 S(['  #', ' #S', '# S'], { '#': I.STICK, S: I.STRING }, I2.FISHING_ROD);
 S(['S', 'C'], { S: I.STICK, C: B.COBBLESTONE }, B.LEVER);
@@ -130,6 +134,26 @@ L([B.WOOL_BLUE, B.WOOL_GREEN], B.WOOL_CYAN, 2);
 L([B.WOOL_BLUE, B.WOOL_RED], B.WOOL_PURPLE, 2);
 void LOGS;
 
+/** A recipe laid out as the grid cells it needs (row-major, `w` wide): what the recipe book shows and fills. */
+export interface FlatRecipe { w: number; h: number; cells: (number | number[] | undefined)[]; out: ItemStack }
+let flat: FlatRecipe[] | null = null;
+export function recipeList(): FlatRecipe[] {
+  if (flat) return flat;
+  flat = [];
+  for (const r of shaped) {
+    const w = Math.max(...r.pattern.map((p) => p.length)), h = r.pattern.length;
+    const cells: FlatRecipe['cells'] = [];
+    for (const row of r.pattern) for (let x = 0; x < w; x++) { const ch = row[x] ?? ' '; cells.push(ch === ' ' ? undefined : r.key[ch]); }
+    flat.push({ w, h, cells, out: r.out });
+  }
+  for (const r of shapeless) {
+    const n = r.ingredients.length, w = n === 1 ? 1 : n <= 4 ? 2 : 3;
+    flat.push({ w, h: Math.ceil(n / w), cells: r.ingredients.slice(), out: r.out });
+  }
+  return flat;
+}
+export const ingredientMatches = (s: ItemStack, want: number | number[]) => matches(s, want);
+
 function matches(slot: ItemStack | null, want: number | number[] | undefined): boolean {
   if (want === undefined) return !slot;
   if (!slot) return false;
@@ -150,7 +174,7 @@ S(['CCC', 'C C', 'CRC'], { C: B.COBBLESTONE, R: I.REDSTONE }, B.DROPPER);
 S(['I I', 'ICI', ' I '], { I: I.IRON_INGOT, C: B.CHEST }, B.HOPPER);
 S(['BBB', ' I ', 'III'], { B: B.IRON_BLOCK, I: I.IRON_INGOT }, B.ANVIL);
 // brewing
-S([' B ', 'CCC'], { B: I3.BLAZE_ROD, C: B.COBBLESTONE }, I3.BREWING_STAND);
+S([' B ', 'CCC'], { B: I3.BLAZE_ROD, C: STONEISH }, I3.BREWING_STAND);
 S(['G G', ' G '], { G: B.GLASS }, I3.GLASS_BOTTLE, 3);
 L([I3.BLAZE_ROD], I2.BLAZE_POWDER, 2);
 L([I2.SLIME_BALL, I2.BLAZE_POWDER], I3.MAGMA_CREAM);
@@ -168,6 +192,45 @@ S(['###', '###'], { '#': I.IRON_INGOT }, B.IRON_BARS, 16);
 S(['##', '##'], { '#': I3.NETHER_BRICK }, B.NETHER_BRICKS);
 S(['###', '###'], { '#': B.NETHER_BRICKS }, B.NETHER_BRICK_FENCE, 6);
 S(['#  ', '## ', '###'], { '#': B.NETHER_BRICKS }, B.NETHER_BRICK_STAIRS, 4);
+
+/** Copying a written book: the book (original or a copy of it) and books and quill, which come out as copies. */
+function bookCopy(items: ItemStack[]): ItemStack | null {
+  const src = items.filter((s) => s.id === I11.WRITTEN_BOOK), blanks = items.filter((s) => s.id === I7.WRITABLE_BOOK);
+  if (src.length !== 1 || !blanks.length || src.length + blanks.length !== items.length) return null;
+  const gen = (src[0].tag?.generation as number | undefined) ?? 0;
+  if (gen >= 2) return null;
+  return { id: I11.WRITTEN_BOOK, count: blanks.length, tag: { ...structuredClone(src[0].tag ?? {}), generation: gen + 1 } };
+}
+/** Leather gear and up to eight dyes: vanilla's colour mix (the average, brightened back to the brightest part). */
+function dyeLeather(items: ItemStack[]): ItemStack | null {
+  const gear = items.filter((s) => isDyeable(s.id)), dyes = items.filter((s) => DYES.includes(s.id));
+  if (gear.length !== 1 || !dyes.length || gear.length + dyes.length !== items.length) return null;
+  const cols = dyes.map((d) => DYE_RGB[DYES.indexOf(d.id)]);
+  const old = leatherColor(gear[0]);
+  if (old !== undefined) cols.push(old);
+  let r = 0, g = 0, b = 0, mx = 0;
+  for (const c of cols) { const cr = (c >> 16) & 255, cg = (c >> 8) & 255, cb = c & 255; r += cr; g += cg; b += cb; mx += Math.max(cr, cg, cb); }
+  const n = cols.length;
+  r /= n; g /= n; b /= n;
+  const k = mx / n / Math.max(r, g, b, 1);
+  const color = (Math.round(r * k) << 16) | (Math.round(g * k) << 8) | Math.round(b * k);
+  return { ...gear[0], count: 1, tag: { ...(gear[0].tag ?? {}), color } };
+}
+/** A banner on a plain shield (1.9): the shield takes its colour and patterns. */
+function shieldDecoration(items: ItemStack[]): ItemStack | null {
+  if (items.length !== 2) return null;
+  const shield = items.find((s) => s.id === I7.SHIELD), banner = items.find((s) => BANNERS.includes(s.id));
+  if (!shield || !banner || shield.tag?.shieldBase !== undefined) return null;
+  return { ...shield, count: 1, tag: { ...structuredClone(shield.tag ?? {}), shieldBase: BANNERS.indexOf(banner.id) }, ...(banner.banner?.length ? { banner: banner.banner.map((l) => ({ ...l })) } : {}) };
+}
+/** What stays in the grid when an ingredient is used up (vanilla's container items). */
+export function craftRemainder(s: ItemStack): ItemStack | null {
+  if (s.id === I.MILK_BUCKET || s.id === I.WATER_BUCKET || s.id === I.LAVA_BUCKET) return stack(I.BUCKET);
+  if (s.id === I7.HONEY_BOTTLE || s.id === I7.DRAGON_BREATH) return stack(I3.GLASS_BOTTLE);
+  // the book being copied stays
+  if (s.id === I11.WRITTEN_BOOK) return { ...s, count: 1, tag: structuredClone(s.tag ?? {}) };
+  return null;
+}
 
 export function craft(grid: (ItemStack | null)[], w: number): ItemStack | null {
   // bounding box
@@ -200,6 +263,12 @@ export function craft(grid: (ItemStack | null)[], w: number): ItemStack | null {
   const items = grid.filter((s): s is ItemStack => !!s);
   const fw = fireworkCraft(items);
   if (fw) return fw;
+  const copy = bookCopy(items);
+  if (copy) return copy;
+  const sh = shieldDecoration(items);
+  if (sh) return sh;
+  const dyed = dyeLeather(items);
+  if (dyed) return dyed;
   for (const r of shapeless) {
     if (r.ingredients.length !== items.length) continue;
     const used = new Array(items.length).fill(false);
@@ -255,7 +324,7 @@ function fireworkCraft(items: ItemStack[]): ItemStack | null {
 }
 
 // ------------------------------------------------------------------ smelting
-export const SMELTING: Record<number, { out: number; xp: number }> = {
+export const SMELTING: Record<number, Smelt> = {
   [B.IRON_ORE]: { out: I.IRON_INGOT, xp: 0.7 },
   [B.GOLD_ORE]: { out: I.GOLD_INGOT, xp: 1 },
   [B.DIAMOND_ORE]: { out: I.DIAMOND, xp: 1 },
@@ -292,6 +361,9 @@ S(['I I', 'III'], { I: I.IRON_INGOT }, I5.MINECART);
 S(['###', '###', '###'], { '#': I.WHEAT }, B.HAY_BLOCK);
 L([B.HAY_BLOCK], I.WHEAT, 9);
 
+// the 1.9 - 1.16 recipes (recipes2.ts)
+registerRecipes116({ S, L, SMELTING });
+
 // ------------------------------------------------------------------ mod recipes
 /**
  * An ingredient as mods write it: an item or block key ('ruby:ruby', 'stick', 'minecraft:stick'), a tag ('#planks'),
@@ -311,11 +383,8 @@ export interface ModRecipe {
 }
 export const MOD_RECIPES: ModRecipe[] = [];
 /** Item tags mods can use as ingredients. */
-export const TAGS: Record<string, number[]> = {
-  planks: PLANKS, logs: LOGS, wool: [...WOOL_COLORS], coals: COAL, stone_crafting_materials: [B.COBBLESTONE],
-  saplings: [B.OAK_SAPLING, B.SPRUCE_SAPLING, B.BIRCH_SAPLING], leaves: [B.OAK_LEAVES, B.SPRUCE_LEAVES, B.BIRCH_LEAVES],
-  sand: [B.SAND], flowers: [B.DANDELION, B.POPPY, B.CORNFLOWER, B.OXEYE_DAISY, B.ALLIUM],
-};
+export const TAGS: Record<string, number[]> = ITEM_TAGS;
+void WOOL_COLORS; void COAL;
 
 function resolveIngredient(ing: Ingredient): number[] | null {
   if (typeof ing === 'number') return [ing];

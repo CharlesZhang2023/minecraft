@@ -156,6 +156,7 @@ export function enterGateway(g: Game, x: number, y: number, z: number) {
   g.gatewayBeam = { x, y, z, until: g.ticks + 40 };
   p.setPos(to[0] + 0.5, to[1], to[2] + 0.5);
   p.vx = p.vy = p.vz = 0;
+  g.achievements.event('gateway');
   g.audio.play('portalTravel', null, 0.5, 1.4);
   buildPending(g);
 }

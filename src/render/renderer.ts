@@ -118,6 +118,8 @@ export interface ModelOpts {
   overlay: [number, number, number, number];
   alpha: number;
   blend?: boolean;
+  /** Only where something nearer hides it, without writing depth (the glowing effect's silhouette through walls). */
+  hidden?: boolean;
 }
 
 /** Distant-terrain tile drawing parameters (set up by `drawLod`). */

@@ -1,4 +1,5 @@
 import type { Game } from './game';
+import { strikeLightning, maybeSkeletonTrap } from './combat';
 import { Random } from '../noise';
 import { tex, B, OPAQUE, isLeaves } from '../world/blocks';
 import { BIOME } from '../world/biomes';
@@ -58,9 +59,15 @@ export class Weather {
     this.smooth();
     const g = this.game, w = g.world!;
     if (this.thunder > 0.9 && this.rng.int(3000) === 0) {
-      // the flash and its rumble are drawn and played by each client
+      // the flash and its rumble are drawn and played by each client; now and then the bolt lands near a player
       const d = 30 + this.rng.next() * 120;
-      for (const p of g.playersHere()) p.event(['thunder', d]);
+      const ps = g.playerEntities();
+      if (ps.length && this.rng.int(2) === 0) {
+        const p = ps[this.rng.int(ps.length)];
+        const x = Math.floor(p.x) + this.rng.int(97) - 48, z = Math.floor(p.z) + this.rng.int(97) - 48;
+        if (w.chunkAt(x, z) && this.canRainIn(x, z)) { strikeLightning(g, x + 0.5, w.topSolidY(x, z) + 1, z + 0.5); maybeSkeletonTrap(g, x + 0.5, w.topSolidY(x, z) + 1, z + 0.5); }
+        else for (const sp of g.playersHere()) sp.event(['thunder', d]);
+      } else for (const p of g.playersHere()) p.event(['thunder', d]);
     }
     if (this.rain <= 0) return;
     // snow accumulates / water freezes in cold biomes
@@ -119,7 +126,7 @@ export class Weather {
   }
   canRainIn(x: number, z: number) {
     const b = this.game.biomeAt(x, z);
-    return b.id !== BIOME.DESERT && b.id !== BIOME.SAVANNA;
+    return !b.dry;
   }
   rainAt(x: number, y: number, z: number) {
     if (this.rain <= 0) return false;

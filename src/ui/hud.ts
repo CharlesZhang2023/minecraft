@@ -1,9 +1,11 @@
 import { Events } from '../mod/events';
+import { attackStrength } from '../game/combat';
 import { drawEffectsHud } from './effects';
 // In-game HUD: hotbar, health/food/armor/air, XP bar, crosshair, item names, debug overlay.
 import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { getItem, ItemStack } from '../game/items';
+import { mapIdOf, mapRGB, MAP_SIZE, drawMapMarks } from '../game/maps';
 import { B } from '../world/blocks';
 import { EnderDragon } from '../entity/dragon';
 import { LivingEntity } from '../entity/living';
@@ -50,6 +52,57 @@ export class Hud {
     for (const [k, v] of this.pickupPop) { if (v <= 1) this.pickupPop.delete(k); else this.pickupPop.set(k, v - 1); }
   }
 
+  private mapCanvases = new Map<number, { ver: number; cv: HTMLCanvasElement }>();
+  private heldMaps(ctx: Ctx, W: number, H: number) {
+    const g = this.ui.game, p = g.player!;
+    const hands: [ItemStack | null, boolean][] = [[p.inventory.held(), true], [p.inventory.offhand, false]];
+    for (const [s, main] of hands) {
+      const id = mapIdOf(s);
+      if (id === null) continue;
+      const size = Math.min(112, Math.floor(H * 0.42)), x = main ? W - size - 10 : 10, y = H - size - 44;
+      // the paper
+      ctx.fillStyle = '#d8c8a0';
+      ctx.fillRect(x - 4, y - 4, size + 8, size + 8);
+      ctx.fillStyle = '#b8a47a';
+      ctx.fillRect(x - 4, y + size + 3, size + 8, 1); ctx.fillRect(x + size + 3, y - 4, 1, size + 8);
+      const d = g.maps.get(id);
+      if (!d) continue;
+      let c = this.mapCanvases.get(id);
+      if (!c || c.ver !== d.ver) {
+        const cv = c?.cv ?? document.createElement('canvas');
+        cv.width = cv.height = MAP_SIZE;
+        const img = new ImageData(MAP_SIZE, MAP_SIZE);
+        for (let i = 0; i < d.colors.length; i++) {
+          const rgb = mapRGB(d.colors[i]);
+          if (rgb < 0) continue;
+          img.data[i * 4] = rgb >> 16; img.data[i * 4 + 1] = (rgb >> 8) & 255; img.data[i * 4 + 2] = rgb & 255; img.data[i * 4 + 3] = 255;
+        }
+        cv.getContext('2d')!.putImageData(img, 0, 0);
+        c = { ver: d.ver, cv };
+        this.mapCanvases.set(id, c);
+      }
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(c.cv, x, y, size, size);
+      drawMapMarks(ctx as never, d, x, y, size / MAP_SIZE);
+      // the player's marker: a white pointer (on the edge, smaller, when they're off the map)
+      if (d.dim === (g.world?.dimension ?? '')) {
+        const k = size / MAP_SIZE, sc = 1 << d.scale;
+        let mx = (p.x - d.x) / sc + 64, mz = (p.z - d.z) / sc + 64;
+        const off = mx < 0 || mz < 0 || mx > MAP_SIZE || mz > MAP_SIZE;
+        mx = Math.max(0, Math.min(MAP_SIZE, mx)); mz = Math.max(0, Math.min(MAP_SIZE, mz));
+        ctx.translate(x + mx * k, y + mz * k);
+        if (!off) ctx.rotate((p.yaw * Math.PI) / 180 + Math.PI);
+        ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#000000'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (off) ctx.arc(0, 0, 2, 0, Math.PI * 2);
+        else { ctx.moveTo(0, -5); ctx.lineTo(3.5, 4); ctx.lineTo(0, 2); ctx.lineTo(-3.5, 4); ctx.closePath(); }
+        ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
   actionBar(text: string) {
     this.actionText = text;
     this.actionTimer = 60;
@@ -70,8 +123,8 @@ export class Hud {
     const view = g.view;
     if (view?.hud === 'none') { this.modsAndChat(ctx); return; }
     if (view?.freePointer) { /* the pointer is the crosshair */ }
-    // crosshair (inverted colours)
-    else if (!g.showDebug && g.thirdPerson === 0 && !device.touch) this.crosshair(ctx);
+    // crosshair (inverted colours), with the attack charge under it while a swing recharges (1.9)
+    else if (!g.showDebug && g.thirdPerson === 0 && !device.touch) { this.crosshair(ctx); this.attackIndicator(ctx, cx, Math.floor(H / 2)); }
     else if (!g.showDebug && g.thirdPerson === 0 && !g.touchAim()) {
       ctx.save();
       ctx.globalCompositeOperation = 'difference';
@@ -86,12 +139,22 @@ export class Hud {
       this.modsAndChat(ctx);
       return;
     }
+    // a map in hand: drawn in the corner of its hand, with where you are on it
+    if (!view?.freePointer) this.heldMaps(ctx, W, H);
     // hotbar; on touch screens the Pocket Edition one: only the slots that fit, then "..." for the inventory
     const touch = device.touch;
     const tb = touch ? touchHotbar(W, H) : null;
     const hx = cx - 91, hy = H - 22;
     const slots = tb ? tb.n : 9, bx = tb ? tb.x : hx;
     this.hotbarFrame(ctx, bx, hy, slots, !!tb);
+    // the off hand: its own slot left of the hotbar when it holds something
+    if (p.inventory.offhand && !tb) {
+      const ox = hx - 29;
+      ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(ox, hy, 24, 22);
+      ctx.fillStyle = 'rgba(92,92,92,0.75)'; ctx.fillRect(ox + 1, hy + 1, 22, 20);
+      ctx.fillStyle = 'rgba(58,58,58,0.8)'; ctx.fillRect(ox + 3, hy + 3, 18, 16);
+      this.ui.drawItem(ctx, p.inventory.offhand, ox + 4, hy + 3);
+    }
     for (let i = 0; i < slots; i++) {
       const s = p.inventory.main[i];
       if (s) {
@@ -252,10 +315,35 @@ export class Hud {
     ctx.restore();
   }
 
-  /** The Ender Dragon's health bar across the top of the screen. */
+  /** The attack charge (vanilla's crosshair indicator): a bar under the crosshair until the next swing is ready. */
+  private attackIndicator(ctx: Ctx, cx: number, cy: number) {
+    const p = this.ui.game.player!;
+    const f = attackStrength(p, 0);
+    if (f >= 1) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'difference';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillRect(cx - 8, cy + 9, 16, 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - 8, cy + 9, Math.round(16 * f), 2);
+    ctx.restore();
+  }
+
+  /** The boss's health bar across the top of the screen: the Ender Dragon in the End, or a Wither within 64 blocks. */
   private bossBar(ctx: Ctx) {
     const g = this.ui.game, gui = this.ui.gui;
-    if (g.hideHud || !g.world || g.world.dimension !== 'end') return;
+    if (g.hideHud || !g.world) return;
+    const p = g.player!;
+    const wither = g.entities.find((e) => (e as unknown as { typeName?: string }).typeName === 'Wither' && !e.removed && e.distanceTo(p) < 64) as (LivingEntity & { invul?: number }) | undefined;
+    if (wither) { this.drawBossBar(ctx, 'Wither', wither.health / wither.maxHealth, '#5a1a6a', '#c040ff'); return; }
+    // a raid: the health left in the raiders nearby
+    const raiders = g.entities.filter((e) => ((e as unknown as { raid?: number }).raid ?? 0) > 0 && !(e as LivingEntity).dead && e.distanceTo(p) < 96) as LivingEntity[];
+    if (raiders.length) {
+      const hp = raiders.reduce((a, e) => a + e.health, 0), max = raiders.reduce((a, e) => a + e.maxHealth, 0);
+      this.drawBossBar(ctx, `Raid - Raiders Remaining: ${raiders.length}`, hp / max, '#4a1010', '#c02020');
+      return;
+    }
+    if (g.world.dimension !== 'end') return;
     const d = g.entities.find((e) => e instanceof EnderDragon && !e.removed) as EnderDragon | undefined;
     if (!d) return;
     const x = Math.floor(gui.w / 2) - 91;
@@ -271,6 +359,19 @@ export class Hud {
     ctx.fillRect(x, y, Math.round(182 * f), 5);
     ctx.fillStyle = '#e8a0ff';
     ctx.fillRect(x, y, Math.round(182 * f), 1);
+  }
+
+  private drawBossBar(ctx: Ctx, name: string, f: number, dark: string, light: string) {
+    const gui = this.ui.gui;
+    const x = Math.floor(gui.w / 2) - 91;
+    const y = device.touch ? 30 : 12;
+    gui.textCenter(ctx, name, gui.w / 2, y - 9, '#FFFFFF');
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(x - 1, y - 1, 184, 7);
+    ctx.fillStyle = dark;
+    ctx.fillRect(x, y, 182, 5);
+    ctx.fillStyle = light;
+    ctx.fillRect(x, y, Math.round(182 * Math.max(0, Math.min(1, f))), 5);
   }
 
   private renderChatAndText(ctx: Ctx) {

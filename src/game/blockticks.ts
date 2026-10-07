@@ -1,12 +1,15 @@
 // Scheduled & random block updates: fluids, gravity, plants, leaf decay, fire...
+import { hardenConcrete, basaltForms, updateColumn } from './blockrules';
+import './growth';
 import type { Game } from './game';
 import type { World, Chunk } from '../world/world';
-import { B, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston } from '../world/blocks';
+import { B, B2, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston, isFire } from '../world/blocks';
+import { familyCanStay } from './families';
+import { stationScheduled } from './stations';
+import { chestLoot } from './loot';
 import { WorldGen, Setter } from '../world/worldgen';
 import { Random } from '../noise';
 import { FallingBlock } from '../entity/item';
-import { I, I3, I5, stack, TOOLS, ARMOR } from './items';
-import { randomBook } from './enchant';
 import { portalCanStay } from './portal';
 import { inStronghold } from '../world/stronghold';
 import { railCanStay } from './tracks';
@@ -73,13 +76,16 @@ export class BlockTicker {
     const id = idOf(v);
     if (id === 0) return;
     const def = BLOCKS[id];
-    if (def.fluid) { this.schedule(x, y, z, id === B.WATER ? 5 : w.dimension === 'nether' ? 10 : 30); if (id === B.LAVA) this.lavaMix(x, y, z); return; }
+    // bubble columns rise from soul sand and magma through water sources
+    if (id === B.SOUL_SAND || id === B.MAGMA_BLOCK || id === B2.BUBBLE_COLUMN || (id === B.WATER && metaOf(v) === 0)) updateColumn(w, id === B.SOUL_SAND || id === B.MAGMA_BLOCK ? x : x, id === B.SOUL_SAND || id === B.MAGMA_BLOCK ? y + 1 : y, z);
+    if (def.fluid) { if (idOf(w.get(x, y, z)) !== id) return; this.schedule(x, y, z, id === B.WATER ? 5 : w.dimension === 'nether' ? 10 : 30); if (id === B.LAVA) this.lavaMix(x, y, z); return; }
+    if (hardenConcrete(w, x, y, z)) return;
     if (def.gravity) { this.schedule(x, y, z, 2); return; }
     if (id === B.NETHER_PORTAL) {
       if (!portalCanStay(w, x, y, z)) w.set(x, y, z, B.AIR);
       return;
     }
-    if (id === B.FIRE) { this.schedule(x, y, z, 1); return; }
+    if (isFire(id)) { this.schedule(x, y, z, 1); return; }
     if (!this.canStay(x, y, z, v)) {
       this.game.interact!.breakBlockNaturally(x, y, z, true);
       return;
@@ -97,6 +103,8 @@ export class BlockTicker {
     const def = BLOCKS[id];
     const cs = def.behavior?.canStay;
     if (cs) return callBlock(id, 'canStay', () => cs(blockCtx(this.game, x, y, z, v)), true);
+    const fam = familyCanStay(w, x, y, z, v);
+    if (fam !== undefined) return fam;
     if (id === B.REDSTONE_WIRE || id === B.STONE_PRESSURE_PLATE) return OPAQUE[below] === 1;
     if (isRail(id)) return railCanStay(w, x, y, z, v);
     if (id === B.LEVER || id === B.STONE_BUTTON) {
@@ -154,6 +162,7 @@ export class BlockTicker {
   private scheduledTick(x: number, y: number, z: number) {
     const w = this.world;
     if (this.game.redstone.scheduled(x, y, z)) return;
+    if (stationScheduled(w, x, y, z)) return;
     const v = w.get(x, y, z);
     const id = idOf(v);
     const st = BLOCKS[id].behavior?.scheduledTick;
@@ -173,7 +182,8 @@ export class BlockTicker {
 
   // ------------------------------------------------------------------ fluids
   private isFluid(id: number, fluid: number) {
-    return id === fluid;
+    // a bubble column is a water source as far as flowing water is concerned
+    return id === fluid || (fluid === B.WATER && id === B2.BUBBLE_COLUMN);
   }
   private blocksFlow(id: number) {
     if (id === B.AIR) return false;
@@ -300,6 +310,7 @@ export class BlockTicker {
     const w = this.world;
     const v = w.get(x, y, z);
     if (idOf(v) !== B.LAVA) return;
+    if (basaltForms(w, x, y, z)) { this.game.audio.play('fizz', { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, 0.5, 2.6); return; }
     let touching = false;
     for (const [dx, dy, dz] of DIRS6) {
       if (dy === -1) continue;
@@ -564,59 +575,9 @@ export class BlockTicker {
       const nether = this.world.dimension === 'nether';
       const wx = c.cx * 16 + (i & 15), wz = c.cz * 16 + ((i >> 4) & 15);
       const stronghold = this.world.dimension === 'overworld' && inStronghold(this.world.seed, wx, wz);
-      if (id === B.CHEST) c.tiles.set(i, { type: 'chest', items: stronghold ? this.strongholdLoot() : nether ? this.fortressLoot() : this.dungeonLoot() });
+      if (id === B.CHEST) c.tiles.set(i, { type: 'chest', items: chestLoot(stronghold ? (this.rng.int(3) ? 'stronghold_corridor' : 'stronghold_library') : nether ? 'nether_bridge' : 'simple_dungeon', this.rng) });
       else c.tiles.set(i, { type: 'spawner', mob: stronghold ? 'silverfish' : nether ? 'blaze' : ['zombie', 'zombie', 'skeleton', 'spider'][this.rng.int(4)], delay: 200 });
     }
     void isFlower;
-  }
-
-  /** Stronghold chests: tools, armour, apples, a few ender pearls and enchanted books. */
-  private strongholdLoot() {
-    const items: ({ id: number; count: number } | null)[] = new Array(27).fill(null);
-    const table: [number, number, number][] = [
-      [I.ENDER_PEARL, 1, 1], [I.IRON_INGOT, 1, 5], [I.APPLE, 1, 3], [I.BREAD, 1, 3], [I.REDSTONE, 4, 9], [TOOLS.iron_pickaxe, 1, 1],
-      [TOOLS.iron_sword, 1, 1], [ARMOR.iron_helmet, 1, 1], [ARMOR.iron_chestplate, 1, 1], [ARMOR.iron_leggings, 1, 1], [ARMOR.iron_boots, 1, 1],
-      [I.GOLDEN_APPLE, 1, 1], [I.COAL, 3, 8], [I.BOOK, 1, 2], [I3.ENCHANTED_BOOK, 1, 1], [I.PAPER, 2, 6],
-      [I5.SADDLE, 1, 1], [I5.IRON_HORSE_ARMOR, 1, 1], [I5.GOLDEN_HORSE_ARMOR, 1, 1], [I5.DIAMOND_HORSE_ARMOR, 1, 1],
-    ];
-    const n = 4 + this.rng.int(5);
-    for (let k = 0; k < n; k++) {
-      const [id, lo, hi] = table[this.rng.int(table.length)];
-      items[this.rng.int(27)] = id === I3.ENCHANTED_BOOK ? randomBook(this.rng) : stack(id, lo + this.rng.int(hi - lo + 1));
-    }
-    return items;
-  }
-
-  /** Nether fortress chest (1.8 table). */
-  private fortressLoot() {
-    const items: ({ id: number; count: number } | null)[] = new Array(27).fill(null);
-    const table: [number, number, number][] = [
-      [I.DIAMOND, 1, 3], [I.IRON_INGOT, 1, 5], [I.GOLD_INGOT, 1, 3], [TOOLS.golden_sword, 1, 1], [ARMOR.golden_chestplate, 1, 1],
-      [I.FLINT_AND_STEEL, 1, 1], [I3.NETHER_WART, 3, 7], [B.OBSIDIAN, 2, 4], [I3.BLAZE_ROD, 1, 2],
-      [I5.SADDLE, 1, 1], [I5.GOLDEN_HORSE_ARMOR, 1, 1], [I5.IRON_HORSE_ARMOR, 1, 1], [I5.DIAMOND_HORSE_ARMOR, 1, 1],
-    ];
-    const n = 2 + this.rng.int(4);
-    for (let k = 0; k < n; k++) {
-      const [id, lo, hi] = table[this.rng.int(table.length)];
-      items[this.rng.int(27)] = stack(id, lo + this.rng.int(hi - lo + 1));
-    }
-    return items;
-  }
-
-  private dungeonLoot() {
-    const items: ({ id: number; count: number } | null)[] = new Array(27).fill(null);
-    const table: [number, number, number][] = [
-      [I.BREAD, 1, 3], [I.WHEAT, 1, 4], [I.IRON_INGOT, 1, 4], [I.GOLD_INGOT, 1, 4], [I.REDSTONE, 1, 4], [I.GUNPOWDER, 1, 4],
-      [I.STRING, 1, 4], [I.BUCKET, 1, 1], [I.GOLDEN_APPLE, 1, 1], [I.COAL, 3, 8], [I.BONE, 2, 6], [I.ROTTEN_FLESH, 2, 6],
-      [TOOLS.iron_pickaxe, 1, 1], [ARMOR.iron_chestplate, 1, 1], [I.DIAMOND, 1, 2], [I.APPLE, 1, 3], [I.ENDER_PEARL, 1, 1],
-      [I3.ENCHANTED_BOOK, 1, 1], [I3.NAME_TAG, 1, 1], [I3.NETHER_WART, 1, 3], [I3.CARROT, 1, 3], [I3.POTATO, 1, 3],
-      [I5.SADDLE, 1, 1], [I5.SADDLE, 1, 1], [I5.IRON_HORSE_ARMOR, 1, 1], [I5.GOLDEN_HORSE_ARMOR, 1, 1], [I5.DIAMOND_HORSE_ARMOR, 1, 1],
-    ];
-    const n = 4 + this.rng.int(5);
-    for (let k = 0; k < n; k++) {
-      const [id, lo, hi] = table[this.rng.int(table.length)];
-      items[this.rng.int(27)] = id === I3.ENCHANTED_BOOK ? randomBook(this.rng) : stack(id, lo + this.rng.int(hi - lo + 1));
-    }
-    return items;
   }
 }

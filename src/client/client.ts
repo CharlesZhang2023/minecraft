@@ -1,6 +1,7 @@
 // The client: what a player sees, hears and touches. It draws the world it's been sent, moves its own player
 // (so walking feels instant), and tells the server what the player does each tick. Single-player starts a server
 // in this page and talks to it over a loopback connection; joining someone else's game uses WebRTC instead.
+import { decodeColors, type MapData } from '../game/maps';
 import { Renderer, Camera } from '../render/renderer';
 import { LodManager } from '../world/lod';
 import { LOD_TEXTURES, type LodPalette } from '../world/lodgen';
@@ -16,7 +17,7 @@ import { raycastBlocks, BlockHit } from '../game/raycast';
 import { SubLevel } from '../sublevel/ship';
 import { qmat3, poseMat4, toWorld } from '../sublevel/pose';
 import type { ShipDraw } from '../render/renderer';
-import { BLOCKS, B, idOf, metaOf, TEXTURES, tex, CHUNK_H } from '../world/blocks';
+import { BLOCKS, B, B2, idOf, metaOf, TEXTURES, tex, CHUNK_H } from '../world/blocks';
 import { selectionShapes } from '../world/models';
 import { ItemStack } from '../game/items';
 import { Gui } from '../ui/gui';
@@ -36,7 +37,8 @@ import { rayAABB, clamp } from '../math';
 import { getItemSprite, itemSpriteNames } from '../render/itemsprites';
 import { getTexture } from '../render/textures';
 import { Random } from '../noise';
-import { BIOMES } from '../world/biomes';
+import { BIOMES, BIOME } from '../world/biomes';
+import { Hanging } from '../entity/hanging';
 import { Achievements } from '../game/achievements';
 import { LoadingScreen, CreditsScreen, DisconnectedScreen, SleepScreen, DeathScreen } from '../ui/menus';
 import { ContainerScreen } from '../ui/containers';
@@ -118,6 +120,12 @@ export class Client {
   private last = performance.now();
   partial = 0;
   gatewayBeam: { x: number; y: number; z: number; until: number } | null = null;
+  /** Ticks left of the totem of undying's flash. */
+  totemFlash = 0;
+  /** The statistics the server last sent (for the statistics screen). */
+  statsData: Record<string, number> | null = null;
+  /** Maps the server has sent (by id), for drawing them in hand and in frames. */
+  maps = new Map<number, MapData>();
   pistons = { list: [] as number[][], renderList: (t: number) => pistonDrawList(this.pistons.list, t) };
   target: BlockHit | null = null;
   targetEntity: Entity | null = null;
@@ -716,7 +724,7 @@ export class Client {
     const held = ['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft'].filter((k) => i.isDown(k));
     conn.send({
       t: 'in', x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, yaw: p.yaw, pitch: p.pitch,
-      g: p.onGround, sn: p.sneaking, sp: p.sprinting, fl: p.flying, jp: inp.jump, gl: p.gliding, wh: p.wallHit, fw: inp.forward, st: inp.strafe,
+      g: p.onGround, sn: p.sneaking, sp: p.sprinting, fl: p.flying, jp: inp.jump, gl: p.gliding, sw: p.swimming, wh: p.wallHit, fw: inp.forward, st: inp.strafe,
       j: p.jumps, sel: p.inventory.selected, act, md: act ? (va ? [...va.down] : [...i.mouseDown]) : [], mp: act ? pressed : [],
       dir: aim ? [aim.x, aim.y, aim.z] : null, kd: held, kp: this.keyQueue, tp: this.tpId,
     });
@@ -782,6 +790,8 @@ export class Client {
       case 'chat': this.ui.chat.add(String(m.msg)); break;
       case 'bar': this.ui.hud.actionBar(String(m.msg)); break;
       case 'ach': this.achievements.show(String(m.id)); break;
+      case 'achs': this.achievements.loadShown((m.ids as string[]) ?? []); break;
+      case 'stats': this.statsData = (m.s as Record<string, number>) ?? {}; break;
       case 'sel': if (this.player) this.player.inventory.selected = m.n as number; break;
       case 'death': setTimeout(() => this.ui.openDeath(String(m.msg)), 50); break;
       case 'credits': this.ui.open(new CreditsScreen(this.ui, () => this.ui.close())); break;
@@ -1038,6 +1048,10 @@ export class Client {
       case 'boost': p.rocketBoost = Math.max(p.rocketBoost, e[1] as number); break;
       case 'beam': this.gatewayBeam = { x: e[1] as number, y: e[2] as number, z: e[3] as number, until: this.ticks + (e[4] as number) }; break;
       case 'thunder': this.weather?.strike(e[1] as number); break;
+      // a riptide trident flings its thrower (whose own client moves them)
+      case 'riptide': p.vx += e[1] as number; p.vy += e[2] as number; p.vz += e[3] as number; p.riptideTicks = 20; break;
+      case 'totem': this.totemFlash = 40; this.audio.play('totem.use', null, 1, 1); break;
+      case 'map': this.maps.set(e[1] as number, { id: e[1] as number, x: e[2] as number, z: e[3] as number, scale: e[4] as number, dim: e[5] as string, locked: !!e[6], colors: decodeColors(e[7] as string), ver: (this.maps.get(e[1] as number)?.ver ?? 0) + 1, marks: (e[8] as MapData['marks']) ?? undefined }); break;
     }
   }
 
@@ -1125,6 +1139,8 @@ export class Client {
    * player is drawn, nothing is held in hand and nothing shakes.
    */
   cameraOverride: Partial<Camera> | null = null;
+  /** The Nether's fog colour, eased toward the biome around the camera. */
+  private netherFog: [number, number, number] = [0.2, 0.03, 0.03];
   /** Tools walking the player: given this tick's movement keys, the movement to use instead. */
   steer: ((inp: MoveInput) => MoveInput) | null = null;
   /** Drawn into the world after blocks and entities (lines and boxes from tools, with `r.drawLines`). */
@@ -1163,7 +1179,7 @@ export class Client {
     let best: Entity | null = null, bestPart: string | null = null;
     let bestT = this.target ? this.target.t : Math.min(reach, 3.5);
     for (const e of this.entities) {
-      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat) && !(e instanceof Minecart)) continue; }
+      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && typeof (e as unknown as { attacked?: unknown }).attacked !== 'function') continue; }
       if (e === (p.riding as unknown as Entity)) continue;
       if (e instanceof Player && e.spectator) continue;
       for (const b of e.hitBoxes()) {
@@ -1246,6 +1262,25 @@ export class Client {
         pt.drip(x + this.rng.next(), y - 1.05, z + this.rng.next(), id === B.LAVA);
       }
       if (id === B.WATER && this.rng.int(10) === 0 && p.inWater) pt.bubble(x + this.rng.next(), y + this.rng.next(), z + this.rng.next());
+      else if (id === B2.BUBBLE_COLUMN) for (let k = 0; k < 3; k++) pt.add({ x: x + 0.3 + this.rng.next() * 0.4, y: y + this.rng.next(), z: z + 0.3 + this.rng.next() * 0.4, vy: (metaOf(v) & 1) ? -0.06 : 0.12, layer: tex('particle_bubble'), size: 0.05, life: 12, gravity: 0, kind: 'bubble' } as never);
+      else if ((id === B2.SOUL_TORCH || id === B2.SOUL_FIRE || id === B2.SOUL_CAMPFIRE || id === B2.CAMPFIRE) && this.rng.int(3) === 0) {
+        pt.smoke(x + 0.5, y + (id === B2.SOUL_TORCH ? 0.7 : 0.8), z + 0.5, id !== B2.SOUL_TORCH);
+        if (id === B2.SOUL_TORCH) pt.add({ x: x + 0.5, y: y + 0.7, z: z + 0.5, vy: 0.005, layer: tex('particle_flame'), size: 0.06, life: 15, gravity: 0, fullbright: true, col: 0x60e8ff, kind: 'flame' });
+      } else if (id === B2.CRYING_OBSIDIAN && this.rng.int(5) === 0) pt.drip(x + this.rng.next(), y - 0.05, z + this.rng.next(), false, 0x8a2be2);
+      else if (id === B.SOUL_SAND && this.rng.int(80) === 0 && w.getId(x, y + 1, z) === B.AIR && this.biomeAt(x, z).id === BIOME.SOUL_SAND_VALLEY)
+        pt.add({ x: x + this.rng.next(), y: y + 1.1, z: z + this.rng.next(), vy: 0.02, layer: tex('particle_spell'), size: 0.08, life: 40, gravity: -0.001, col: 0x8fe8ff, collide: false, kind: 'spell' });
+    }
+    // biome ambience: spores in the nether forests, ash in the valleys and deltas
+    const b = this.biomeAt(Math.floor(p.x), Math.floor(p.z));
+    if (b.particle && b.particleChance) {
+      const n = Math.min(40, Math.round(b.particleChance * 400));
+      for (let i = 0; i < n; i++) {
+        const x = p.x + (this.rng.next() - 0.5) * 24, y = p.y + (this.rng.next() - 0.5) * 16, z = p.z + (this.rng.next() - 0.5) * 24;
+        if (w.getId(Math.floor(x), Math.floor(y), Math.floor(z)) !== B.AIR) continue;
+        const col = b.particle === 'crimson_spore' ? 0xc8282a : b.particle === 'warped_spore' ? 0x1ec8b8 : b.particle === 'white_ash' ? 0xd8d8d8 : b.particle === 'soul' ? 0x8fe8ff : 0x606060;
+        const up = b.particle === 'warped_spore' ? 0.01 : b.particle === 'crimson_spore' ? -0.005 : -0.01;
+        pt.add({ x, y, z, vx: (this.rng.next() - 0.5) * 0.02, vy: up, vz: (this.rng.next() - 0.5) * 0.02, layer: tex('particle_smoke_6'), size: 0.03, life: 60 + this.rng.int(60), gravity: 0, col, collide: false, kind: 'spark', friction: 0.99 });
+      }
     }
   }
 
@@ -1333,7 +1368,13 @@ export class Client {
     const biome = this.biomeAt(Math.floor(p.x), Math.floor(p.z));
     const nether = w.dimension === 'nether', end = w.dimension === 'end';
     const rain = nether || end ? 0 : this.weather!.rain;
-    const env = nether ? netherEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : end ? endEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : computeEnv({
+    if (nether) {
+      // each Nether biome has a fog of its own; ease toward the one around the camera
+      const f = biome.fog ?? 0x330808, k = 0.03;
+      const want = [((f >> 16) & 255) / 255 * 0.78, ((f >> 8) & 255) / 255 * 0.78, (f & 255) / 255 * 0.78];
+      for (let i = 0; i < 3; i++) this.netherFog[i] += (want[i] - this.netherFog[i]) * k;
+    }
+    const env = nether ? netherEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava, this.netherFog) : end ? endEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : computeEnv({
       time: this.time, renderDistance: w.renderDistance, underwater, inLava, blind: 0, rain, thunder: this.weather!.thunder,
       cameraY: cam.y, gamma: this.options.gamma, clouds: this.options.clouds, skyTemp: biome.cold ? -0.5 : biome.name === 'Desert' ? 2 : 0.8,
       flicker: 1.5 + this.torchFlicker * 0.1, ticks: this.ticks + t,
@@ -1488,19 +1529,24 @@ export class Client {
   nameTags(ctx: CanvasRenderingContext2D) {
     const r = this.renderer, cam = this.cam, t = this.partial, gui = this.gui;
     const mul = (m: Float32Array | number[], v: number[]) => [0, 1, 2, 3].map((i) => m[i] * v[0] + m[4 + i] * v[1] + m[8 + i] * v[2] + m[12 + i] * v[3]);
-    for (const e of this.entities) {
-      if (!(e instanceof Player) || e.dead || !e.name || e.spectator) continue;
+    for (const ent of this.entities) {
+      // players, and mobs given a name with a name tag (shown up close)
+      const named = (ent as unknown as { customName?: string }).customName;
+      if (!(ent instanceof Player) && !named) continue;
+      const e = ent as Player;
+      if (e.dead || (!e.name && !named) || e.spectator) continue;
       const x = e.lerpX(t) - cam.x, y = e.lerpY(t) + e.height + 0.45 - cam.y, z = e.lerpZ(t) - cam.z;
-      if (x * x + y * y + z * z > 64 * 64) continue;
+      if (x * x + y * y + z * z > (named ? 16 * 16 : 64 * 64)) continue;
       const c = mul(r.proj as unknown as number[], mul(r.view as unknown as number[], [x, y, z, 1]));
       if (c[3] < 0.1) continue;
       const sx = ((c[0] / c[3] + 1) / 2) * gui.w, sy = ((1 - c[1] / c[3]) / 2) * gui.h;
-      const w = gui.font.width(e.name);
+      const label = named || e.name;
+      const w = gui.font.width(label);
       const d = Math.hypot(x, y, z) || 1;
       const seen = !raycastBlocks(this.world!, cam.x, cam.y, cam.z, x / d, y / d, z / d, d - 0.5);
       ctx.fillStyle = 'rgba(0,0,0,0.25)';
       ctx.fillRect(Math.round(sx - w / 2 - 1), Math.round(sy - 9), w + 2, 9);
-      gui.text(ctx, e.name, Math.round(sx - w / 2), Math.round(sy - 8), seen && !e.sneaking ? '#FFFFFF' : 'rgba(255,255,255,0.35)', false);
+      gui.text(ctx, label, Math.round(sx - w / 2), Math.round(sy - 8), seen && !e.sneaking ? '#FFFFFF' : 'rgba(255,255,255,0.35)', false);
     }
   }
 

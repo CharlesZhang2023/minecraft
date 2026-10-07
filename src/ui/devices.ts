@@ -73,7 +73,7 @@ export class BrewingScreen extends TileScreen {
     this.tile = t;
     const it = t.items;
     const bottle = (s: ItemStack) => !!getItem(s.id).potion || s.id === I3.GLASS_BOTTLE;
-    [[56, 51], [79, 58], [102, 51]].forEach(([x, y], i) => this.slots.push({ x, y, get: () => it[i], set: (s) => (it[i] = s), group: 'bottle', limit: 1, canPlace: bottle }));
+    [[56, 51], [79, 58], [102, 51]].forEach(([x, y], i) => this.slots.push({ x, y, get: () => it[i], set: (s) => (it[i] = s), group: 'bottle', limit: 1, canPlace: bottle, onTake: (s) => { if (brewed(s)) this.game.achievements.event('brew'); } }));
     this.slots.push({ x: 79, y: 17, get: () => it[3], set: (s) => (it[3] = s), group: 'ingredient', canPlace: (s) => isBrewingIngredient(s.id) });
     this.slots.push({ x: 17, y: 17, get: () => it[4], set: (s) => (it[4] = s), group: 'fuel', canPlace: (s) => s.id === I2.BLAZE_POWDER });
     this.addPlayerSlots();
@@ -241,3 +241,5 @@ export class AnvilScreen extends ContainerScreen {
     super.onClose();
   }
 }
+/** A potion that took brewing (not a water bottle). */
+const brewed = (s: ItemStack) => { const k = getItem(s.id).potion; return !!k && k !== 'water'; };

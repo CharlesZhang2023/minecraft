@@ -1,8 +1,25 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
+import { advanceNear } from './advancements';
+import { createMap } from './maps';
+import { buildGolem } from '../entity/overworldmobs';
+import { BOATS } from './items';
+import { buildWither } from '../entity/wither';
+import { Mob } from '../entity/mobs';
+import { useOnMob, tieToFence } from '../entity/leash';
+import { ArmorStand } from '../entity/armorstand';
+import { hardenConcrete } from './blockrules';
+import { swingDamage, sweep, shieldBlocks, shieldHand, crossbowLoadTicks, loadCrossbow, fireCrossbow, releaseTrident, ThrownTrident } from './combat';
+import { hiveBroken } from '../entity/bees';
+import { FISH_BUCKETS, releaseFish, FLOWER_EFFECTS } from '../entity/animals';
 import type { Game } from './game';
-import { B, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail } from '../world/blocks';
+import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor, isFence, isBanner, bannerColor, BANNERS, isCommandBlock } from '../world/blocks';
+import { familyPlacement, doubleSlab, partners, toggled } from './families';
+import { stationUse, stationItemUse, stationTile, isShulkerBox } from './stations';
+import { blockIs } from './tags';
+import { angerPiglins } from '../entity/nethermobs';
+import { ItemFrame, Painting } from '../entity/hanging';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, stack, ItemDef, POTION_ITEMS } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, I7, stack, ItemDef, POTION_ITEMS, itemId, I9, I11 } from './items';
 import { FireworkRocket } from '../entity/firework';
 import { ThrownPotion } from '../entity/potion';
 import { POTION_BY_KEY } from './potiondata';
@@ -36,6 +53,9 @@ export class Interaction {
   eating = 0;
   bowTicks = 0;
   usingBow = false;
+  /** A vanilla item used with the button held (1.9+): shield, crossbow (loading), trident (winding up). */
+  usingItem: '' | 'shield' | 'crossbow' | 'trident' = '';
+  useTicks = 0;
   arrowId = I.ARROW;
   private rng = new Random(4321);
   private leftWasDown = false;
@@ -72,7 +92,7 @@ export class Interaction {
     const egg = !!g.target && !g.targetEntity && !p.creative && this.world.getId(g.target.x, g.target.y, g.target.z) === B.DRAGON_EGG;
     if (clicks.includes(0)) {
       if (g.targetEntity) this.attack(g.targetEntity);
-      else if (!g.target) p.swing();
+      else if (!g.target) { p.swing(); p.attackTicks = 0; }
     }
     const eggKey = egg ? `${g.target!.x},${g.target!.y},${g.target!.z}` : '';
     if (egg && (clicks.includes(0) || (left && eggKey !== this.eggKey))) { teleportEgg(g, g.target!.x, g.target!.y, g.target!.z); p.swing(); }
@@ -83,6 +103,7 @@ export class Interaction {
     if (right) {
       if (this.eating > 0) this.continueEating();
       else if (this.usingBow) this.bowTicks++;
+      else if (this.usingItem) this.continueItemUse();
       else if (this.holdUse()) { /* a hold-to-use mod item (wands) */ }
       else if (clicks.includes(2) || this.useDelay === 0) this.use(clicks.includes(2));
     } else this.stopUsing();
@@ -110,8 +131,13 @@ export class Interaction {
     }
     const eff = level(held, 'efficiency');
     if (eff > 0 && speed > 1) speed += eff * eff + 1;
+    // Haste (and Conduit Power) speed digging up; Mining Fatigue slows it right down (vanilla factors)
+    const haste = Math.max(p.effectAmp('haste'), p.effectAmp('conduit_power'));
+    if (haste >= 0) speed *= 1 + (haste + 1) * 0.2;
+    const fatigue = p.effectAmp('mining_fatigue');
+    if (fatigue >= 0) speed *= [0.3, 0.09, 0.0027, 0.00081][Math.min(3, fatigue)];
     const eyeId = this.world.getId(Math.floor(p.x), Math.floor(p.y + p.eyeHeight()), Math.floor(p.z));
-    if (eyeId === B.WATER && !level(p.inventory.armor[0], 'aqua_affinity')) speed /= 5;
+    if (eyeId === B.WATER && !level(p.inventory.armor[0], 'aqua_affinity') && !p.effects.has('conduit_power')) speed /= 5;
     if (!p.onGround && !p.flying) speed /= 5;
     return canHarvest ? speed / def.hardness / 30 : speed / def.hardness / 100;
   }
@@ -169,10 +195,31 @@ export class Interaction {
     // mods may keep the block
     if (Events.breakBlock.any && Events.breakBlock.fire({ game: g, player: p, x, y, z, v }) === 'fail') return;
     const tile = w.getTile(x, y, z);
+    g.achievements.stat('mined:' + BLOCKS[id].name);
+    if (id === B2.BEE_NEST && level(p.inventory.held(), 'silk_touch') > 0 && ((tile as { bees?: unknown[] } | undefined)?.bees?.length ?? 0) >= 3) g.achievements.event('silk_nest');
+    if (id === B2.BEE_NEST || id === B2.BEEHIVE) hiveBroken(g, x, y, z, p);
     const held = p.inventory.held();
     const tool = held ? getItem(held.id) : undefined;
     g.particles!.blockBreak(x, y, z, id, this.tintAt(x, y, z, id));
     g.playBlockSound(id, x, y, z, 'break');
+    // a banner drops as itself with its patterns
+    if (isBanner(id)) {
+      this.removeBlockAndPartner(x, y, z, v);
+      w.setTile(x, y, z, undefined);
+      if (!p.creative) g.dropItem(x + 0.5, y + 0.5, z + 0.5, bannerItem(id, tile));
+      this.broken(x, y, z, v, p);
+      return;
+    }
+    // a shulker box keeps what's inside: it drops as itself, contents and all (in creative too, when it has any)
+    if (isShulkerBox(id)) {
+      const items = (tile as { items?: (ItemStack | null)[] } | undefined)?.items;
+      const full = !!items?.some((s) => s);
+      this.removeBlockAndPartner(x, y, z, v);
+      w.setTile(x, y, z, undefined);
+      if (!p.creative || full) g.dropItem(x + 0.5, y + 0.5, z + 0.5, { id, count: 1, ...(full ? { box: items!.map((s) => (s ? { ...s } : null)) } : {}) });
+      this.broken(x, y, z, v, p);
+      return;
+    }
     this.removeBlockAndPartner(x, y, z, v);
     if (!p.creative) {
       const silk = level(held, 'silk_touch') > 0;
@@ -199,6 +246,7 @@ export class Interaction {
   /** Mods: a block is gone (broken by a player, or the world when `by` is null). */
   private broken(x: number, y: number, z: number, v: number, by: Player | null) {
     const g = this.game, id = idOf(v), beh = BLOCKS[id].behavior;
+    if (by && blockIs('guarded_by_piglins', id)) angerPiglins(g, by, x, y, z);
     if (beh?.onBreak) callBlock(id, 'onBreak', () => beh.onBreak!({ ...blockCtx(g, x, y, z, v), player: by }), undefined);
     if (by && Events.blockBroken.any) Events.blockBroken.fire({ game: g, player: by, x, y, z, v });
   }
@@ -222,10 +270,9 @@ export class Interaction {
     const w = this.world;
     const id = idOf(v), meta = metaOf(v);
     const changes: [number, number, number, number][] = [[x, y, z, B.AIR]];
-    if (id === B.OAK_DOOR) {
-      const oy = meta & 8 ? y - 1 : y + 1;
-      if (w.getId(x, oy, z) === B.OAK_DOOR) changes.push([x, oy, z, B.AIR]);
-    } else if (isPiston(id) && meta & 8) {
+    const fam = partners(w, x, y, z, v);
+    if (fam.length) for (const [px, py, pz] of fam) changes.push([px, py, pz, B.AIR]);
+    else if (isPiston(id) && meta & 8) {
       const [dx, dy, dz] = FACING6[meta & 7];
       if (w.getId(x + dx, y + dy, z + dz) === B.PISTON_HEAD) changes.push([x + dx, y + dy, z + dz, B.AIR]);
     } else if (id === B.PISTON_HEAD) {
@@ -235,10 +282,6 @@ export class Interaction {
         changes.push([x - dx, y - dy, z - dz, B.AIR]);
         if (!this.player.creative) this.game.dropItem(x - dx + 0.5, y - dy + 0.5, z - dz + 0.5, stack(idOf(bv)));
       }
-    } else if (id === B.BED) {
-      const [dx, dz] = HORIZ[meta & 3];
-      const ox = meta & 8 ? x - dx : x + dx, oz = meta & 8 ? z - dz : z + dz;
-      if (w.getId(ox, y, oz) === B.BED) changes.push([ox, y, oz, B.AIR]);
     }
     if (changes.length === 1) w.set(x, y, z, B.AIR);
     else this.setAll(changes);
@@ -246,8 +289,17 @@ export class Interaction {
 
   dropTileContents(x: number, y: number, z: number, v: number, t = this.world.getTile(x, y, z)) {
     if (!t) return;
+    if (isBanner(idOf(v))) { this.game.dropItem(x + 0.5, y + 0.5, z + 0.5, bannerItem(idOf(v), t)); this.world.setTile(x, y, z, undefined); return; }
+    // a shulker box blown up or washed away drops as itself, with what's inside
+    if (isShulkerBox(idOf(v))) {
+      const items = (t as { items?: (ItemStack | null)[] }).items;
+      const full = !!items?.some((s) => s);
+      this.game.dropItem(x + 0.5, y + 0.5, z + 0.5, { id: idOf(v), count: 1, ...(full ? { box: items!.map((s) => (s ? { ...s } : null)) } : {}) });
+      this.world.setTile(x, y, z, undefined);
+      return;
+    }
     const spec = BLOCKS[idOf(v)].behavior?.tile;
-    const items = (spec?.contents ? callBlock(idOf(v), 'tile contents', () => spec.contents!(t), []) : (t.items ?? t.slots)) as (ItemStack | null)[] | undefined;
+    const items = (spec?.contents ? callBlock(idOf(v), 'tile contents', () => spec.contents!(t), []) : (t.items ?? t.slots ?? (t.disc ? [t.disc] : undefined))) as (ItemStack | null)[] | undefined;
     if (items) for (const s of items) if (s) this.game.dropItem(x + 0.5, y + 0.5, z + 0.5, s, true);
     this.world.setTile(x, y, z, undefined);
     void v;
@@ -260,6 +312,7 @@ export class Interaction {
     const id = idOf(v);
     if (id === 0) return;
     const tile = w.getTile(x, y, z);
+    if (id === B2.BEE_NEST || id === B2.BEEHIVE) hiveBroken(this.game, x, y, z, null);
     this.removeBlockAndPartner(x, y, z, v);
     if (drops) { this.dropBlockItems(x, y, z, v); this.dropTileContents(x, y, z, v, tile); }
     this.broken(x, y, z, v, null);
@@ -337,6 +390,7 @@ export class Interaction {
     const g = this.game, p = this.player;
     if (!g.targetEntity || p.spectator || p.dead) return false;
     const e = g.targetEntity as unknown as { interact?: (game: Game, s: ItemStack | null) => boolean };
+    if (g.targetEntity instanceof Mob && useOnMob(g, p, g.targetEntity, p.inventory.held(), (n) => this.consume(n))) { p.swing(); return true; }
     if (!e.interact || !e.interact(g, p.inventory.held())) return false;
     p.swing();
     return true;
@@ -367,6 +421,8 @@ export class Interaction {
       }
       const ib = item?.behavior;
       if (held && ib?.useOnBlock && guard(item!.mod, 'useOnBlock', () => ib.useOnBlock!({ ...this.itemCtx(held), x: t.x, y: t.y, z: t.z, face: t.face, v }), false)) { p.swing(); return; }
+      // a fence ties the mobs on the player's leads
+      if (isFence(id) && tieToFence(g, p, t.x, t.y, t.z)) { p.swing(); return; }
       if (!p.sneaking || !held) {
         if (this.activateBlock(t, id, v)) { p.swing(); this.useDelay = 4; return; }
       }
@@ -386,6 +442,8 @@ export class Interaction {
       this.useItemInAir(held, item);
     }
     else if (held && item && (item.food || item.name === 'bow')) this.useItemInAir(held, item);
+    // nothing to do with the main hand: a shield in the off hand comes up
+    if (fresh && !this.usingItem && !this.usingBow && this.eating === 0 && shieldHand(p) === 'off' && (!item || (item.block === undefined && !item.food && !item.drink))) this.startItemUse('shield');
   }
 
   /** Context for a mod item's hooks (the held stack). */
@@ -398,6 +456,13 @@ export class Interaction {
     const meta = metaOf(v);
     const beh = BLOCKS[id].behavior;
     if (beh?.onUse) return callBlock(id, 'onUse', () => beh.onUse!(playerBlockCtx(g, this.player, t.x, t.y, t.z, t.face, this.player.inventory.held())), false);
+    if (isHandOperated(id)) {
+      this.swing(t.x, t.y, t.z);
+      return true;
+    }
+    if (isButton(id)) { g.redstone.pressButton(t.x, t.y, t.z); return true; }
+    if (blockIs('guarded_by_piglins', id) && w.dimension === 'nether' && !OPAQUE[w.getId(t.x, t.y + 1, t.z)]) angerPiglins(g, this.player, t.x, t.y, t.z);
+    if ((id >= B2.CRIMSON_NYLIUM || isShulkerBox(id)) && stationUse(this.hands(), t.x, t.y, t.z, v, this.player.inventory.held())) return true;
     switch (id) {
       case B.CRAFTING_TABLE: g.ui.openCrafting(); return true;
       case B.ENCHANTING_TABLE: g.ui.openEnchant(t.x, t.y, t.z); return true;
@@ -445,6 +510,36 @@ export class Interaction {
     return false;
   }
 
+  /** This player's hands, for the block and item rules outside this class (stations.ts). */
+  hands() {
+    return { game: this.game, world: this.world, player: this.player, consume: (n: number) => this.consume(n), damageHeld: (n: number) => this.damageHeld(n) };
+  }
+
+  /** Open or close a door, trapdoor or fence gate (both halves of a door). */
+  swing(x: number, y: number, z: number, open?: boolean) {
+    const w = this.world, g = this.game;
+    const v = w.get(x, y, z), id = idOf(v);
+    if (isDoor(id)) {
+      const lowerY = metaOf(v) & 8 ? y - 1 : y;
+      const lower = w.get(x, lowerY, z);
+      if (open !== undefined && ((metaOf(lower) & 4) !== 0) === open) return;
+      const nm = metaOf(lower) ^ 4;
+      this.setAll([[x, lowerY, z, pack(id, nm)], [x, lowerY + 1, z, pack(id, (nm & 7) | 8)]]);
+    } else {
+      const nv = open !== undefined ? this.openState(v, open) : toggled(v, this.playerFacing());
+      if (nv === null || nv === v) return;
+      w.set(x, y, z, nv);
+    }
+    const iron = BLOCKS[id].material === 'iron';
+    g.audio.play('door', { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, 1, (iron ? 0.7 : 0.9) + Math.random() * 0.1);
+  }
+  /** A trapdoor or gate set open or shut (redstone). */
+  private openState(v: number, open: boolean): number | null {
+    const id = idOf(v), m = metaOf(v);
+    const flag = isTrapdoor(id) ? 8 : 4;
+    return pack(id, open ? m | flag : m & ~flag);
+  }
+
   private sleep(x: number, y: number, z: number): boolean {
     const g = this.game, p = this.player;
     if (this.world.dimension !== 'overworld') {
@@ -454,7 +549,7 @@ export class Interaction {
       return true;
     }
     // a bed is your own respawn point (the world spawn stays where new players start)
-    p.spawnX = x; p.spawnY = y + 1; p.spawnZ = z;
+    p.spawnX = x; p.spawnY = y + 1; p.spawnZ = z; p.spawnKind = 'bed';
     if (g.isDaytime()) { g.ui.hud.actionBar('You can only sleep at night'); g.ui.chat.add('Respawn point set'); return true; }
     const monsters = g.entities.some((e) => (e as unknown as { hostile?: boolean }).hostile && !(e as LivingEntity).dead && Math.abs(e.x - x) < 8 && Math.abs(e.y - y) < 5 && Math.abs(e.z - z) < 8);
     if (monsters) { g.ui.hud.actionBar('You may not rest now; there are monsters nearby'); return true; }
@@ -468,6 +563,29 @@ export class Interaction {
     const id = idOf(v);
     const [nx, ny, nz] = FACE_DIRS[t.face];
     const ax = t.x + nx, ay = t.y + ny, az = t.z + nz;
+    if (stationItemUse(this.hands(), t.x, t.y, t.z, t.face, held, item)) return true;
+    if (held.id === I7.ARMOR_STAND && t.face === 3) {
+      if (w.getId(ax, ay, az) !== B.AIR || w.getId(ax, ay + 1, az) !== B.AIR) return false;
+      const s = new ArmorStand(w, g);
+      s.setPos(ax + 0.5, ay, az + 0.5);
+      s.yaw = s.pyaw = Math.round((p.yaw + 180) / 45) * 45;
+      g.addEntity(s);
+      g.playBlockSound(B.OAK_PLANKS, ax, ay, az, 'place');
+      this.consume(1);
+      return true;
+    }
+    if ((held.id === I7.ITEM_FRAME || held.id === I7.PAINTING) && t.face !== 2 && t.face !== 3) {
+      // hung on the clicked wall, in the cell in front of it
+      const wallDir = ({ 0: 1, 1: 3, 4: 2, 5: 0 } as Record<number, number>)[t.face];
+      if (w.getId(ax, ay, az) !== B.AIR) return false;
+      const h = held.id === I7.ITEM_FRAME ? new ItemFrame(w, g) : new Painting(w, g);
+      if (h instanceof Painting) { if (!h.place(ax, ay, az, wallDir, () => this.rng.next())) return false; }
+      else h.hang(ax, ay, az, wallDir);
+      g.addEntity(h);
+      g.playBlockSound(B.OAK_PLANKS, ax, ay, az, 'place');
+      this.consume(1);
+      return true;
+    }
     if (item.tool?.type === 'hoe') {
       if ((id === B.GRASS || id === B.DIRT || id === B.COARSE_DIRT) && t.face !== 2 && w.getId(t.x, t.y + 1, t.z) === B.AIR) {
         w.set(t.x, t.y, t.z, id === B.COARSE_DIRT ? B.DIRT : B.FARMLAND);
@@ -512,10 +630,12 @@ export class Interaction {
       this.consume(1);
       return true;
     }
-    if (held.id === I5.MINECART) {
+    const cartKind = held.id === I5.MINECART ? 'minecart' : held.id === I7.CHEST_MINECART ? 'chest' : held.id === I7.FURNACE_MINECART ? 'furnace' : held.id === I7.HOPPER_MINECART ? 'hopper' : held.id === I7.TNT_MINECART ? 'tnt' : null;
+    if (cartKind) {
       const at = placeOnRail(w, t.x, t.y, t.z);
       if (!at) return false;
       const c = new Minecart(w, g);
+      c.setKind(cartKind);
       c.setPos(t.x + 0.5, at.y, t.z + 0.5);
       c.yaw = c.pyaw = at.yaw;
       g.addEntity(c);
@@ -547,9 +667,10 @@ export class Interaction {
           return true;
         }
         return false;
+      case I7.COD_BUCKET: case I7.SALMON_BUCKET: case I7.PUFFERFISH_BUCKET: case I7.TROPICAL_FISH_BUCKET:
       case I.WATER_BUCKET:
       case I.LAVA_BUCKET: {
-        const fluid = held.id === I.WATER_BUCKET ? B.WATER : B.LAVA;
+        const fluid = held.id === I.LAVA_BUCKET ? B.LAVA : B.WATER;
         let px = ax, py = ay, pz = az;
         if (BLOCKS[id].replaceable && !BLOCKS[id].fluid) { px = t.x; py = t.y; pz = t.z; }
         const cur = w.getId(px, py, pz);
@@ -565,6 +686,7 @@ export class Interaction {
         w.set(px, py, pz, fluid);
         g.ticker!.schedule(px, py, pz, fluid === B.WATER ? 5 : 30);
         g.audio.play(fluid === B.WATER ? 'bucket.empty' : 'bucket.emptyLava', { x: px + 0.5, y: py + 0.5, z: pz + 0.5 }, 1, 1);
+        if (FISH_BUCKETS[held.id]) releaseFish(g, held, px, py, pz);
         if (!p.creative) p.inventory.setHeld(stack(I.BUCKET));
         return true;
       }
@@ -614,7 +736,15 @@ export class Interaction {
       return;
     }
     if (held.id === I.BOW) {
-      if (p.creative || p.inventory.count(I.ARROW) > 0) { this.usingBow = true; this.bowTicks = 0; }
+      if (p.creative || p.inventory.count(I.ARROW) > 0) { this.usingBow = true; this.bowTicks = 0; p.using = 'bow'; }
+      return;
+    }
+    if (held.id === I7.SHIELD) { this.startItemUse('shield'); return; }
+    if (held.id === I7.TRIDENT) { if ((held.damage ?? 0) < (item.durability ?? 250) - 1) this.startItemUse('trident'); return; }
+    if (held.id === I7.CROSSBOW) {
+      // loaded: fire; otherwise start loading (if there's anything to load)
+      if (held.charged) { fireCrossbow(g, p, held, g.eyePos(1), (yaw, pitch) => g.lookVec(yaw, pitch)); this.damageHeld(held.charged === undefined ? 1 : 0); this.useDelay = 10; return; }
+      if (p.creative || p.inventory.offhand?.id === I6.FIREWORK_ROCKET || p.inventory.main.some((s) => s && (s.id === I.ARROW || s.id === I7.SPECTRAL_ARROW || getItem(s.id).name.startsWith('tipped_arrow')))) this.startItemUse('crossbow');
       return;
     }
     if (held.id === I6.FIREWORK_ROCKET) {
@@ -626,6 +756,20 @@ export class Interaction {
       g.addEntity(r);
       g.playerOf(p)?.event(['boost', r.lifetime]);
       this.consume(1);
+      p.swing();
+      return;
+    }
+    if (held.id === I7.WRITABLE_BOOK || held.id === I11.WRITTEN_BOOK) {
+      (g.ui as unknown as { openBook?(slot: number): void }).openBook?.(p.inventory.selected);
+      return;
+    }
+    if (held.id === I7.MAP && g.meta && 'spawnXpAt' in g) {
+      // an empty map fills in around whoever opens it (scale 0, this dimension)
+      const d = createMap(g.meta, Math.floor(p.x), Math.floor(p.z), 0, w.dimension);
+      const filled: ItemStack = { id: I7.FILLED_MAP, count: 1, tag: { map: d.id } };
+      if (held.count <= 1 && !p.creative) p.inventory.main[p.inventory.selected] = filled;
+      else { if (!p.creative) this.consume(1); if (p.inventory.add(filled) > 0) g.dropItem(p.x, p.y + 1, p.z, filled); }
+      g.audio.play('dig.cloth', { x: p.x, y: p.y, z: p.z }, 0.5, 1.8);
       p.swing();
       return;
     }
@@ -682,12 +826,14 @@ export class Interaction {
       p.swing();
       return;
     }
-    if (held.id === I2.BOAT) {
+    const boatWood = held.id === I2.BOAT ? 'oak' : Object.entries(BOATS).find(([, id]) => id === held.id)?.[0];
+    if (boatWood) {
       const eye = g.eyePos(1);
       const d = g.lookVec(p.yaw, p.pitch);
       const hit = raycastBlocks(w, eye.x, eye.y, eye.z, d.x, d.y, d.z, g.reach(), true);
       if (hit && hit.face === 3) {
         const b = new Boat(w, g);
+        b.wood = boatWood;
         const onWater = w.getId(hit.x, hit.y, hit.z) === B.WATER;
         // on water: straight at the waterline it floats at
         b.setPos(hit.hx, hit.y + (onWater ? 0.52 : 1), hit.hz);
@@ -735,12 +881,18 @@ export class Interaction {
     }
     if (this.eating >= 32 && item.food) {
       p.eat(item.food.hunger, item.food.saturation);
+      g.achievements.event('eat', { ate: item.name });
       g.audio.play('burp', p, 0.5, this.rng.next() * 0.1 + 0.9);
       if (held.id === I.GOLDEN_APPLE) { p.addEffect('regeneration', 100, 1); p.addEffect('absorption', 2400, 0); }
       if (held.id === I.ROTTEN_FLESH && this.rng.next() < 0.8) p.addEffect('hunger', 600, 0);
       if (held.id === I.CHICKEN && this.rng.next() < 0.3) p.addEffect('hunger', 600, 0);
       if (held.id === I.SPIDER_EYE) p.addEffect('poison', 100, 0);
       if (held.id === I3.PUFFERFISH) { p.addEffect('poison', 1200, 3); p.addEffect('hunger', 300, 2); }
+      // 1.9+ foods: the enchanted golden apple, chorus fruit's random hop, suspicious stew's flower effect
+      if (held.id === I7.ENCHANTED_GOLDEN_APPLE) { p.addEffect('regeneration', 400, 1); p.addEffect('absorption', 2400, 3); p.addEffect('resistance', 6000, 0); p.addEffect('fire_resistance', 6000, 0); }
+      if (held.id === itemId('chorus_fruit')) chorusHop(g, p, this.rng);
+      const stew = (held as ItemStack & { stewEffect?: number }).stewEffect;
+      if (stew && FLOWER_EFFECTS[stew]) { const [eff, sec] = FLOWER_EFFECTS[stew]; p.addEffect(eff, Math.max(1, Math.round(sec * 20)), 0); }
       if (!p.creative) {
         if (item.food.stew) p.inventory.setHeld(stack(I.BOWL));
         else this.consume(1);
@@ -752,6 +904,13 @@ export class Interaction {
 
   private finishDrinking(held: ItemStack, item: ItemDef) {
     const p = this.player;
+    // honey: food that cures poison, and leaves the bottle
+    if (held.id === I7.HONEY_BOTTLE) {
+      p.eat(6, 1.2);
+      p.removeEffect('poison');
+      if (!p.creative) { held.count--; if (held.count <= 0) p.inventory.setHeld(stack(I3.GLASS_BOTTLE)); else if (p.inventory.add(stack(I3.GLASS_BOTTLE)) > 0) this.game.dropItem(p.x, p.y + 1, p.z, stack(I3.GLASS_BOTTLE)); }
+      return;
+    }
     if (held.id === I.MILK_BUCKET) {
       p.clearEffects();
       if (!p.creative) p.inventory.setHeld(stack(I.BUCKET));
@@ -787,9 +946,42 @@ export class Interaction {
     if (p && held && item?.behavior?.useStop) guard(item.mod, 'useStop', () => item.behavior!.useStop!({ ...this.itemCtx(held), ticks: h.ticks }), undefined);
   }
 
+  private startItemUse(kind: 'shield' | 'crossbow' | 'trident') {
+    this.usingItem = kind;
+    this.useTicks = 0;
+    const p = this.player;
+    p.using = kind;
+    p.useTicks = 0;
+    if (kind === 'crossbow') this.game.audio.play('crossbow.loading', p, 0.5, 1);
+  }
+  /** Holding the button: the shield comes up after 5 ticks; a crossbow loads when charged. */
+  private continueItemUse() {
+    const p = this.player, held = p.inventory.held();
+    this.useTicks++;
+    p.useTicks = this.useTicks;
+    if (this.usingItem === 'shield') {
+      if (!shieldHand(p)) { this.stopUsing(); return; }
+      p.blocking = this.useTicks >= 5 && p.shieldCooldown === 0;
+    } else if (this.usingItem === 'crossbow') {
+      if (held?.id !== I7.CROSSBOW) { this.stopUsing(); return; }
+      if (!held.charged && this.useTicks >= crossbowLoadTicks(held)) { loadCrossbow(this.game, p, held); this.usingItem = ''; p.using = ''; this.useDelay = 5; }
+    } else if (this.usingItem === 'trident' && held?.id !== I7.TRIDENT) this.stopUsing();
+  }
+  private releaseItemUse() {
+    const g = this.game, p = this.player, held = p.inventory.held();
+    if (this.usingItem === 'trident' && held?.id === I7.TRIDENT) releaseTrident(g, p, held, this.useTicks, g.eyePos(1), g.lookVec(p.yaw, p.pitch), () => p.inventory.setHeld(null), (n) => this.damageHeld(n));
+    this.usingItem = '';
+    this.useTicks = 0;
+    p.blocking = false;
+    p.using = '';
+    p.useTicks = 0;
+  }
+
   private stopUsing() {
     const p = this.game.player;
     this.endHold();
+    if (this.usingItem && p) this.releaseItemUse();
+    if (p && p.using === 'bow') p.using = '';
     if (this.usingBow && p) this.releaseBow();
     this.eating = 0;
     if (p) p.eatingTicks = 0;
@@ -859,8 +1051,12 @@ export class Interaction {
     const fracY = t.hy - Math.floor(t.hy);
     // slab merging
     if (isSlab(blockId) && tid === blockId) {
-      const m = metaOf(tv);
-      if ((face === 3 && m === 0) || (face === 2 && m === 1)) return this.setPlaced(x, y, z, this.doubleSlab(blockId), blockId);
+      const m = metaOf(tv) & 7;
+      if ((face === 3 && m === 0) || (face === 2 && m === 1)) return this.setPlaced(x, y, z, doubleSlab(blockId, tv), blockId);
+    }
+    // scaffolding used on the top of scaffolding goes on top of the tower
+    if (blockId === B2.SCAFFOLDING && tid === B2.SCAFFOLDING && face === 3) {
+      while (y < 255 && w.getId(x, y + 1, z) === B2.SCAFFOLDING) y++;
     }
     if (BLOCKS[tid].replaceable && tid !== B.WATER && tid !== B.LAVA || tid === B.SNOW) {
       face = 3;
@@ -868,15 +1064,38 @@ export class Interaction {
       const [dx, dy, dz] = FACE_DIRS[face];
       x += dx; y += dy; z += dz;
       const cv = w.get(x, y, z);
-      if (isSlab(blockId) && idOf(cv) === blockId) return this.setPlaced(x, y, z, this.doubleSlab(blockId), blockId);
+      if (isSlab(blockId) && idOf(cv) === blockId && (metaOf(cv) & 7) !== 2) return this.setPlaced(x, y, z, doubleSlab(blockId, cv), blockId);
     }
     if (y < 0 || y >= 256) return false;
     const cur = w.getId(x, y, z);
     if (!BLOCKS[cur].replaceable && cur !== B.AIR) return false;
-    if (cur === blockId && blockId !== B.SNOW) return false;
+    if (cur === blockId && blockId !== B.SNOW && blockId !== B2.VINE) return false;
     let meta = 0;
     const facing = this.playerFacing();
     const pdef = BLOCKS[blockId];
+    if (!pdef.mod) {
+      const fam = familyPlacement(blockId, { world: w, x, y, z, face, facing, yaw: p.yaw, hitY: fracY, replaced: w.get(x, y, z) });
+      if (fam !== undefined) {
+        if (!fam) return false;
+        for (const [bx, by, bz, bv] of fam) {
+          if (!g.ticker!.canStay(bx, by, bz, bv) && !(fam.length > 1)) return false;
+          if (!this.noEntities(bx, by, bz, bv)) return false;
+        }
+        if (fam.length === 1) {
+          const [fx, fy, fz, fv] = fam[0];
+          if (!this.setPlaced(fx, fy, fz, fv, blockId)) return false;
+          // a banner keeps its patterns (the ominous banner comes with the illagers' design)
+          if (isBanner(idOf(fv))) w.setTile(fx, fy, fz, { type: 'banner', patterns: (held.banner ?? (held.id === I9.OMINOUS_BANNER ? OMINOUS : [])).map((l) => ({ ...l })) } as never);
+          return true;
+        }
+        if (!this.setAll(fam)) return false;
+        for (const [bx, by, bz, bv] of fam) this.initTile(bx, by, bz, bv);
+        if (!g.ticker!.canStay(x, y, z, fam[0][3])) { for (const [bx, by, bz] of fam) w.set(bx, by, bz, B.AIR); return false; }
+        g.playBlockSound(blockId, x, y, z, 'place');
+        this.consume(1);
+        return true;
+      }
+    }
     if (pdef.behavior?.placementMeta) {
       const m = callBlock(blockId, 'placementMeta', () => pdef.behavior!.placementMeta!({ game: g, world: w, player: p, x, y, z, face, facing, facing6: this.facingFromEntity(x, y, z), hitY: fracY, held }), null);
       if (m === null) return false;
@@ -884,12 +1103,12 @@ export class Interaction {
     } else if (pdef.mod) {
       // a mod cube with a front face turns it toward the player
       if (pdef.faces.length > 6) meta = (facing + 2) & 3;
-    } else if (isLog(blockId)) meta = face === 0 || face === 1 ? 1 : face === 4 || face === 5 ? 2 : 0;
+    } else if (isPillar(blockId)) meta = face === 0 || face === 1 ? 1 : face === 4 || face === 5 ? 2 : 0;
     else if (isOriented(blockId)) meta = (facing + 2) & 3;
     else if (isStairs(blockId)) meta = facing | (face === 2 || (face !== 3 && fracY > 0.5) ? 4 : 0);
     else if (isSlab(blockId)) meta = face === 2 || (face !== 3 && fracY > 0.5) ? 1 : 0;
     else if (isLeaves(blockId)) meta = 1;
-    else if (blockId === B.TORCH || blockId === B.LADDER || blockId === B.REDSTONE_TORCH || blockId === B.LEVER || blockId === B.STONE_BUTTON) {
+    else if (blockId === B.TORCH || blockId === B.LADDER || blockId === B.REDSTONE_TORCH || blockId === B.LEVER || blockId === B.STONE_BUTTON || blockId === B2.SOUL_TORCH) {
       const wallDir: Record<number, number> = { 0: 1, 1: 3, 4: 2, 5: 0 };
       const wallMounted = blockId !== B.LADDER;
       if (face === 3 && wallMounted) meta = 0;
@@ -901,7 +1120,7 @@ export class Interaction {
     else if (isRepeater(blockId) || blockId === B.COMPARATOR) meta = facing;
     else if (blockId === B.ANVIL) meta = (facing + 1) & 3;
     else if (isPiston(blockId) || blockId === B.DISPENSER || blockId === B.DROPPER) meta = this.facingFromEntity(x, y, z);
-    else if (blockId === B.OBSERVER) meta = this.facingFromEntity(x, y, z) ^ 1;
+    else if (blockId === B.OBSERVER || isCommandBlock(blockId)) meta = this.facingFromEntity(x, y, z) ^ 1;
     else if (blockId === B.HOPPER) { meta = FACE_TO_FACING6[face] ^ 1; if (meta === 1) meta = 0; }
     else if (isRail(blockId)) meta = facing & 1 ? 1 : 0;
     const v = pack(blockId, meta);
@@ -928,19 +1147,27 @@ export class Interaction {
     if (!this.noEntities(x, y, z, v)) return false;
     // tile entities
     if (blockId === B.CHEST) w.setTile(x, y, z, undefined);
-    return this.setPlaced(x, y, z, v, blockId);
-  }
-
-  private doubleSlab(slab: number) {
-    return slab === B.STONE_SLAB ? B.DOUBLE_STONE_SLAB : slab === B.OAK_SLAB ? B.OAK_PLANKS : B.COBBLESTONE;
+    const placed = this.setPlaced(x, y, z, v, blockId);
+    if (placed && SEEDED.includes(BLOCKS[blockId].name)) g.achievements.event('plant');
+    // a shulker box item brings its contents back
+    if (placed && held.box && isShulkerBox(blockId)) w.setTile(x, y, z, { type: 'chest', items: held.box.map((s) => (s ? { ...s } : null)) } as never);
+    return placed;
   }
 
   private setPlaced(x: number, y: number, z: number, v: number, soundBlock: number): boolean {
     const g = this.game, w = this.world;
     if (!w.set(x, y, z, v)) return false;
+    g.achievements.stat('used:' + (BLOCKS[soundBlock]?.name ?? ''));
     this.initTile(x, y, z, v);
     const def = BLOCKS[idOf(v)];
     if (def.mod && def.behavior?.onPlaced) callBlock(idOf(v), 'onPlaced', () => def.behavior!.onPlaced!({ ...blockCtx(g, x, y, z, v), player: this.player }), undefined);
+    hardenConcrete(w, x, y, z);
+    // a placed sign asks for its words
+    if (/_sign$/.test(def.name)) (g.ui as unknown as { openSign?(x: number, y: number, z: number): void }).openSign?.(x, y, z);
+    // a pumpkin on iron or snow blocks brings a golem to life
+    if (idOf(v) === B2.CARVED_PUMPKIN || idOf(v) === B.JACK_O_LANTERN) { const m = buildGolem(g, x, y, z); if (m) advanceNear(g, m, 'golem', {}, 8); }
+    // three wither skeleton skulls on a T of soul sand: the Wither
+    if ((idOf(v) === B2.WITHER_SKELETON_SKULL || idOf(v) === B2.WITHER_SKELETON_WALL_SKULL) && w.dimension !== undefined) { const wi = buildWither(g, x, y, z); if (wi) advanceNear(g, wi, 'wither', {}, 50); }
     if (Events.blockPlaced.any) Events.blockPlaced.fire({ game: g, player: this.player, x, y, z, v });
     g.playBlockSound(soundBlock, x, y, z, 'place');
     this.consume(1);
@@ -952,6 +1179,7 @@ export class Interaction {
     const g = this.game, w = this.world;
     const id = idOf(v);
     if (id === B.CHEST) w.setTile(x, y, z, { type: 'chest', items: new Array(27).fill(null) });
+    if (id >= B2.CRIMSON_NYLIUM || isShulkerBox(id)) stationTile(w, x, y, z, id);
     if (id === B.FURNACE) w.setTile(x, y, z, { type: 'furnace', slots: [null, null, null], burn: 0, burnMax: 0, cook: 0 });
     if (id === B.HOPPER) w.setTile(x, y, z, { type: 'hopper', items: [null, null, null, null, null], cooldown: 0 });
     if (id === B.DISPENSER || id === B.DROPPER) w.setTile(x, y, z, { type: id === B.DISPENSER ? 'dispenser' : 'dropper', items: new Array(9).fill(null) });
@@ -994,8 +1222,9 @@ export class Interaction {
       e.deflect(d.x, d.y, d.z);
       return;
     }
-    if (e instanceof Boat || e instanceof Minecart) {
-      e.attacked(p.creative);
+    // vehicles and hanging things take hits their own way
+    if (typeof (e as unknown as { attacked?: unknown }).attacked === 'function') {
+      (e as unknown as { attacked(creative: boolean): void }).attacked(p.creative);
       return;
     }
     if (p.spectator || !(e instanceof LivingEntity)) return;
@@ -1004,23 +1233,25 @@ export class Interaction {
     e.hitPart = e === g.targetEntity ? g.targetPart : null;
     const held = p.inventory.held();
     const item = held ? getItem(held.id) : undefined;
-    let dmg = (item?.attack ?? 1) + level(held, 'sharpness') * 1.25 + p.attackBonus();
-    if (e.undead) dmg += level(held, 'smite') * 2.5;
+    // 1.9: the swing's charge scales the damage; a full-charge sword swing on the ground sweeps
+    const sw = swingDamage(p, e, Math.max(0, (item?.attack ?? 1) + p.attackBonus()));
+    p.attackTicks = 0;
+    const { dmg, crit } = sw;
     if (e.arthropod) {
       const bane = level(held, 'bane_of_arthropods');
-      if (bane) { dmg += bane * 2.5; e.addEffect('slowness', 20 + this.rng.int(10 * bane), 3); }
+      if (bane) e.addEffect('slowness', 20 + this.rng.int(10 * bane), 3);
     }
-    dmg = Math.max(0, dmg);
-    const crit = p.fallDistance > 0 && !p.onGround && !p.onLadder && !p.inWater && p.vy < 0;
-    if (crit) dmg *= 1.5;
     const hit = e.damage(dmg, 'player', p);
     if (hit) {
+      g.achievements.stat('damage_dealt', Math.round(dmg * 10));
       if (crit) g.particles!.crit(e.x, e.y + e.height * 0.6, e.z);
+      if (sw.sweep) sweep(g, p, e, dmg);
+      g.audio.play(crit ? 'attack.crit' : sw.sweep ? 'attack.sweep' : sw.strength > 0.9 ? 'attack.strong' : 'attack.weak', p, 1, 1);
       const kb = level(held, 'knockback'), fa = level(held, 'fire_aspect');
       if (kb) { const r = (p.yaw * Math.PI) / 180; e.vx -= Math.sin(r) * 0.5 * kb; e.vz += Math.cos(r) * 0.5 * kb; e.vy += 0.1; }
       if (fa) e.fireTicks = Math.max(e.fireTicks, 80 * fa);
       if (held?.ench) for (let k = 0; k < 6; k++) g.particles!.spell(e.x + (Math.random() - 0.5), e.y + e.height * 0.6, e.z + (Math.random() - 0.5), 0x8040ff);
-      if (p.sprinting) {
+      if (p.sprinting && sw.strength > 0.9) {
         const r = (p.yaw * Math.PI) / 180;
         e.vx -= Math.sin(r) * 0.5;
         e.vz += Math.cos(r) * 0.5;
@@ -1038,20 +1269,29 @@ export class Interaction {
     for (const e of g.entities) {
       if (!(e instanceof LivingEntity) || e.dead || e === a.shooter && a.age < 5) continue;
       if (e instanceof Player && e.spectator) continue;
+      if (a.pierced.includes(e)) continue;
       const hb = e.hitBoxes().find((b) => nx > b.x0 - 0.3 && nx < b.x1 + 0.3 && ny > b.y0 - 0.3 && ny < b.y1 + 0.3 && nz > b.z0 - 0.3 && nz < b.z1 + 0.3);
       if (hb) {
         e.hitPart = hb.part ?? null;
+        // a blocking shield stops arrows (and tridents) from the front
+        if (e instanceof Player && shieldBlocks(g, e, 2, 'arrow', a)) { a.vx *= -0.1; a.vy *= -0.1; a.vz *= -0.1; a.pierce = 0; return true; }
+        if (a instanceof ThrownTrident) { if (!a.dealtDamage) a.onHitEntity(e); return true; }
         const speed = Math.hypot(a.vx, a.vy, a.vz);
         let dmg = Math.ceil(speed * a.damageBase);
         if ((a as unknown as { crit?: boolean }).crit) dmg += this.rng.int(Math.floor(dmg / 2) + 2);
         if (e.damage(dmg, 'arrow', a.shooter ?? a)) {
+          if (a.shooter instanceof Player) g.playerOf(a.shooter)?.achievements.event('arrow_hit');
           const h = Math.hypot(a.vx, a.vz) || 1;
           const punch = (a as unknown as { punch?: number }).punch ?? 0;
           e.vx += (a.vx / h) * 0.6 * (0.6 + punch * 0.6);
           e.vz += (a.vz / h) * 0.6 * (0.6 + punch * 0.6);
           if (a.fireTicks > 0) e.fireTicks = Math.max(e.fireTicks, 100);
+          if (a.effect) e.addEffect(a.effect[0], a.effect[1], a.effect[2]);
+          // tipped arrows: the potion's effects at an eighth of their time
+          if (a.tipped) for (const [id, dur, amp] of POTION_BY_KEY.get(a.tipped)?.effects ?? []) e.addEffect(id, dur <= 1 ? 1 : Math.max(1, Math.floor(dur / 8)), amp);
           e.vy += 0.1;
           g.audio.play('arrowHit', a, 1, 1.2);
+          if (a.pierce > 0) { a.pierce--; a.pierced.push(e); return false; }
           a.removed = true;
         } else {
           a.vx *= -0.1; a.vy *= -0.1; a.vz *= -0.1;
@@ -1069,7 +1309,9 @@ export class Interaction {
       const hb = e.hitBoxes().find((b) => nx > b.x0 - 0.2 && nx < b.x1 + 0.2 && ny > b.y0 - 0.2 && ny < b.y1 + 0.2 && nz > b.z0 - 0.2 && nz < b.z1 + 0.2);
       if (hb) {
         e.hitPart = hb.part ?? null;
-        e.damage(0.01, 'generic', s.shooter);
+        // snowballs hurt blazes (snow golems' one real weapon)
+        const blaze = s.kind === 'snowball' && (e as unknown as { typeName?: string }).typeName === 'Blaze';
+        e.damage(blaze ? 3 : 0.01, 'generic', s.shooter);
         return e;
       }
     }
@@ -1212,6 +1454,7 @@ export class Interaction {
   }
 
   throwStack(s: ItemStack) {
+    this.game.achievements.stat('dropped:' + getItem(s.id).name, s.count);
     const g = this.game, p = this.player;
     const eye = g.eyePos(1);
     const e = g.dropItem(p.x, eye.y - 0.3, p.z, s, false, 40);
@@ -1227,7 +1470,15 @@ export class Interaction {
     e.vz += Math.sin(a) * ff;
   }
 
-  swapOffhand() {}
+  /** F: swap what's in the main hand with the off hand. */
+  swapOffhand() {
+    const p = this.player, inv = p.inventory;
+    if (p.spectator) return;
+    if (this.usingItem) this.releaseItemUse();
+    const main = inv.held();
+    inv.setHeld(inv.offhand);
+    inv.offhand = main;
+  }
 
   fallingBlock(x: number, y: number, z: number, id: number) {
     const e = new FallingBlock(this.world, this.game, id);
@@ -1235,3 +1486,30 @@ export class Interaction {
     this.game.addEntity(e);
   }
 }
+
+/** Chorus fruit: a hop to a random safe spot within 8 blocks (vanilla tries 16 times). */
+function chorusHop(g: Game, p: Player, r: Random) {
+  const w = g.world!;
+  for (let i = 0; i < 16; i++) {
+    const x = Math.floor(p.x + (r.next() - 0.5) * 16), z = Math.floor(p.z + (r.next() - 0.5) * 16);
+    let y = Math.min(255, Math.floor(p.y + r.int(16) - 8));
+    while (y > 1 && !BLOCKS[w.getId(x, y - 1, z)].solid) y--;
+    if (BLOCKS[w.getId(x, y, z)].solid || BLOCKS[w.getId(x, y + 1, z)].solid || BLOCKS[w.getId(x, y, z)].fluid) continue;
+    g.audio.play('enderman.teleport', p, 1, 1);
+    p.setPos(x + 0.5, y, z + 0.5);
+    p.fallDistance = 0;
+    (g.playerOf(p) as unknown as { teleported?(): void } | null)?.teleported?.();
+    return;
+  }
+}
+
+/** A banner block (standing or on a wall) as its item, with the patterns from its tile. */
+function bannerItem(id: number, tile: unknown): ItemStack {
+  const pats = (tile as { patterns?: { p: string; c: number }[] } | undefined)?.patterns ?? [];
+  const color = bannerColor(id);
+  return { id: BANNERS[color], count: 1, ...(pats.length ? { banner: pats.map((l) => ({ ...l })) } : {}) };
+}
+/** The illagers' banner: on white, a cyan lozenge, grey stripes and bordure, a black fess (vanilla's eight layers). */
+const OMINOUS = [{ p: 'mr', c: 9 }, { p: 'bs', c: 8 }, { p: 'cs', c: 7 }, { p: 'bo', c: 8 }, { p: 'ms', c: 15 }, { p: 'hh', c: 8 }, { p: 'mc', c: 8 }, { p: 'bo', c: 15 }];
+/** Crops planted from seeds ("A Seedy Place"). */
+const SEEDED = ['wheat', 'carrots', 'potatoes', 'beetroots', 'melon_stem', 'pumpkin_stem', 'nether_wart', 'sweet_berry_bush', 'cocoa'];

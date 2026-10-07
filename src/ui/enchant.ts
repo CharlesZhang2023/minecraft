@@ -96,6 +96,7 @@ export class EnchantScreen extends ContainerScreen {
       const ench = rollEnchants(it, cost, new Random(this.seed() + i));
       if (it.id === I.BOOK) this.slotsE[0] = { id: I3.ENCHANTED_BOOK, count: 1, ench };
       else it.ench = ench;
+      this.game.achievements.event('enchant');
       if (!p.creative) {
         p.xpLevel = Math.max(0, p.xpLevel - (i + 1));
         lap!.count -= i + 1;

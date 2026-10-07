@@ -157,7 +157,8 @@ export function applyState(e: Entity, s: State, resolve: (id: number) => Entity 
 }
 
 /** Load inventory contents in place, so screens holding on to the slot arrays keep seeing the live data. */
-export function syncInventory(inv: Inventory, d: { main: Inventory['main']; armor: Inventory['armor']; selected?: number }, keepSelected = false) {
+export function syncInventory(inv: Inventory, d: { main: Inventory['main']; armor: Inventory['armor']; selected?: number; offhand?: Inventory['offhand'] }, keepSelected = false) {
+  inv.offhand = d.offhand ? { ...d.offhand } : null;
   for (let i = 0; i < inv.main.length; i++) inv.main[i] = d.main[i] ? { ...d.main[i]! } : null;
   for (let i = 0; i < inv.armor.length; i++) inv.armor[i] = d.armor?.[i] ? { ...d.armor[i]! } : null;
   if (!keepSelected && d.selected !== undefined) inv.selected = d.selected;

@@ -1,6 +1,6 @@
 // Block states in words, for programs driving the game: `stone`, `oak_stairs[facing=east,half=top]`, `oak_log:1`.
 // A packed block (id | meta << 12) turns into such a name and back, and turns with a structure that's rotated.
-import { B, BLOCKS, idOf, metaOf, pack, blockByName, isStairs, isSlab, isLog, isLeaves, isOriented, isPiston, isRepeater, isRail } from '../world/blocks';
+import { B, B2, BLOCKS, idOf, metaOf, pack, blockByName, isStairs, isSlab, isLeaves, isOriented, isPiston, isRepeater, isRail, isPillar, isDoor, isBed, isButton, isTrapdoor, isGate, isDoublePlant, SHAPE, Shape } from '../world/blocks';
 
 const H4 = ['north', 'east', 'south', 'west'];
 const F6 = ['down', 'up', 'north', 'south', 'west', 'east'];
@@ -8,19 +8,23 @@ const F6 = ['down', 'up', 'north', 'south', 'west', 'east'];
 const H_TO_F6 = [2, 5, 3, 4];
 const F6_TO_H: Record<number, number> = { 2: 0, 5: 1, 3: 2, 4: 3 };
 
-type Family = 'stairs' | 'slab' | 'log' | 'leaves' | 'front' | 'door' | 'bed' | 'torch' | 'switch' | 'ladder' | 'diode' | 'anvil' | 'facing6' | 'hopper' | 'none';
+type Family = 'stairs' | 'slab' | 'log' | 'leaves' | 'front' | 'door' | 'bed' | 'torch' | 'switch' | 'ladder' | 'diode' | 'anvil' | 'facing6' | 'hopper' | 'trapdoor' | 'rot16' | 'vine' | 'plant2' | 'none';
 
 export function familyOf(id: number): Family {
   if (isStairs(id)) return 'stairs';
   if (isSlab(id)) return 'slab';
-  if (isLog(id)) return 'log';
+  if (isPillar(id) || SHAPE[id] === Shape.Chain) return 'log';
   if (isLeaves(id)) return 'leaves';
-  if (isOriented(id)) return 'front';
-  if (id === B.OAK_DOOR) return 'door';
-  if (id === B.BED) return 'bed';
-  if (id === B.TORCH || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH) return 'torch';
-  if (id === B.LEVER || id === B.STONE_BUTTON) return 'switch';
-  if (id === B.LADDER) return 'ladder';
+  if (isOriented(id) || isGate(id) || SHAPE[id] === Shape.Campfire || id === B2.GRINDSTONE || id === B2.BELL || id === B2.LECTERN) return 'front';
+  if (isDoor(id)) return 'door';
+  if (isBed(id)) return 'bed';
+  if (isTrapdoor(id)) return 'trapdoor';
+  if (isDoublePlant(id)) return 'plant2';
+  if (id === B.TORCH || id === B.REDSTONE_TORCH || id === B.UNLIT_REDSTONE_TORCH || id === B2.SOUL_TORCH) return 'torch';
+  if (id === B.LEVER || isButton(id) || SHAPE[id] === Shape.CoralFan) return 'switch';
+  if (id === B.LADDER || SHAPE[id] === Shape.WallSign || SHAPE[id] === Shape.WallHead || id === B2.COCOA || id === B2.TRIPWIRE_HOOK) return 'ladder';
+  if (SHAPE[id] === Shape.Sign || SHAPE[id] === Shape.Head) return 'rot16';
+  if (SHAPE[id] === Shape.Vine) return 'vine';
   if (isRepeater(id) || id === B.COMPARATOR) return 'diode';
   if (id === B.ANVIL) return 'anvil';
   if (isPiston(id) || id === B.DISPENSER || id === B.DROPPER || id === B.OBSERVER) return 'facing6';
@@ -32,7 +36,9 @@ export function familyOf(id: number): Family {
 export function stateOf(v: number): Record<string, string> {
   const id = idOf(v), m = metaOf(v);
   switch (familyOf(id)) {
-    case 'stairs': return { facing: H4[m & 3], half: m & 4 ? 'top' : 'bottom' };
+    case 'stairs': return { facing: H4[m & 3], half: m & 4 ? 'top' : 'bottom', ...(m & 8 ? { waterlogged: 'true' } : {}) };
+    case 'trapdoor': return { facing: H4[m & 3], half: m & 4 ? 'top' : 'bottom', open: m & 8 ? 'true' : 'false' };
+    case 'rot16': return { rotation: String(m) };
     case 'slab': return { half: m & 1 ? 'top' : 'bottom' };
     case 'log': return { axis: ['y', 'x', 'z'][m] ?? 'y' };
     case 'leaves': return { persistent: m & 1 ? 'true' : 'false' };
@@ -159,10 +165,12 @@ export function rotateBlock(v: number, q: number): number {
   const id = idOf(v), m = metaOf(v);
   const turn = (h: number) => (h + q) & 3;
   switch (familyOf(id)) {
-    case 'stairs': case 'front': case 'diode': case 'door': case 'bed': return pack(id, (m & ~3) | turn(m & 3));
+    case 'stairs': case 'front': case 'diode': case 'door': case 'bed': case 'trapdoor': return pack(id, (m & ~3) | turn(m & 3));
     case 'anvil': return pack(id, turn(m));
-    case 'ladder': return pack(id, turn(m & 3));
-    case 'log': return q & 1 && m !== 0 ? pack(id, m === 1 ? 2 : 1) : v;
+    case 'ladder': return pack(id, (m & ~3) | turn(m & 3));
+    case 'rot16': return pack(id, (m + q * 4) & 15);
+    case 'vine': { let o = 0; for (let d = 0; d < 4; d++) if (m & (1 << d)) o |= 1 << turn(d); return pack(id, o); }
+    case 'log': return q & 1 && (m & 7) !== 0 ? pack(id, (m & 8) | ((m & 7) === 1 ? 2 : 1)) : v;
     case 'torch': case 'switch': { const a = m & 7; return a === 0 ? v : pack(id, (m & 8) | (turn(a - 1) + 1)); }
     case 'facing6': case 'hopper': { const f = m & 7, h = F6_TO_H[f]; return h === undefined ? v : pack(id, (m & 8) | H_TO_F6[turn(h)]); }
     default: return isRail(id) && q & 1 && m < 2 ? pack(id, m ^ 1) : v;
@@ -172,8 +180,8 @@ export function rotateBlock(v: number, q: number): number {
 /** Blocks made of two halves (doors, beds): the other half's offset and block, for a lower/foot half. */
 export function partnerOf(v: number): [number, number, number, number] | null {
   const id = idOf(v), m = metaOf(v);
-  if (id === B.OAK_DOOR && !(m & 8)) return [0, 1, 0, pack(id, (m & 7) | 8)];
-  if (id === B.BED && !(m & 8)) {
+  if ((isDoor(id) || isDoublePlant(id)) && !(m & 8)) return [0, 1, 0, pack(id, (m & 7) | 8)];
+  if (isBed(id) && !(m & 8)) {
     const d = [[0, -1], [1, 0], [0, 1], [-1, 0]][m & 3];
     return [d[0], 0, d[1], pack(id, (m & 3) | 8)];
   }

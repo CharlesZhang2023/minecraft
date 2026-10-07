@@ -1,8 +1,19 @@
+/** Combat rules the player calls into (filled in by combat.ts when it loads: importing it here would make a cycle). */
+export const playerHooks = {
+  combatTick: (_p: Player) => {},
+  shieldBlocks: (_g: import('./game').Game, _p: Player, _amount: number, _source: DamageSource, _attacker: Entity | null) => false,
+  useTotem: (_g: import('./game').Game, _p: Player, _source: DamageSource) => false,
+  vanishOnDeath: (_p: Player) => {},
+  soulSpeed: (_p: Player) => 1,
+};
+import { live } from '../mod/hooks';
+import { getItem } from './items';
 import { LivingEntity, DamageSource } from '../entity/living';
 import type { Entity } from '../entity/entity';
 import type { World } from '../world/world';
 import { Inventory } from './inventory';
 import { I6 } from './items';
+import { B, B2 } from '../world/blocks';
 import type { Mount } from '../entity/mount';
 
 export enum GameMode { Survival = 0, Creative = 1, Adventure = 2, Spectator = 3 }
@@ -32,8 +43,28 @@ export class Player extends LivingEntity {
   xpProgress = 0;
   xpTotal = 0;
   spawnX = 0; spawnY = 80; spawnZ = 0;
+  /** Where the spawn point is: the world spawn, a bed (overworld) or a respawn anchor (the Nether). */
+  spawnKind: 'world' | 'bed' | 'anchor' = 'world';
   difficulty = 2; // 0 peaceful .. 3 hard
   sleeping = false;
+  /** Parrots riding on the shoulders (variant, health and owner, to put back into the world). */
+  shoulderLeft: { variant: number; health: number; ownerName: string } | null = null;
+  shoulderRight: { variant: number; health: number; ownerName: string } | null = null;
+  /** 1.9 combat: ticks since the last swing (or since the held item changed), and which item that was. */
+  attackTicks = 0;
+  lastHeldId = 0;
+  /** Holding a shield up (and ticks until an axe-disabled shield works again). */
+  blocking = false;
+  shieldCooldown = 0;
+  /** What's being used with the button held ('bow', 'shield', 'crossbow', 'trident', ''), for poses. */
+  using = '';
+  useTicks = 0;
+  /** Swimming (1.13): lying flat in the water, 0.6 blocks tall. */
+  swimming = false;
+  /** Spinning along after a riptide throw (client). */
+  riptideTicks = 0;
+  /** Ticks since the player last slept (phantoms come after three days). */
+  restTicks = 0;
   sleepTimer = 0;
   eatingTicks = 0;
   distWalked = 0;
@@ -100,7 +131,7 @@ export class Player extends LivingEntity {
    */
   updatePose() {
     let h = 1.8;
-    if (this.gliding) h = 0.6;
+    if (this.gliding || this.swimming) h = 0.6;
     else if (this.height < 1.8) {
       const b = this.box;
       if (this.collisions({ ...b, y1: b.y0 + 1.8 }).length) h = 0.6;
@@ -108,7 +139,9 @@ export class Player extends LivingEntity {
     this.height = h;
   }
   override isFlying() { return this.flying; }
-  override groundSpeed() { return this.moveSpeed * (this.sprinting ? 1.3 : 1); }
+  override groundSpeed() { return this.moveSpeed * (this.sprinting ? 1.3 : 1) * playerHooks.soulSpeed(this) * (this.blocking || this.using === 'bow' || this.using === 'crossbow' || this.using === 'trident' ? 0.2 : 1); }
+  /** Armour toughness (1.9): diamond 2 a piece, netherite 3. */
+  override armorToughness() { return this.inventory.armor.reduce((t, s) => t + (s ? getItem(s.id).armor?.toughness ?? 0 : 0), 0); }
   override airSpeed() {
     if (this.flying) return 0.05 * (this.sprinting ? 2 : 1);
     return this.sprinting ? 0.026 : 0.02;
@@ -176,6 +209,7 @@ export class Player extends LivingEntity {
       return;
     }
     this.armor = this.inventory.armorPoints();
+    playerHooks.combatTick(this);
     this.livingTick();
     // walking distance for bobbing / hunger
     const dx = this.x - ox, dz = this.z - oz;
@@ -201,6 +235,13 @@ export class Player extends LivingEntity {
   /** Keep gliding while it's possible; count its ticks and the rocket's pull; size the player to match. */
   updateGlide() {
     if (this.gliding && !this.canGlide()) this.gliding = false;
+    // 1.13 swimming: sprinting with the head under water lays you flat; it lasts while you keep sprinting in water
+    if (this.clientSide) {
+      const eyes = this.world.getId(Math.floor(this.x), Math.floor(this.y + (this.swimming ? 0.3 : 1.62)), Math.floor(this.z));
+      const underwater = eyes === B.WATER || eyes === B2.BUBBLE_COLUMN;
+      if (!this.swimming && this.sprinting && this.inWater && underwater && !this.flying && !this.riding) this.swimming = true;
+      else if (this.swimming && (!this.inWater || !this.sprinting || this.flying || this.riding)) this.swimming = false;
+    }
     this.glideTicks = this.gliding ? this.glideTicks + 1 : 0;
     if (this.rocketBoost > 0) this.rocketBoost--;
     this.updatePose();
@@ -208,6 +249,20 @@ export class Player extends LivingEntity {
 
   /** Vanilla's elytra flight (1.12 EntityLivingBase.travel): look down to dive and gain speed, up to climb it off. */
   override travel(strafe: number, forward: number) {
+    if (this.swimming && this.inWater) {
+      // swimming moves along the look, up and down included (dolphin's grace speeds it up)
+      const yaw = (this.yaw * Math.PI) / 180, pitch = (this.pitch * Math.PI) / 180;
+      const sp = 0.04 * (this.effects.has('dolphins_grace') ? 2.5 : 1) * (1 + Math.min(3, this.depthStrider()) * 0.3);
+      if (forward > 0) {
+        this.vx += -Math.sin(yaw) * Math.cos(pitch) * sp;
+        this.vy += -Math.sin(pitch) * sp;
+        this.vz += Math.cos(yaw) * Math.cos(pitch) * sp;
+      }
+      this.moveRelative(strafe, 0, 0.02);
+      this.move(this.vx, this.vy, this.vz);
+      this.vx *= 0.9; this.vy *= 0.9; this.vz *= 0.9;
+      return;
+    }
     if (!this.gliding) { super.travel(strafe, forward); return; }
     const yaw = (this.yaw * Math.PI) / 180, pitch = (this.pitch * Math.PI) / 180;
     const lx = -Math.sin(yaw) * Math.cos(pitch), ly = -Math.sin(pitch), lz = Math.cos(yaw) * Math.cos(pitch);
@@ -251,7 +306,7 @@ export class Player extends LivingEntity {
    * where you look when swinging) and never lets the head twist more than 75° from it. */
   protected turnBody(dx: number, dz: number) {
     this.headYaw = this.yaw;
-    if (this.gliding) { this.bodyYaw = this.yaw; return; }
+    if (this.gliding || this.swimming) { this.bodyYaw = this.yaw; return; }
     let target = this.bodyYaw;
     if (dx * dx + dz * dz > 0.0025) {
       target = (Math.atan2(dz, dx) * 180) / Math.PI - 90;
@@ -345,8 +400,11 @@ export class Player extends LivingEntity {
       }
       if (epf) amount *= 1 - Math.min(20, epf) / 25;
     }
+    // a raised shield takes hits from the front
+    if (live.game && playerHooks.shieldBlocks(live.game, this, amount, source, attacker ?? null)) return false;
     const before = this.health;
     const r = super.damage(amount, source, attacker);
+    if (r) live.game?.playerOf(this)?.achievements.stat('damage_taken', Math.round(Math.min(amount, before) * 10));
     if (r && attacker && (source === 'mob' || source === 'player')) {
       // Thorns: 15% chance per level to hurt the attacker for 1-4
       const th = this.inventory.armor.reduce((m, a) => Math.max(m, a?.ench?.thorns ?? 0), 0);
@@ -363,7 +421,11 @@ export class Player extends LivingEntity {
   }
 
   override die(source: DamageSource, attacker: Entity | null) {
+    // a totem of undying in either hand: not today
+    if (live.game && playerHooks.useTotem(live.game, this, source)) return;
+    playerHooks.vanishOnDeath(this);
     super.die(source, attacker);
+    live.game?.playerOf(this)?.achievements.died(attacker ? (attacker as unknown as { typeName?: string }).typeName ?? '' : '');
     const who = attacker ? (attacker as unknown as { typeName?: string }).typeName ?? 'something' : '';
     const msgs: Record<string, string> = {
       fall: 'Player hit the ground too hard',
@@ -432,8 +494,8 @@ export class Player extends LivingEntity {
       health: this.health, food: this.food, saturation: this.saturation, air: this.air,
       xpLevel: this.xpLevel, xpProgress: this.xpProgress, xpTotal: this.xpTotal,
       gameMode: this.gameMode, flying: this.flying, inventory: this.inventory.toJSON(),
-      spawn: [this.spawnX, this.spawnY, this.spawnZ], fireTicks: this.fireTicks,
-      effects: [...this.effects.values()], absorption: this.absorption,
+      spawn: [this.spawnX, this.spawnY, this.spawnZ], spawnKind: this.spawnKind, fireTicks: this.fireTicks,
+      effects: [...this.effects.values()], absorption: this.absorption, restTicks: this.restTicks,
     };
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -446,11 +508,13 @@ export class Player extends LivingEntity {
     this.flying = !!d.flying && this.canFly;
     this.inventory.load(d.inventory);
     if (d.spawn) [this.spawnX, this.spawnY, this.spawnZ] = d.spawn;
+    this.spawnKind = d.spawnKind ?? (d.spawn ? 'bed' : 'world');
     this.fireTicks = d.fireTicks ?? 0;
     this.effects.clear();
     for (const e of d.effects ?? []) this.effects.set(e.id, { ...e });
     this.effectsChanged();
     this.absorption = d.absorption ?? 0;
+    this.restTicks = d.restTicks ?? 0;
     if (this.health <= 0) { this.dead = true; }
   }
 }
