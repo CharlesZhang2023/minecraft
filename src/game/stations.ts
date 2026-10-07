@@ -227,7 +227,7 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
       g.redstone.update(x, y, z);
       return true;
     case B2.BELL:
-      g.audio.play('bell', at(x, y, z), 1.5, 1);
+      ringBell(g, x, y, z);
       return true;
     case B2.SWEET_BERRY_BUSH:
       if (m < 2) return false;
@@ -420,4 +420,18 @@ export function stationScheduled(w: World, x: number, y: number, z: number): boo
   const v = w.get(x, y, z);
   if (idOf(v) === B2.COMPOSTER && metaOf(v) === 7) { w.set(x, y, z, pack(B2.COMPOSTER, 8)); return true; }
   return false;
+}
+
+/** A bell rung (1.14): raiders within 48 blocks glow for a while, villagers within 32 hurry to their beds. */
+export function ringBell(g: Game, x: number, y: number, z: number) {
+  g.audio.play('bell', at(x, y, z), 1.5, 1);
+  for (const e of g.entities) {
+    const m = e as unknown as { typeName?: string; addEffect?(id: string, t: number, a: number): void; home?: { x: number; y: number; z: number } | null; setPathTo?(x: number, y: number, z: number, s: number): void; panicTicks?: number; baby?: boolean };
+    const d = Math.hypot(e.x - x - 0.5, e.y - y, e.z - z - 0.5);
+    if (d < 48 && ['Pillager', 'Vindicator', 'Evoker', 'Ravager', 'Witch', 'Illusioner'].includes(m.typeName ?? '')) m.addEffect?.('glowing', 60, 0);
+    if (d < 32 && m.typeName === 'Villager') {
+      if (m.home) m.setPathTo?.(m.home.x, m.home.y, m.home.z, 0.06);
+      else m.panicTicks = 100;
+    }
+  }
 }

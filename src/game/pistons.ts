@@ -3,7 +3,7 @@
 // Moving blocks live for 2 ticks as MOVING_PISTON tiles and are rendered sliding between positions.
 import type { Game } from './game';
 import type { World } from '../world/world';
-import { B, BLOCKS, FACING6, idOf, metaOf, pack, isPiston, isLeaves, Render } from '../world/blocks';
+import { B, B2, BLOCKS, FACING6, idOf, metaOf, pack, isPiston, isLeaves, Render } from '../world/blocks';
 import { F6_D6 } from './redstone';
 
 type V3 = [number, number, number];
@@ -22,7 +22,7 @@ export function mobility(w: World, x: number, y: number, z: number): number {
   if (y < 0 || y > 255) return 2;
   if (id === B.AIR) return 0;
   const def = BLOCKS[id];
-  if (id === B.OBSERVER || id === B.SLIME_BLOCK || id === B.ANVIL) return 0;
+  if (id === B.OBSERVER || id === B.SLIME_BLOCK || id === B2.HONEY_BLOCK || id === B.ANVIL) return 0;
   if (isPiston(id)) return metaOf(v) & 8 ? 2 : 0;
   if (def.hardness < 0 || id === B.OBSIDIAN || id === B.PISTON_HEAD || id === B.MOVING_PISTON || id === B.NETHER_PORTAL) return 2;
   if (w.getTile(x, y, z) || id === B.CHEST || id === B.FURNACE || id === B.LIT_FURNACE || id === B.ENCHANTING_TABLE || id === B.SPAWNER ||
@@ -45,7 +45,14 @@ class Structure {
     return true;
   }
   private isAir(p: V3) { return this.w.getId(p[0], p[1], p[2]) === B.AIR; }
-  private isSlime(p: V3) { return this.w.getId(p[0], p[1], p[2]) === B.SLIME_BLOCK; }
+  /** Slime and honey (1.15) blocks drag their neighbours along. */
+  private isSlime(p: V3) { const id = this.w.getId(p[0], p[1], p[2]); return id === B.SLIME_BLOCK || id === B2.HONEY_BLOCK; }
+  /** Does `a` pull `b` along? (Slime and honey don't stick to each other.) */
+  private sticks(a: V3, b: V3) {
+    const x = this.w.getId(a[0], a[1], a[2]), y = this.w.getId(b[0], b[1], b[2]);
+    if ((x === B.SLIME_BLOCK && y === B2.HONEY_BLOCK) || (x === B2.HONEY_BLOCK && y === B.SLIME_BLOCK)) return false;
+    return this.isSlime(a) || this.isSlime(b);
+  }
   private idx(p: V3) { return this.move.findIndex((q) => eq(q, p)); }
 
   resolve(): boolean {
@@ -73,7 +80,7 @@ class Structure {
     let cur = origin;
     while (this.isSlime(cur)) {
       const back = add(origin, this.dir, -i);
-      if (this.isAir(back) || mobility(this.w, back[0], back[1], back[2]) !== 0 || eq(back, this.piston)) break;
+      if (this.isAir(back) || mobility(this.w, back[0], back[1], back[2]) !== 0 || eq(back, this.piston) || !this.sticks(cur, back)) break;
       cur = back;
       i++;
       if (i + this.move.length > MAX_PUSH) return false;
@@ -107,7 +114,9 @@ class Structure {
   private addBranches(p: V3): boolean {
     for (const d of FACING6) {
       if ((d[0] !== 0 && this.dir[0] !== 0) || (d[1] !== 0 && this.dir[1] !== 0) || (d[2] !== 0 && this.dir[2] !== 0)) continue;
-      if (!this.addLine(add(p, d))) return false;
+      const n = add(p, d);
+      if (!this.sticks(p, n)) continue;
+      if (!this.addLine(n)) return false;
     }
     return true;
   }

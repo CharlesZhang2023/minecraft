@@ -184,20 +184,31 @@ export class EntityRenderer {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.skins.get(skin)!);
     gl.uniform1i(p.u.u_skin, 0);
-    for (const [name, part] of m.parts) {
-      if (skip?.has(name)) continue;
-      const d = part.def;
-      const rot = pose[name] ?? [d.rx ?? 0, d.ry ?? 0, d.rz ?? 0];
-      const off = offsets?.[name] ?? [0, 0, 0];
-      const mm = this.tmp;
-      translate(mm, base, (d.px + off[0]) / 16, (d.py + off[1]) / 16, (d.pz + off[2]) / 16);
-      if (rot[2]) rotateZ(mm, mm, rot[2]);
-      if (rot[1]) rotateY(mm, mm, rot[1]);
-      if (rot[0]) rotateX(mm, mm, rot[0]);
-      scale(mm, mm, 1 / 16, 1 / 16, 1 / 16);
-      gl.uniformMatrix4fv(p.u.u_model, false, mm);
-      gl.bindVertexArray(part.vao);
-      gl.drawElements(gl.TRIANGLES, (part.count / 4) * 6, gl.UNSIGNED_INT, 0);
+    const parts = () => {
+      for (const [name, part] of m.parts) {
+        if (skip?.has(name)) continue;
+        const d = part.def;
+        const rot = pose[name] ?? [d.rx ?? 0, d.ry ?? 0, d.rz ?? 0];
+        const off = offsets?.[name] ?? [0, 0, 0];
+        const mm = this.tmp;
+        translate(mm, base, (d.px + off[0]) / 16, (d.py + off[1]) / 16, (d.pz + off[2]) / 16);
+        if (rot[2]) rotateZ(mm, mm, rot[2]);
+        if (rot[1]) rotateY(mm, mm, rot[1]);
+        if (rot[0]) rotateX(mm, mm, rot[0]);
+        scale(mm, mm, 1 / 16, 1 / 16, 1 / 16);
+        gl.uniformMatrix4fv(p.u.u_model, false, mm);
+        gl.bindVertexArray(part.vao);
+        gl.drawElements(gl.TRIANGLES, (part.count / 4) * 6, gl.UNSIGNED_INT, 0);
+      }
+    };
+    parts();
+    // the glowing effect: whatever of it is hidden behind blocks shows as a pale silhouette
+    if (this.glow) {
+      gl.depthFunc(gl.GREATER);
+      gl.uniform4fv(p.u.u_overlay, [1, 1, 1, 0.85]);
+      gl.uniform2f(p.u.u_light, 15, 15);
+      parts();
+      gl.depthFunc(gl.LEQUAL);
     }
     gl.bindVertexArray(null);
   }
@@ -281,7 +292,7 @@ export class EntityRenderer {
         this.billboard(dyn, x, y + 0.12, z, 0.35, TEXTURES.indexOf('item/fishing_bobber'), 0xffffff, sky, blk);
         this.fishingLine(game, e, x, y, z, t);
       }
-      else if (e instanceof LivingEntity) { if (!e.effects.has('invisibility')) this.drawLiving(game, e, x, y, z, t, sky, blk); }
+      else if (e instanceof LivingEntity) { if (!e.effects.has('invisibility')) { this.glow = e.effects.has('glowing'); this.drawLiving(game, e, x, y, z, t, sky, blk); this.glow = false; } }
     }
     // beams from healing crystals to the dragon
     for (const e of list) {
@@ -1427,6 +1438,8 @@ export class EntityRenderer {
     }
   }
   private bannerKeys: string[] = [];
+  /** The entity being drawn has the glowing effect (drawModel adds its silhouette through walls). */
+  private glow = false;
 
   /** A map in an item frame fills the frame, turned in quarter turns. */
   private drawFramedMap(game: Game, e: ItemFrame, x: number, y: number, z: number, sky: number, blk: number) {
