@@ -212,9 +212,9 @@ export class PiglinBrute extends GoalMob {
   typeName = 'Piglin Brute';
   override model = 'piglin';
   override skin = 'piglin_brute';
-  override sayName = 'piglin.say';
-  override hurtName = 'piglin.hurt';
-  override deathName = 'piglin.death';
+  override sayName = 'piglin_brute.say';
+  override hurtName = 'piglin_brute.hurt';
+  override deathName = 'piglin_brute.death';
   override hostile = true;
   override speedAttr = 0.35;
   override holding = true;
@@ -296,8 +296,8 @@ export class Zoglin extends GoalMob {
   override model = 'hoglin';
   override skin = 'zoglin';
   override sayName = 'zoglin.say';
-  override hurtName = 'hoglin.hurt';
-  override deathName = 'hoglin.death';
+  override hurtName = 'zoglin.hurt';
+  override deathName = 'zoglin.death';
   override hostile = true;
   override undead = true;
   override speedAttr = 0.25;
@@ -436,6 +436,8 @@ const lavaWander = (priority: number): Goal => ({
 
 // ------------------------------------------------------------------ magma cubes and wither skeletons
 export class MagmaCube extends Slime {
+  override hurtName = 'magma_cube.squish';
+  override deathName = 'magma_cube.squish';
   override typeName = 'Magma Cube';
   override model = 'slime';
   override skin = 'magma_cube';
@@ -465,9 +467,9 @@ export class WitherSkeleton extends GoalMob {
   typeName = 'Wither Skeleton';
   override model = 'bipedThin';
   override skin = 'wither_skeleton';
-  override sayName = 'skeleton.say';
-  override hurtName = 'skeleton.hurt';
-  override deathName = 'skeleton.hurt';
+  override sayName = 'wither_skeleton.say';
+  override hurtName = 'wither_skeleton.hurt';
+  override deathName = 'wither_skeleton.death';
   override hostile = true;
   override undead = true;
   override fireImmune = true;

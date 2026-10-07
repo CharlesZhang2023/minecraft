@@ -460,6 +460,21 @@ const SYNTH_AS: Record<string, string> = {
   'chicken.plop': 'pop', 'bucket.empty': 'splash', 'bucket.fill': 'splash', 'bucket.emptyLava': 'fizz', 'bucket.fillLava': 'fizz',
   'bottle.fill': 'swim', 'bobber.splash': 'splash', shears: 'dig.cloth', 'slime.small': 'slime.jump',
   'wolf.growl': 'wolf.say', 'wolf.whine': 'wolf.say', 'wolf.pant': 'wolf.say', 'enderman.scream': 'enderman.idle',
+  // the 1.9 - 1.16 mobs with voices of their own in the recorded set sound like their older relatives here
+  'husk.say': 'zombie.say', 'husk.hurt': 'zombie.hurt', 'husk.death': 'zombie.death', 'husk.step': 'zombie.step',
+  'drowned.say': 'zombie.say', 'drowned.hurt': 'zombie.hurt', 'drowned.death': 'zombie.death', 'drowned.step': 'zombie.step',
+  'zombie_villager.say': 'zombie.say', 'zombie_villager.hurt': 'zombie.hurt', 'zombie_villager.death': 'zombie.death',
+  'zombie_horse.say': 'zombie.say', 'zombie_horse.hurt': 'zombie.hurt', 'zombie_horse.death': 'zombie.death',
+  'stray.say': 'skeleton.say', 'stray.hurt': 'skeleton.hurt', 'stray.death': 'skeleton.death', 'stray.step': 'skeleton.step',
+  'wither_skeleton.say': 'skeleton.say', 'wither_skeleton.hurt': 'skeleton.hurt', 'wither_skeleton.death': 'skeleton.hurt',
+  'skeleton_horse.say': 'skeleton.say', 'skeleton_horse.hurt': 'skeleton.hurt', 'skeleton_horse.death': 'skeleton.hurt',
+  'pillager.idle': 'illager.idle', 'pillager.hurt': 'illager.hurt', 'pillager.death': 'illager.death',
+  'vindicator.idle': 'illager.idle', 'vindicator.hurt': 'illager.hurt', 'vindicator.death': 'illager.death',
+  'evoker.idle': 'illager.idle', 'evoker.hurt': 'illager.hurt', 'evoker.death': 'illager.death',
+  'elder_guardian.idle': 'guardian.idle', 'elder_guardian.hurt': 'guardian.hurt', 'elder_guardian.death': 'guardian.death',
+  'piglin_brute.say': 'piglin.say', 'piglin_brute.hurt': 'piglin.hurt', 'piglin_brute.death': 'piglin.death',
+  'zoglin.hurt': 'hoglin.hurt', 'zoglin.death': 'hoglin.death', 'magma_cube.squish': 'slime.squish',
+  'wandering_trader.idle': 'villager.idle', 'wandering_trader.hurt': 'villager.hurt', 'wandering_trader.death': 'villager.death',
 };
 /** The synthesised voices pitched for the mob (the game asks with vanilla's pitches). */
 const SYNTH_PITCH: Record<string, number> = { 'bat.idle': 1.8 / 0.95, 'ghast.moan': 0.7, 'ghast.scream': 0.7, 'ghast.death': 0.7 };
@@ -563,7 +578,8 @@ export class Audio {
   private synthName(name: string): string | null {
     if (GENS[name]) return name;
     const as = SYNTH_AS[name] ?? (/^(step|place)\./.test(name) ? 'dig.' + name.slice(name.indexOf('.') + 1) : '');
-    return as && GENS[as] ? as : null;
+    // (one more step: a newer mob's name stands for an older one's, which may itself stand for another)
+    return as && GENS[as] ? as : as && SYNTH_AS[as] && GENS[SYNTH_AS[as]] ? SYNTH_AS[as] : null;
   }
 
   private get(name: string): AudioBuffer | null {

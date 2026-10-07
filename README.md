@@ -33,7 +33,8 @@ npm run sounds -- ~/Downloads/SoundPack/assets/minecraft/sounds
 ```
 
 It takes only the sounds the game plays (`tools/sounds/vanilla.mjs` says which file is which) and re-encodes them
-as Opus into `public/sounds/`: the sound effects as one ~1.8 MB file, and the music (~34 MB, 28 tracks) as one
+as Opus into `public/sounds/`: the sound effects (366 names, every mob of 1.16 with its own voice, note blocks,
+bells, shields, tridents, crossbows and more) as one ~4.4 MB file, and the music (~34 MB, 28 tracks) as one
 file per track, downloaded only when it's about to play. Both are kept in the browser once downloaded (a track is
 fetched at most once, and plays offline). Options: `--sfx-kbps 32`, `--music-kbps 32`, `--no-music`. The folder is
 Mojang's audio, so it stays out of git; without it (or in a browser that can't decode Ogg Opus) the synthesised
@@ -150,7 +151,9 @@ agents work in that world. With no game open, `mc launch` starts a headless brow
 - Synthesized sound effects: per-material digging and footsteps, mob voices, explosions, fizzes and portals.
   Generative ambient piano music.
 - Or vanilla's recorded sounds and music (see [Vanilla sounds](#vanilla-sounds-optional)), played by vanilla's
-  rules: separate break/place/footstep sounds per material, mob footsteps, hurt and death voices, fall sounds,
+  rules: separate break/place/footstep sounds per material, mob footsteps, hurt and death voices (each mob of
+  1.9 - 1.16 its own; without the recorded set the newer ones borrow an older relative's), note block instruments,
+  fall sounds,
   rain pattering (muffled under a roof), fire, lava, portal and flowing-water ambience, and music that fits
   (title screen, survival, creative, Nether, End, the dragon fight, credits) with quiet spells in between.
 

@@ -420,9 +420,9 @@ export class SkeletonHorse extends Horse {
   override kind: HorseKind = 'skeleton';
   override undead = true;
   override canBreathe = true;
-  override sayName = 'skeleton.say';
-  override hurtName = 'skeleton.hurt';
-  override deathName = 'skeleton.hurt';
+  override sayName = 'skeleton_horse.say';
+  override hurtName = 'skeleton_horse.hurt';
+  override deathName = 'skeleton_horse.death';
   /** A trap: when a player comes within 10 blocks, lightning strikes and four horsemen appear. */
   trap = false;
   private trapAge = 0;
@@ -450,9 +450,9 @@ export class ZombieHorse extends Horse {
   override typeName = 'Zombie Horse';
   override kind: HorseKind = 'zombie';
   override undead = true;
-  override sayName = 'zombie.say';
-  override hurtName = 'zombie.hurt';
-  override deathName = 'zombie.death';
+  override sayName = 'zombie_horse.say';
+  override hurtName = 'zombie_horse.hurt';
+  override deathName = 'zombie_horse.death';
   constructor(world: World, game: Game) {
     super(world, game);
     this.maxHealth = this.health = 15;

@@ -23,6 +23,10 @@ const diff = (g: Game) => g.options.difficulty;
 // ------------------------------------------------------------------ zombie kin
 /** Husks: desert zombies that don't burn and leave you hungry. */
 export class Husk extends Zombie {
+  override sayName = 'husk.say';
+  override hurtName = 'husk.hurt';
+  override deathName = 'husk.death';
+  override stepName = 'husk.step';
   override typeName = 'Husk';
   override skin = 'husk';
   override burnsInDay = false;
@@ -33,6 +37,10 @@ export class Husk extends Zombie {
 
 /** Drowned: zombies of the deep, swimming after their prey; some carry tridents or nautilus shells. */
 export class Drowned extends Zombie {
+  override sayName = 'drowned.say';
+  override hurtName = 'drowned.hurt';
+  override deathName = 'drowned.death';
+  override stepName = 'drowned.step';
   override typeName = 'Drowned';
   override skin = 'drowned';
   override drownsInto = null;
@@ -76,6 +84,9 @@ export class Drowned extends Zombie {
 
 /** Zombie villagers: a villager the zombies got. Weakness and a golden apple cure them, a few minutes later. */
 export class ZombieVillager extends Zombie {
+  override sayName = 'zombie_villager.say';
+  override hurtName = 'zombie_villager.hurt';
+  override deathName = 'zombie_villager.death';
   override typeName = 'Zombie Villager';
   override model = 'illager';
   override skin = 'zombie_villager';
@@ -114,6 +125,10 @@ export class ZombieVillager extends Zombie {
 
 /** Strays: snowy skeletons whose arrows slow. */
 export class Stray extends Skeleton {
+  override sayName = 'stray.say';
+  override hurtName = 'stray.hurt';
+  override deathName = 'stray.death';
+  override stepName = 'stray.step';
   override typeName = 'Stray';
   override skin = 'stray';
   override arrowEffect: [string, number, number] = ['slowness', 600, 0];
@@ -270,6 +285,9 @@ export abstract class Illager extends GoalMob {
 }
 
 export class Pillager extends Illager {
+  override sayName = 'pillager.idle';
+  override hurtName = 'pillager.hurt';
+  override deathName = 'pillager.death';
   kind = 'pillager';
   typeName = 'Pillager';
   override skin = 'pillager';
@@ -284,6 +302,9 @@ export class Pillager extends Illager {
 }
 
 export class Vindicator extends Illager {
+  override sayName = 'vindicator.idle';
+  override hurtName = 'vindicator.hurt';
+  override deathName = 'vindicator.death';
   kind = 'vindicator';
   typeName = 'Vindicator';
   override skin = 'vindicator';
@@ -301,6 +322,9 @@ export class Vindicator extends Illager {
 
 /** Evokers: keep their distance and cast fangs, summon vexes, and turn blue sheep red. */
 export class Evoker extends Illager {
+  override sayName = 'evoker.idle';
+  override hurtName = 'evoker.hurt';
+  override deathName = 'evoker.death';
   kind = 'evoker';
   typeName = 'Evoker';
   override skin = 'evoker';
@@ -679,6 +703,9 @@ export class Guardian extends Mob {
   }
 }
 export class ElderGuardian extends Guardian {
+  override sayName = 'elder_guardian.idle';
+  override hurtName = 'elder_guardian.hurt';
+  override deathName = 'elder_guardian.death';
   constructor(world: World, game: Game) { super(world, game); this.makeElder(); }
   override toJSON() { return { ...super.toJSON(), type: 'elder_guardian' }; }
 }
@@ -842,6 +869,8 @@ export class IronGolem extends GoalMob {
 
 /** Snow golems: throw snowballs at monsters and leave a trail of snow; they melt where it's warm. */
 export class SnowGolem extends GoalMob {
+  override hurtName = 'snow_golem.hurt';
+  override deathName = 'snow_golem.death';
   kind = 'snow_golem';
   typeName = 'Snow Golem';
   override model = 'snow_golem';

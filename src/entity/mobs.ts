@@ -1115,6 +1115,9 @@ export class Wolf extends Animal {
 
 // ------------------------------------------------------------------ ambient: squid & bat
 export class Squid extends Mob {
+  override sayName = 'squid.say';
+  override hurtName = 'squid.hurt';
+  override deathName = 'squid.death';
   typeName = 'Squid';
   override model = 'squid';
   override skin = 'squid';

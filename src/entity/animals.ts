@@ -175,6 +175,9 @@ for (const [name, eff, sec] of [['dandelion', 'saturation', 0.35], ['poppy', 'ni
 export const RABBIT_TYPES = ['brown', 'white', 'black', 'white_splotched', 'gold', 'salt'] as const;
 /** Rabbits: hop about, flee players and wolves, raid carrot crops; their colour depends on the biome. */
 export class Rabbit extends GoalMob {
+  override sayName = 'rabbit.say';
+  override hurtName = 'rabbit.hurt';
+  override deathName = 'rabbit.death';
   kind = 'rabbit';
   typeName = 'Rabbit';
   override model = 'rabbit';
@@ -245,6 +248,9 @@ const raidCrops = (priority: number): Goal => {
 // ------------------------------------------------------------------ foxes
 /** Foxes: hunt chickens, rabbits and fish at night, sleep in the day, pick things up in their mouths, love sweet berries. Bred foxes trust players. */
 export class Fox extends GoalMob {
+  override sayName = 'fox.say';
+  override hurtName = 'fox.hurt';
+  override deathName = 'fox.death';
   kind = 'fox';
   typeName = 'Fox';
   override model = 'fox';
@@ -362,6 +368,9 @@ const pickUpItems = (priority: number): Goal => {
 export const CAT_TYPES = ['tabby', 'black', 'red', 'siamese', 'british_shorthair', 'calico', 'persian', 'ragdoll', 'white', 'jellie', 'all_black'] as const;
 /** Cats: village strays tamed with raw fish. They sit (even on chests and beds), follow, scare creepers and phantoms, and bring gifts. */
 export class Cat extends Tameable {
+  override sayName = 'cat.say';
+  override hurtName = 'cat.hurt';
+  override deathName = 'cat.death';
   kind = 'cat';
   typeName = 'Cat';
   override model = 'cat';
@@ -398,6 +407,9 @@ export class Cat extends Tameable {
 }
 /** Ocelots: shy jungle cats. Fish makes them trust you (they stop running), but they're never tamed. */
 export class Ocelot extends GoalMob {
+  override sayName = 'ocelot.say';
+  override hurtName = 'cat.hurt';
+  override deathName = 'ocelot.death';
   kind = 'ocelot';
   typeName = 'Ocelot';
   override model = 'cat';
@@ -433,6 +445,9 @@ export class Ocelot extends GoalMob {
 export const PARROT_TYPES = ['red', 'blue', 'green', 'cyan', 'grey'] as const;
 /** Parrots: fly about the jungle, tamed with seeds, ride on their owner's shoulder, dance to music, mimic monsters. Cookies kill them. */
 export class Parrot extends Tameable {
+  override sayName = 'parrot.say';
+  override hurtName = 'parrot.hurt';
+  override deathName = 'parrot.death';
   kind = 'parrot';
   typeName = 'Parrot';
   override model = 'parrot';
@@ -557,6 +572,9 @@ export class PolarBear extends GoalMob {
 export const PANDA_GENES = ['normal', 'lazy', 'worried', 'playful', 'aggressive', 'weak', 'brown'] as const;
 /** Pandas: bamboo eaters with personalities (lazy, worried, playful, aggressive, weak, brown); babies sneeze. */
 export class Panda extends GoalMob {
+  override sayName = 'panda.say';
+  override hurtName = 'panda.hurt';
+  override deathName = 'panda.death';
   kind = 'panda';
   typeName = 'Panda';
   override model = 'panda';
@@ -677,6 +695,9 @@ export class TraderLlama extends Llama {
 // ------------------------------------------------------------------ turtles
 /** Turtles: return to their home beach to lay eggs after breeding (fed seagrass); babies drop a scute as they grow up. */
 export class Turtle extends GoalMob {
+  override sayName = 'turtle.say';
+  override hurtName = 'turtle.hurt';
+  override deathName = 'turtle.death';
   kind = 'turtle';
   typeName = 'Turtle';
   override model = 'turtle';
@@ -755,6 +776,9 @@ BLOCKS[B2.TURTLE_EGG].behavior = {
 // ------------------------------------------------------------------ dolphins
 /** Dolphins: playful, need air, speed swimming players with Dolphin's Grace; fed fish, they lead to treasure. */
 export class Dolphin extends GoalMob {
+  override sayName = 'dolphin.say';
+  override hurtName = 'dolphin.hurt';
+  override deathName = 'dolphin.death';
   kind = 'dolphin';
   typeName = 'Dolphin';
   override model = 'dolphin';
@@ -946,11 +970,15 @@ export abstract class Fish extends Mob {
   override loadExtra(d: Record<string, unknown>) { this.fromBucket = !!d.fromBucket; }
 }
 export class Cod extends Fish {
+  override hurtName = 'fish.hurt';
+  override deathName = 'fish.death';
   kind = 'cod'; typeName = 'Cod'; override model = 'cod'; override skin = 'cod';
   bucket = I7.COD_BUCKET;
   override drops(burning: boolean) { return [stack(burning ? itemId('cooked_cod') : I2.COD), ...(rng.int(20) === 0 ? [stack(itemId('bone_meal'))] : [])]; }
 }
 export class Salmon extends Fish {
+  override hurtName = 'fish.hurt';
+  override deathName = 'fish.death';
   kind = 'salmon'; typeName = 'Salmon'; override model = 'salmon'; override skin = 'salmon';
   bucket = I7.SALMON_BUCKET;
   constructor(world: World, game: Game) { super(world, game); this.width = 0.7; this.height = 0.4; }
@@ -958,6 +986,8 @@ export class Salmon extends Fish {
 }
 /** Pufferfish: puff up when something comes close, and poison what touches them. */
 export class Pufferfish extends Fish {
+  override hurtName = 'pufferfish.hurt';
+  override deathName = 'pufferfish.death';
   kind = 'pufferfish'; typeName = 'Pufferfish'; override model = 'pufferfish'; override skin = 'pufferfish';
   bucket = I7.PUFFERFISH_BUCKET;
   /** 0 small, 1 half, 2 full. */
@@ -984,6 +1014,8 @@ export class Pufferfish extends Fish {
 }
 /** Tropical fish: a body shape (small or large), a pattern, and two dye colours (vanilla's 2700 combinations). */
 export class TropicalFish extends Fish {
+  override hurtName = 'fish.hurt';
+  override deathName = 'fish.death';
   kind = 'tropical_fish'; typeName = 'Tropical Fish'; override model = 'tropical_fish'; override skin = 'tropical_fish';
   bucket = I7.TROPICAL_FISH_BUCKET;
   shape = 0;
@@ -1015,6 +1047,9 @@ export function releaseFish(game: Game, held: ItemStack, x: number, y: number, z
 // ------------------------------------------------------------------ the wandering trader
 /** Wandering traders: turn up near players with two llamas, sell rare blocks and plants, and leave after a while. */
 export class WanderingTrader extends Villager {
+  override sayName = 'wandering_trader.idle';
+  override hurtName = 'wandering_trader.hurt';
+  override deathName = 'wandering_trader.death';
   override typeName = 'Wandering Trader';
   override skin = 'wandering_trader';
   override model = 'villager';
