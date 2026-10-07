@@ -55,8 +55,45 @@ export class Spawner {
     if (w.dimension === 'overworld' && g.ticks % 1200 === 0) spawnPhantoms(g, this.rng);
     if (w.dimension === 'overworld' && g.ticks % 24000 === 12000) spawnWanderingTrader(g, this.rng);
     if (w.dimension === 'overworld') tickRaids(g, this.rng);
+    if (w.dimension === 'overworld') this.siege();
     if (w.dimension === 'overworld' && g.ticks % 40 === 0) this.ambient(mobs);
   }
+
+  /** A zombie siege under way: where, and how many zombies are still to come. */
+  siegeAt: { x: number; y: number; z: number; left: number } | null = null;
+  private siegeNight = -1;
+  /**
+   * Zombie sieges (1.4; 1.14 rules): at midnight, one night in ten, a village with someone in it and at least a
+   * handful of villagers is beset by twenty zombies that come in from its edge, whatever the light.
+   */
+  siege() {
+    const g = this.game, w = g.world!, day = Math.floor(g.time / 24000), t = g.time % 24000;
+    if (g.options.difficulty === 0) { this.siegeAt = null; return; }
+    if (t === 18000 && this.siegeNight !== day) {
+      this.siegeNight = day;
+      if (this.rng.next() < 0.1) {
+        for (const p of g.playerEntities()) {
+          const villagers = g.entities.filter((e) => (e as unknown as { typeName?: string }).typeName === 'Villager' && e.distanceTo(p) < 48);
+          if (villagers.length < 5) continue;
+          const cx = villagers.reduce((a, v) => a + v.x, 0) / villagers.length, cz = villagers.reduce((a, v) => a + v.z, 0) / villagers.length;
+          this.startSiege(cx, p.y, cz);
+          break;
+        }
+      }
+    }
+    const s = this.siegeAt;
+    if (!s || g.ticks % 10 !== 0) return;
+    if (s.left <= 0 || g.isDaytime()) { this.siegeAt = null; return; }
+    // one zombie at a time, from somewhere on the village's edge with room to stand
+    const a = this.rng.next() * Math.PI * 2, r = 24 + this.rng.int(8);
+    const x = Math.floor(s.x + Math.cos(a) * r), z = Math.floor(s.z + Math.sin(a) * r);
+    if (!w.isLoaded(x, z)) return;
+    const y = w.topSolidY(x, z) + 1;
+    if (y <= 0 || BLOCKS[w.getId(x, y, z)].solid || BLOCKS[w.getId(x, y + 1, z)].solid) return;
+    g.interact!.spawnMob('zombie', x + 0.5, y, z + 0.5);
+    s.left--;
+  }
+  startSiege(x: number, y: number, z: number) { this.siegeAt = { x, y, z, left: 20 }; }
 
   /** Squid in deep water, bats in dark caves. */
   private ambient(mobs: Mob[]) {

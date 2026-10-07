@@ -66,6 +66,12 @@ await wait(800);
 await t.shot('villagers-asleep');
 await t.look(null);
 
+// a zombie siege: zombies come in from the village's edge at night
+const before = await t.page.evaluate(() => window.sim((g, p) => { g.time = 18500; g.dims.get('overworld').spawner.startSiege(p.x, p.y, p.z); return g.entities.filter((e) => e.typeName === 'Zombie').length; }));
+await wait(3000);
+const after = await t.page.evaluate(() => window.sim((g) => g.entities.filter((e) => e.typeName === 'Zombie').length));
+ok(after - before >= 3, `a siege brings zombies (${after - before} so far)`);
+
 ok(t.errors.length === 0, 'no page errors ' + t.errors.slice(0, 3).join(' | '));
 await t.close();
 console.log(fails.length ? `${fails.length} failed` : 'all passed');
