@@ -37,6 +37,7 @@ import { GENERATOR_VERSION } from '../world/worldgen';
 import { EnderDragon, buildExitPortal } from '../entity/dragon';
 import { tickFurnaces } from './furnace';
 import { tickStations } from './stations';
+import { chestLoot } from './loot';
 import { SOUND_FOR } from './audio';
 import type { Conn, Msg } from '../net/conn';
 import { ServerPlayer, NetPlayer } from '../server/splayer';
@@ -90,6 +91,8 @@ const NO_INPUT = new VirtualInput();
 
 export class Game {
   meta: WorldMeta | null = null;
+  /** Rolls structure loot when chunks first load. */
+  lootRng = new Random((Date.now() ^ 0x1007) >>> 0);
   dims = new Map<Dimension, Dim>();
   /** The dimension being simulated right now (gameplay code's `world`, `entities`, `ticker`...). */
   dim: Dim | null = null;
@@ -257,9 +260,18 @@ export class Game {
     world.onTileChange = (x, y, z) => { for (const p of this.players) if (p.dim === d) p.tileChanged(x, y, z); };
     world.canUnload = (c: Chunk) => !this.players.some((p) => p.dim === d && p.holdsChunk(((c.cx + 0x8000) * 0x10000) + (c.cz + 0x8000)));
     world.onChunkLoaded = (c, spawns) => this.inDim(dim, () => {
+      // structure hints first: chests get their loot table, spawners their mob
+      if (spawns) for (const sp of spawns) {
+        if (sp.type !== 'loot' && sp.type !== 'spawner') continue;
+        const i = (sp.x & 15) | ((sp.z & 15) << 4) | (sp.y << 8);
+        if (c.tiles.has(i)) continue;
+        if (sp.type === 'loot') c.tiles.set(i, { type: 'chest', items: chestLoot(String(sp.data?.table), this.lootRng) });
+        else c.tiles.set(i, { type: 'spawner', mob: String(sp.data?.mob ?? 'zombie'), delay: 200 });
+      }
       dim.ticker.onChunkLoaded(c);
       dim.pistons.scanChunk(c.cx, c.cz);
       if (spawns) for (const sp of spawns) {
+        if (sp.type === 'loot' || sp.type === 'spawner') continue;
         const e = createEntity(sp.type, world, this);
         if (!e) continue;
         e.setPos(sp.x, sp.y, sp.z);

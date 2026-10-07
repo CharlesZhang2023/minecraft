@@ -146,8 +146,8 @@ export class Particles {
   heart(x: number, y: number, z: number) {
     this.add({ x, y, z, vy: 0.05, kind: 'heart', layer: PT.heart, size: 0.1, life: 16, gravity: -0.002, collide: false, friction: 0.86 });
   }
-  drip(x: number, y: number, z: number, lava: boolean) {
-    this.add({ x, y, z, kind: 'drip', layer: PT.drip, size: 0.03, life: 40, gravity: 0.03, col: lava ? 0xff6600 : 0x3355ff, fullbright: lava });
+  drip(x: number, y: number, z: number, lava: boolean, col?: number) {
+    this.add({ x, y, z, kind: 'drip', layer: PT.drip, size: 0.03, life: 40, gravity: 0.03, col: col ?? (lava ? 0xff6600 : 0x3355ff), fullbright: lava || col !== undefined });
   }
   rain(x: number, y: number, z: number) {
     this.add({ x, y, z, vy: -0.1, kind: 'rain', layer: PT.splash[rng.int(4)], size: 0.03, life: 6, gravity: 0.06, col: 0x6699ff });

@@ -139,6 +139,7 @@ const ARMOR_MATS: Record<string, { H: string; h: string; d: string; o: string }>
   golden: TOOL_MATS.golden,
   diamond: TOOL_MATS.diamond,
   netherite: TOOL_MATS.netherite,
+  chainmail: { H: '#8a8a8a', h: '#c4c4c4', d: '#4a4a4a', o: '#1a1a1a' },
 };
 const ARMOR_ART: Record<string, string[]> = {
   helmet: [

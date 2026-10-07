@@ -30,7 +30,7 @@ export type Setter = (x: number, y: number, z: number, v: number, force?: boolea
  * produces. Worlds record the version they were made with, so old saves can be recognised (and, if ever needed,
  * generated the old way) after the generator changes.
  */
-export const GENERATOR_VERSION = 1;
+export const GENERATOR_VERSION = 2;
 
 export class WorldGen {
   private cont: Octaves;

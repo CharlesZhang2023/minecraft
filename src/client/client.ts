@@ -16,7 +16,7 @@ import { raycastBlocks, BlockHit } from '../game/raycast';
 import { SubLevel } from '../sublevel/ship';
 import { qmat3, poseMat4, toWorld } from '../sublevel/pose';
 import type { ShipDraw } from '../render/renderer';
-import { BLOCKS, B, idOf, metaOf, TEXTURES, tex, CHUNK_H } from '../world/blocks';
+import { BLOCKS, B, B2, idOf, metaOf, TEXTURES, tex, CHUNK_H } from '../world/blocks';
 import { selectionShapes } from '../world/models';
 import { ItemStack } from '../game/items';
 import { Gui } from '../ui/gui';
@@ -35,7 +35,7 @@ import { rayAABB, clamp } from '../math';
 import { getItemSprite, itemSpriteNames } from '../render/itemsprites';
 import { getTexture } from '../render/textures';
 import { Random } from '../noise';
-import { BIOMES } from '../world/biomes';
+import { BIOMES, BIOME } from '../world/biomes';
 import { Achievements } from '../game/achievements';
 import { LoadingScreen, CreditsScreen, DisconnectedScreen, SleepScreen, DeathScreen } from '../ui/menus';
 import { ContainerScreen } from '../ui/containers';
@@ -1110,6 +1110,8 @@ export class Client {
    * player is drawn, nothing is held in hand and nothing shakes.
    */
   cameraOverride: Partial<Camera> | null = null;
+  /** The Nether's fog colour, eased toward the biome around the camera. */
+  private netherFog: [number, number, number] = [0.2, 0.03, 0.03];
   /** Tools walking the player: given this tick's movement keys, the movement to use instead. */
   steer: ((inp: MoveInput) => MoveInput) | null = null;
   /** Drawn into the world after blocks and entities (lines and boxes from tools, with `r.drawLines`). */
@@ -1201,6 +1203,24 @@ export class Client {
         pt.drip(x + this.rng.next(), y - 1.05, z + this.rng.next(), id === B.LAVA);
       }
       if (id === B.WATER && this.rng.int(10) === 0 && p.inWater) pt.bubble(x + this.rng.next(), y + this.rng.next(), z + this.rng.next());
+      else if ((id === B2.SOUL_TORCH || id === B2.SOUL_FIRE || id === B2.SOUL_CAMPFIRE || id === B2.CAMPFIRE) && this.rng.int(3) === 0) {
+        pt.smoke(x + 0.5, y + (id === B2.SOUL_TORCH ? 0.7 : 0.8), z + 0.5, id !== B2.SOUL_TORCH);
+        if (id === B2.SOUL_TORCH) pt.add({ x: x + 0.5, y: y + 0.7, z: z + 0.5, vy: 0.005, layer: tex('particle_flame'), size: 0.06, life: 15, gravity: 0, fullbright: true, col: 0x60e8ff, kind: 'flame' });
+      } else if (id === B2.CRYING_OBSIDIAN && this.rng.int(5) === 0) pt.drip(x + this.rng.next(), y - 0.05, z + this.rng.next(), false, 0x8a2be2);
+      else if (id === B.SOUL_SAND && this.rng.int(80) === 0 && w.getId(x, y + 1, z) === B.AIR && this.biomeAt(x, z).id === BIOME.SOUL_SAND_VALLEY)
+        pt.add({ x: x + this.rng.next(), y: y + 1.1, z: z + this.rng.next(), vy: 0.02, layer: tex('particle_spell'), size: 0.08, life: 40, gravity: -0.001, col: 0x8fe8ff, collide: false, kind: 'spell' });
+    }
+    // biome ambience: spores in the nether forests, ash in the valleys and deltas
+    const b = this.biomeAt(Math.floor(p.x), Math.floor(p.z));
+    if (b.particle && b.particleChance) {
+      const n = Math.min(40, Math.round(b.particleChance * 400));
+      for (let i = 0; i < n; i++) {
+        const x = p.x + (this.rng.next() - 0.5) * 24, y = p.y + (this.rng.next() - 0.5) * 16, z = p.z + (this.rng.next() - 0.5) * 24;
+        if (w.getId(Math.floor(x), Math.floor(y), Math.floor(z)) !== B.AIR) continue;
+        const col = b.particle === 'crimson_spore' ? 0xc8282a : b.particle === 'warped_spore' ? 0x1ec8b8 : b.particle === 'white_ash' ? 0xd8d8d8 : b.particle === 'soul' ? 0x8fe8ff : 0x606060;
+        const up = b.particle === 'warped_spore' ? 0.01 : b.particle === 'crimson_spore' ? -0.005 : -0.01;
+        pt.add({ x, y, z, vx: (this.rng.next() - 0.5) * 0.02, vy: up, vz: (this.rng.next() - 0.5) * 0.02, layer: tex('particle_smoke_6'), size: 0.03, life: 60 + this.rng.int(60), gravity: 0, col, collide: false, kind: 'spark', friction: 0.99 });
+      }
     }
   }
 
@@ -1287,7 +1307,13 @@ export class Client {
     const biome = this.biomeAt(Math.floor(p.x), Math.floor(p.z));
     const nether = w.dimension === 'nether', end = w.dimension === 'end';
     const rain = nether || end ? 0 : this.weather!.rain;
-    const env = nether ? netherEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : end ? endEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : computeEnv({
+    if (nether) {
+      // each Nether biome has a fog of its own; ease toward the one around the camera
+      const f = biome.fog ?? 0x330808, k = 0.03;
+      const want = [((f >> 16) & 255) / 255 * 0.78, ((f >> 8) & 255) / 255 * 0.78, (f & 255) / 255 * 0.78];
+      for (let i = 0; i < 3; i++) this.netherFog[i] += (want[i] - this.netherFog[i]) * k;
+    }
+    const env = nether ? netherEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava, this.netherFog) : end ? endEnv(w.renderDistance, this.options.gamma, 1.5 + this.torchFlicker * 0.1, inLava) : computeEnv({
       time: this.time, renderDistance: w.renderDistance, underwater, inLava, blind: 0, rain, thunder: this.weather!.thunder,
       cameraY: cam.y, gamma: this.options.gamma, clouds: this.options.clouds, skyTemp: biome.cold ? -0.5 : biome.name === 'Desert' ? 2 : 0.8,
       flicker: 1.5 + this.torchFlicker * 0.1, ticks: this.ticks + t,

@@ -133,8 +133,8 @@ export function computeEnv(i: EnvInput): EnvState {
 }
 
 /** The Nether: no sky, dense reddish fog, dim ambient light. */
-export function netherEnv(renderDistance: number, gamma: number, flicker: number, underLava: boolean): EnvState {
-  const fog: [number, number, number] = underLava ? [0.6, 0.1, 0] : [0.2, 0.03, 0.03];
+export function netherEnv(renderDistance: number, gamma: number, flicker: number, underLava: boolean, biomeFog: [number, number, number] = [0.2, 0.03, 0.03]): EnvState {
+  const fog: [number, number, number] = underLava ? [0.6, 0.1, 0] : biomeFog;
   const far = renderDistance * 16;
   return {
     skyColor: fog, fogColor: fog, voidColor: fog, sunrise: [0, 0, 0, 0], celestial: 0.5, sunBright: 1, skyLightCol: [1, 1, 1], stars: 0,

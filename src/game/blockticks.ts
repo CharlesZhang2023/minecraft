@@ -4,11 +4,10 @@ import type { World, Chunk } from '../world/world';
 import { B, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston, isFire } from '../world/blocks';
 import { familyCanStay } from './families';
 import { stationScheduled } from './stations';
+import { chestLoot } from './loot';
 import { WorldGen, Setter } from '../world/worldgen';
 import { Random } from '../noise';
 import { FallingBlock } from '../entity/item';
-import { I, I3, I5, stack, TOOLS, ARMOR } from './items';
-import { randomBook } from './enchant';
 import { portalCanStay } from './portal';
 import { inStronghold } from '../world/stronghold';
 import { railCanStay } from './tracks';
@@ -569,59 +568,9 @@ export class BlockTicker {
       const nether = this.world.dimension === 'nether';
       const wx = c.cx * 16 + (i & 15), wz = c.cz * 16 + ((i >> 4) & 15);
       const stronghold = this.world.dimension === 'overworld' && inStronghold(this.world.seed, wx, wz);
-      if (id === B.CHEST) c.tiles.set(i, { type: 'chest', items: stronghold ? this.strongholdLoot() : nether ? this.fortressLoot() : this.dungeonLoot() });
+      if (id === B.CHEST) c.tiles.set(i, { type: 'chest', items: chestLoot(stronghold ? (this.rng.int(3) ? 'stronghold_corridor' : 'stronghold_library') : nether ? 'nether_bridge' : 'simple_dungeon', this.rng) });
       else c.tiles.set(i, { type: 'spawner', mob: stronghold ? 'silverfish' : nether ? 'blaze' : ['zombie', 'zombie', 'skeleton', 'spider'][this.rng.int(4)], delay: 200 });
     }
     void isFlower;
-  }
-
-  /** Stronghold chests: tools, armour, apples, a few ender pearls and enchanted books. */
-  private strongholdLoot() {
-    const items: ({ id: number; count: number } | null)[] = new Array(27).fill(null);
-    const table: [number, number, number][] = [
-      [I.ENDER_PEARL, 1, 1], [I.IRON_INGOT, 1, 5], [I.APPLE, 1, 3], [I.BREAD, 1, 3], [I.REDSTONE, 4, 9], [TOOLS.iron_pickaxe, 1, 1],
-      [TOOLS.iron_sword, 1, 1], [ARMOR.iron_helmet, 1, 1], [ARMOR.iron_chestplate, 1, 1], [ARMOR.iron_leggings, 1, 1], [ARMOR.iron_boots, 1, 1],
-      [I.GOLDEN_APPLE, 1, 1], [I.COAL, 3, 8], [I.BOOK, 1, 2], [I3.ENCHANTED_BOOK, 1, 1], [I.PAPER, 2, 6],
-      [I5.SADDLE, 1, 1], [I5.IRON_HORSE_ARMOR, 1, 1], [I5.GOLDEN_HORSE_ARMOR, 1, 1], [I5.DIAMOND_HORSE_ARMOR, 1, 1],
-    ];
-    const n = 4 + this.rng.int(5);
-    for (let k = 0; k < n; k++) {
-      const [id, lo, hi] = table[this.rng.int(table.length)];
-      items[this.rng.int(27)] = id === I3.ENCHANTED_BOOK ? randomBook(this.rng) : stack(id, lo + this.rng.int(hi - lo + 1));
-    }
-    return items;
-  }
-
-  /** Nether fortress chest (1.8 table). */
-  private fortressLoot() {
-    const items: ({ id: number; count: number } | null)[] = new Array(27).fill(null);
-    const table: [number, number, number][] = [
-      [I.DIAMOND, 1, 3], [I.IRON_INGOT, 1, 5], [I.GOLD_INGOT, 1, 3], [TOOLS.golden_sword, 1, 1], [ARMOR.golden_chestplate, 1, 1],
-      [I.FLINT_AND_STEEL, 1, 1], [I3.NETHER_WART, 3, 7], [B.OBSIDIAN, 2, 4], [I3.BLAZE_ROD, 1, 2],
-      [I5.SADDLE, 1, 1], [I5.GOLDEN_HORSE_ARMOR, 1, 1], [I5.IRON_HORSE_ARMOR, 1, 1], [I5.DIAMOND_HORSE_ARMOR, 1, 1],
-    ];
-    const n = 2 + this.rng.int(4);
-    for (let k = 0; k < n; k++) {
-      const [id, lo, hi] = table[this.rng.int(table.length)];
-      items[this.rng.int(27)] = stack(id, lo + this.rng.int(hi - lo + 1));
-    }
-    return items;
-  }
-
-  private dungeonLoot() {
-    const items: ({ id: number; count: number } | null)[] = new Array(27).fill(null);
-    const table: [number, number, number][] = [
-      [I.BREAD, 1, 3], [I.WHEAT, 1, 4], [I.IRON_INGOT, 1, 4], [I.GOLD_INGOT, 1, 4], [I.REDSTONE, 1, 4], [I.GUNPOWDER, 1, 4],
-      [I.STRING, 1, 4], [I.BUCKET, 1, 1], [I.GOLDEN_APPLE, 1, 1], [I.COAL, 3, 8], [I.BONE, 2, 6], [I.ROTTEN_FLESH, 2, 6],
-      [TOOLS.iron_pickaxe, 1, 1], [ARMOR.iron_chestplate, 1, 1], [I.DIAMOND, 1, 2], [I.APPLE, 1, 3], [I.ENDER_PEARL, 1, 1],
-      [I3.ENCHANTED_BOOK, 1, 1], [I3.NAME_TAG, 1, 1], [I3.NETHER_WART, 1, 3], [I3.CARROT, 1, 3], [I3.POTATO, 1, 3],
-      [I5.SADDLE, 1, 1], [I5.SADDLE, 1, 1], [I5.IRON_HORSE_ARMOR, 1, 1], [I5.GOLDEN_HORSE_ARMOR, 1, 1], [I5.DIAMOND_HORSE_ARMOR, 1, 1],
-    ];
-    const n = 4 + this.rng.int(5);
-    for (let k = 0; k < n; k++) {
-      const [id, lo, hi] = table[this.rng.int(table.length)];
-      items[this.rng.int(27)] = id === I3.ENCHANTED_BOOK ? randomBook(this.rng) : stack(id, lo + this.rng.int(hi - lo + 1));
-    }
-    return items;
   }
 }

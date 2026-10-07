@@ -408,6 +408,16 @@ for (const p of POTIONS) if (p.effects.length) TIPPED_ARROWS[p.key] = item(`tipp
 /** Music discs (the jukebox plays each disc's own tune). */
 export const DISCS = ['13', 'cat', 'blocks', 'chirp', 'far', 'mall', 'mellohi', 'stal', 'strad', 'ward', '11', 'wait', 'pigstep'].map((n) => item(`music_disc_${n}`, 'Music Disc', { maxStack: 1, rarity: 'rare', sprite: `music_disc_${n}`, disc: n }));
 void M;
+/** Chainmail armour (traded, worn by mobs; not craftable) and the boss drops of 1.4 the game was missing. */
+ARMOR_SLOTS.forEach((sl, i) => {
+  const name = `chainmail_${sl.name}`;
+  ARMOR[name] = item(name, `Chainmail ${sl.display}`, { maxStack: 1, durability: sl.mul * 15, armor: { slot: i as 0 | 1 | 2 | 3, points: [2, 5, 4, 1][i] }, rarity: 'uncommon' });
+});
+export const I8 = {
+  NETHER_STAR: item('nether_star', 'Nether Star', { rarity: 'uncommon', fireproof: true }),
+  /** Bottled dragon's breath makes lingering potions; this is the explorer map pointing to a structure. */
+  EXPLORER_MAP_UNUSED: item('unused_item_2', 'Unused'),
+};
 
 // block items of the new blocks: sizes and fuel that differ from the defaults
 for (const id of [...BEDS]) { const d = ITEMS.get(id); if (d) d.maxStack = 1; }

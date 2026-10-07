@@ -36,7 +36,15 @@ export async function openWorld({ port = process.env.MC_PORT ?? '5177', seed = 1
     /** Let the world settle (meshes, ticks). */
     settle: async (ms = 1500) => { await wait(ms); await page.waitForFunction(() => window.game.loadProgress() > 0.99, null, { timeout: 30000 }); },
     close: () => browser.close(),
+    /** Go to another dimension (and wait until it's loaded around the player). */
+    travel: async (d, at) => {
+      await page.evaluate(([d, at]) => { const S = window.S(); S.g.travel(S.sp, d, false); if (at) setTimeout(() => window.sim((g, p) => p.setPos(at[0], at[1], at[2])), 50); }, [d, at ?? null]);
+      await page.waitForFunction((d) => window.S().sp.dim === d && !window.S().sp.traveling, d, { timeout: 60000 });
+      await wait(500);
+      if (at) await page.evaluate((at) => { window.sim((g, p) => p.setPos(at[0], at[1], at[2])); }, at);
+      await page.waitForFunction(() => window.game.loadProgress() > 0.99, null, { timeout: 60000 });
+    },
   };
-  if (dim) await t.sim((g, p, d) => g.travel?.(d, true), dim);
+  if (dim) await t.travel(dim);
   return t;
 }
