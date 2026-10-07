@@ -265,7 +265,11 @@ export class Game {
         if (sp.type !== 'loot' && sp.type !== 'spawner' && sp.type !== 'tile') continue;
         const i = (Math.floor(sp.x) & 15) | ((Math.floor(sp.z) & 15) << 4) | (Math.floor(sp.y) << 8);
         if (c.tiles.has(i)) continue;
-        if (sp.type === 'loot') c.tiles.set(i, { type: 'chest', items: chestLoot(String(sp.data?.table), this.lootRng) });
+        if (sp.type === 'loot') {
+          // dispensers and droppers take a nine-slot table (jungle temple traps), everything else is a chest
+          const nine = sp.data?.tile === 'dispenser' || sp.data?.tile === 'dropper';
+          c.tiles.set(i, { type: nine ? (sp.data!.tile as 'dispenser') : 'chest', items: chestLoot(String(sp.data?.table), this.lootRng, nine ? 9 : 27) });
+        }
         else if (sp.type === 'tile') c.tiles.set(i, structuredClone(sp.data?.tile) as never);
         else c.tiles.set(i, { type: 'spawner', mob: String(sp.data?.mob ?? 'zombie'), delay: 200 });
       }

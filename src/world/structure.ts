@@ -124,7 +124,12 @@ export function chunkCtx(blocks: Uint16Array, cx: number, cz: number, spawns: Sp
     cx, cz, inChunk,
     get: (x, y, z) => (inChunk(x, z) && y >= 0 && y < CHUNK_H ? blocks[idx(x, y, z)] : 0),
     set: (x, y, z, v) => { if (inChunk(x, z) && y > 0 && y < CHUNK_H) blocks[idx(x, y, z)] = v; },
-    chest: (x, y, z, table, v = pack(B.CHEST)) => { if (!inChunk(x, z) || y <= 0 || y >= CHUNK_H) return; blocks[idx(x, y, z)] = v; spawns.push({ type: 'loot', x, y, z, data: { table } }); },
+    chest: (x, y, z, table, v = pack(B.CHEST)) => {
+      if (!inChunk(x, z) || y <= 0 || y >= CHUNK_H) return;
+      blocks[idx(x, y, z)] = v;
+      const id = idOf(v);
+      spawns.push({ type: 'loot', x, y, z, data: id === B.DISPENSER ? { table, tile: 'dispenser' } : id === B.DROPPER ? { table, tile: 'dropper' } : { table } });
+    },
     spawner: (x, y, z, mob) => { if (!inChunk(x, z) || y <= 0 || y >= CHUNK_H) return; blocks[idx(x, y, z)] = B.SPAWNER; spawns.push({ type: 'spawner', x, y, z, data: { mob } }); },
     spawn: (type, x, y, z, data) => { if (inChunk(Math.floor(x), Math.floor(z))) spawns.push({ type, x, y, z, data }); },
   };

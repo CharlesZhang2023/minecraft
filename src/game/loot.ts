@@ -189,9 +189,9 @@ function applyFn(s: ItemStack, fn: Fn | undefined, r: Random) {
 }
 
 /** A 27-slot chest filled from a table (stacks scattered over random slots, like vanilla). */
-export function chestLoot(name: string, r: Random): (ItemStack | null)[] {
-  const items: (ItemStack | null)[] = new Array(27).fill(null);
-  const free = Array.from({ length: 27 }, (_, i) => i);
+export function chestLoot(name: string, r: Random, size = 27): (ItemStack | null)[] {
+  const items: (ItemStack | null)[] = new Array(size).fill(null);
+  const free = Array.from({ length: size }, (_, i) => i);
   for (const s of rollLoot(name, r)) {
     if (!free.length) break;
     const k = free.splice(r.int(free.length), 1)[0];

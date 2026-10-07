@@ -5,7 +5,8 @@ import { Mob } from './mobs';
 import type { Player } from '../game/player';
 import { Random } from '../noise';
 import { skyDarken } from '../game/env';
-import { BIOME } from '../world/biomes';
+import { BIOME, isOceanBiome } from '../world/biomes';
+import { MOB_TYPES } from './registry';
 
 export class Spawner {
   private rng = new Random(Date.now() & 0xffff);
@@ -164,6 +165,10 @@ export class Spawner {
       const slimeChunk = ((Math.imul(x >> 4, 0x4c1906) + Math.imul(z >> 4, 0x5ac0db) + (g.meta?.seed ?? 0)) >>> 0) % 10 === 0;
       if (!((slimeChunk && y < 40) || g.biomeAt(x, z).name === 'Swamp')) type = 'zombie';
     }
+    // biomes swap in their own kinds (vanilla: husks in deserts, strays in the snow, drowned in water), when known
+    const biome = g.biomeAt(x, z).id;
+    if (biome === BIOME.MUSHROOM_FIELDS) return; // nothing hostile spawns on mushroom islands
+    type = biomeVariant(type, biome, w.getId(x, y, z) === B.WATER, y >= w.topSolidY(x, z), this.rng);
     if (type === 'enderman' && (!this.spawnable(x, y + 2, z, 1))) return;
     if (type === 'spider' && !this.spawnable(x + 1, y, z, 1)) return;
     const m = g.interact!.spawnMob(type, x + 0.5, y, z + 0.5);
@@ -195,19 +200,22 @@ export class Spawner {
       if (this.rng.int(10) >= 1) continue; // ~10% of new chunks get an animal group
       const x0 = cx * 16 + this.rng.int(16), z0 = cz * 16 + this.rng.int(16);
       const biome = g.biomeAt(x0, z0);
-      if (biome.id === BIOME.DESERT || biome.id === BIOME.OCEAN || biome.id === BIOME.BEACH || biome.id === BIOME.RIVER) continue;
-      const wolfy = biome.id === BIOME.TAIGA || biome.id === BIOME.SNOWY_TAIGA || biome.id === BIOME.FOREST;
-      const types = wolfy && this.rng.int(3) === 0 ? ['wolf'] : biome.cold ? ['sheep', 'sheep', 'pig', 'chicken'] : ['pig', 'cow', 'sheep', 'sheep', 'chicken', 'cow'];
+      if (biome.dry && biome.id !== BIOME.SAVANNA && biome.id !== BIOME.SAVANNA_PLATEAU || isOceanBiome(biome.id) || biome.id === BIOME.BEACH || biome.id === BIOME.SNOWY_BEACH || biome.id === BIOME.RIVER || biome.id === BIOME.FROZEN_RIVER || biome.id === BIOME.STONE_SHORE) continue;
+      const wolfy = biome.id === BIOME.TAIGA || biome.id === BIOME.SNOWY_TAIGA || biome.id === BIOME.FOREST || biome.id === BIOME.GIANT_TREE_TAIGA;
+      const types = biome.id === BIOME.MUSHROOM_FIELDS ? ['mooshroom'] : wolfy && this.rng.int(3) === 0 ? ['wolf'] : biome.cold ? ['sheep', 'sheep', 'pig', 'chicken'] : ['pig', 'cow', 'sheep', 'sheep', 'chicken', 'cow'];
+      for (const [b, extra] of BIOME_ANIMALS) if (b.includes(biome.id)) for (const t of extra) if (MOB_TYPES[t]) types.push(t);
       let type = types[this.rng.int(types.length)];
       let count = 2 + this.rng.int(3);
       // herds of horses (now and then with a donkey) roam the plains and savanna, sharing a coat colour
-      const horsey = biome.id === BIOME.PLAINS || biome.id === BIOME.SAVANNA;
+      const horsey = biome.id === BIOME.PLAINS || biome.id === BIOME.SAVANNA || biome.id === BIOME.SUNFLOWER_PLAINS || biome.id === BIOME.SAVANNA_PLATEAU;
       let herd = -1;
       if (horsey && this.rng.int(biome.id === BIOME.PLAINS ? 3 : 5) === 0) { type = 'horse'; count = 2 + this.rng.int(5); herd = this.rng.int(7); }
       for (let i = 0; i < count; i++) {
         const x = x0 + this.rng.int(7) - 3, z = z0 + this.rng.int(7) - 3;
         const y = w.topSolidY(x, z) + 1;
-        if (y <= 0 || w.getId(x, y - 1, z) !== B.GRASS) continue;
+        const ground = w.getId(x, y - 1, z);
+        if (y <= 0 || (ground !== B.GRASS && !(biome.id === BIOME.MUSHROOM_FIELDS && BLOCKS[ground].name === 'mycelium') && !(biome.cold && ground === B.SNOW_BLOCK))) continue;
+        if (!MOB_TYPES[type]) continue;
         if (!this.spawnable(x, y, z, 2)) continue;
         if (this.nearest(x, y, z) < 16) continue;
         const m = g.interact!.spawnMob(herd >= 0 && this.rng.int(10) === 0 ? 'donkey' : type, x + 0.5, y, z + 0.5);
@@ -248,4 +256,26 @@ export class Spawner {
         }
       }
   }
+}
+
+/** Extra animals a biome adds to the usual farm animals (each only once its mob exists). */
+const BIOME_ANIMALS: [number[], string[]][] = [
+  [[BIOME.JUNGLE, BIOME.JUNGLE_EDGE, BIOME.BAMBOO_JUNGLE], ['parrot', 'ocelot', 'chicken']],
+  [[BIOME.BAMBOO_JUNGLE, BIOME.JUNGLE], ['panda']],
+  [[BIOME.SNOWY_PLAINS, BIOME.ICE_SPIKES, BIOME.SNOWY_TAIGA, BIOME.SNOWY_MOUNTAINS], ['polar_bear', 'rabbit']],
+  [[BIOME.TAIGA, BIOME.SNOWY_TAIGA, BIOME.GIANT_TREE_TAIGA], ['fox', 'rabbit']],
+  [[BIOME.SAVANNA, BIOME.SAVANNA_PLATEAU, BIOME.MOUNTAINS, BIOME.GRAVELLY_MOUNTAINS], ['llama']],
+  [[BIOME.PLAINS, BIOME.SUNFLOWER_PLAINS, BIOME.FLOWER_FOREST], ['rabbit', 'bee']],
+  [[BIOME.MOUNTAINS, BIOME.GRAVELLY_MOUNTAINS], ['llama']],
+];
+
+/** A hostile kind swapped for its biome's variant, when that mob exists: husks in deserts, strays under the open sky in the snow, drowned in water. */
+function biomeVariant(type: string, biome: number, inWater: boolean, open: boolean, r: Random): string {
+  const has = (t: string) => !!MOB_TYPES[t];
+  if (type === 'zombie' && (inWater || isOceanBiome(biome) || biome === BIOME.RIVER) && has('drowned')) return inWater ? 'drowned' : type;
+  if (type === 'zombie' && biome === BIOME.DESERT && open && r.int(5) < 4 && has('husk')) return 'husk';
+  if (type === 'skeleton' && (biome === BIOME.SNOWY_PLAINS || biome === BIOME.ICE_SPIKES || biome === BIOME.SNOWY_MOUNTAINS || biome === BIOME.FROZEN_RIVER) && open && r.int(5) < 4 && has('stray')) return 'stray';
+  if (type === 'zombie' && r.int(20) === 0 && has('zombie_villager')) return 'zombie_villager';
+  if (type === 'spider' && r.int(40) === 0 && has('witch')) return 'witch';
+  return type;
 }

@@ -3,7 +3,7 @@
 // across, drawn as a box (its top plus the walls down to lower neighbours). Nothing here knows about loaded chunks, so
 // player-made changes don't show up in distant terrain.
 import type { WorldGen } from './worldgen';
-import { B, SEA_LEVEL, isLeaves } from './blocks';
+import { B, B2, STONE2, SEA_LEVEL, isLeaves } from './blocks';
 import { BIOMES, BIOME } from './biomes';
 
 export const LOD_CELLS = 32;
@@ -14,7 +14,7 @@ export const lodTileSize = (level: number) => LOD_CELLS * lodCell(level);
 
 /** Average colours of the block textures the tiles are painted with, by texture name (r, g, b, a in 0..255). */
 export type LodPalette = Record<string, [number, number, number, number]>;
-export const LOD_TEXTURES = ['grass_top', 'dirt', 'stone', 'sand', 'gravel', 'podzol_top', 'coarse_dirt', 'snow', 'ice', 'water_still', 'sandstone', 'oak_leaves', 'spruce_leaves'];
+export const LOD_TEXTURES = ['grass_top', 'dirt', 'stone', 'sand', 'gravel', 'podzol_top', 'coarse_dirt', 'snow', 'ice', 'water_still', 'sandstone', 'oak_leaves', 'spruce_leaves', 'red_sand', 'mycelium_top', 'terracotta', 'orange_terracotta'];
 
 export interface LodTileMesh {
   /**
@@ -84,8 +84,8 @@ const fullLight = () => 15;
 
 /** The tree type a biome mostly grows, for forests too far away to place each tree. */
 function biomeLeaves(biome: number) {
-  if (biome === BIOME.TAIGA || biome === BIOME.SNOWY_TAIGA || biome === BIOME.SNOWY_PLAINS) return B.SPRUCE_LEAVES;
-  if (biome === BIOME.BIRCH_FOREST) return B.BIRCH_LEAVES;
+  if (biome === BIOME.TAIGA || biome === BIOME.SNOWY_TAIGA || biome === BIOME.SNOWY_PLAINS || biome === BIOME.GIANT_TREE_TAIGA) return B.SPRUCE_LEAVES;
+  if (biome === BIOME.BIRCH_FOREST || biome === BIOME.TALL_BIRCH_FOREST) return B.BIRCH_LEAVES;
   return B.OAK_LEAVES;
 }
 
@@ -148,6 +148,10 @@ export function buildLodTile(gen: WorldGen, pal: LodPalette, level: number, tx: 
         case B.SAND: color = sand; bands = biome === BIOME.DESERT ? [[32, sand], [24, C('sandstone')]] : [[32, sand]]; break;
         case B.GRAVEL: color = gravel; bands = [[32, gravel]]; break;
         case B.DIRT: color = dirt; bands = [[32, dirt]]; break;
+        case B2.MYCELIUM: color = C('mycelium_top'); bands = [[32, dirt]]; break;
+        case B.SNOW_BLOCK: color = snow; bands = [[16, snow]]; break;
+        // badlands: red sand over stripes of terracotta
+        case STONE2.RED_SAND: color = C('red_sand'); bands = [[8, C('red_sand')], [24, C('orange_terracotta')], [16, C('terracotta')], [24, C('orange_terracotta')]]; break;
         default: color = stone; bands = [];
       }
       let cellTop = (h + 1) * 8;

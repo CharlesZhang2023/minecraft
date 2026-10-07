@@ -119,7 +119,7 @@ export class Weather {
   }
   canRainIn(x: number, z: number) {
     const b = this.game.biomeAt(x, z);
-    return b.id !== BIOME.DESERT && b.id !== BIOME.SAVANNA;
+    return !b.dry;
   }
   rainAt(x: number, y: number, z: number) {
     if (this.rain <= 0) return false;
