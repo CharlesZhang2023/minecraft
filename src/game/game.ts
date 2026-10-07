@@ -824,9 +824,13 @@ export class Game {
   playBlockSound(blockId: number, x: number, y: number, z: number, kind: 'break' | 'place' | 'hit' | 'step') {
     const snd = SOUND_FOR[BLOCKS[blockId].sound];
     if (!snd) return;
+    // vanilla's SoundType: breaking and placing (dig.x, place.x) at 0.8 pitch; hitting and walking use the
+    // footstep sounds (step.x), hits quieter and an octave down
+    const type = snd.slice(4);
+    const name = kind === 'break' ? snd : kind === 'place' ? 'place.' + type : 'step.' + type;
     const vol = kind === 'hit' ? 0.25 : kind === 'step' ? 0.15 : 1;
-    const pitch = kind === 'hit' ? 0.5 : kind === 'place' ? 0.8 : 0.8 + this.rng.next() * 0.2;
-    this.emitSound(snd, { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, vol, pitch);
+    const pitch = kind === 'hit' ? 0.5 : kind === 'step' ? 1 : 0.8;
+    this.emitSound(name, { x: x + 0.5, y: y + 0.5, z: z + 0.5 }, vol, pitch);
   }
 
   biomeAt(x: number, z: number) {

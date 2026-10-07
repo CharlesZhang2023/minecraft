@@ -1,5 +1,7 @@
-// Procedurally synthesised sound effects and ambient music (WebAudio).
+// Sound effects and music (WebAudio): recorded ones when the game has the vanilla set (soundbank.ts), else
+// procedurally synthesised ones.
 import { Random } from '../noise';
+import { SoundBank, loadSoundIndex, loadSoundBank } from './soundbank';
 
 const SR = 22050;
 type Buf = Float32Array;
@@ -428,6 +430,41 @@ const GENS: Record<string, Gen> = {
   },
 };
 
+/** What music fits (vanilla's MusicTicker types). */
+export type MusicKind = 'menu' | 'game' | 'creative' | 'nether' | 'end' | 'boss' | 'credits';
+/** Ticks of quiet between tracks, and which kinds' tracks play for each (creative also plays the game's). */
+const MUSIC_TYPES: Record<MusicKind, { delay: [number, number]; from: string[] }> = {
+  menu: { delay: [20, 600], from: ['menu'] },
+  game: { delay: [12000, 24000], from: ['game'] },
+  creative: { delay: [1200, 3600], from: ['creative', 'game'] },
+  nether: { delay: [1200, 3600], from: ['nether'] },
+  end: { delay: [6000, 24000], from: ['end'] },
+  boss: { delay: [0, 0], from: ['boss'] },
+  credits: { delay: [0, 0], from: ['credits'] },
+};
+
+/**
+ * Names the synthesiser doesn't have, played as one it does (the game asks for vanilla's finer-grained sounds; with
+ * no recorded set it sounds as it always did). `step.x` and `place.x` fall back to `dig.x`.
+ */
+const SYNTH_AS: Record<string, string> = {
+  'door.open': 'door', 'door.close': 'door',
+  'pig.hurt': 'pig.say', 'pig.death': 'animal.hurt', 'cow.hurt': 'cow.say', 'cow.death': 'cow.say',
+  'sheep.hurt': 'sheep.say', 'sheep.death': 'sheep.say', 'chicken.hurt': 'chicken.say', 'chicken.death': 'chicken.say',
+  'spider.hurt': 'spider.say', 'spider.death': 'spider.say', 'skeleton.death': 'skeleton.hurt', 'creeper.death': 'creeper.hurt',
+  'wolf.death': 'wolf.hurt', 'bat.hurt': 'bat.idle', 'bat.death': 'bat.idle', 'villager.death': 'villager.hurt',
+  'pigman.death': 'pigman.hurt', 'horse.death': 'horse.hurt', 'horse.stepWood': 'horse.step',
+  'donkey.hurt': 'donkey.say', 'donkey.death': 'donkey.say', 'donkey.angry': 'donkey.say',
+  'chicken.plop': 'pop', 'bucket.empty': 'splash', 'bucket.fill': 'splash', 'bucket.emptyLava': 'fizz', 'bucket.fillLava': 'fizz',
+  'bottle.fill': 'swim', 'bobber.splash': 'splash', shears: 'dig.cloth', 'slime.small': 'slime.jump',
+  'wolf.growl': 'wolf.say', 'wolf.whine': 'wolf.say', 'wolf.pant': 'wolf.say', 'enderman.scream': 'enderman.idle',
+};
+/** The synthesised voices pitched for the mob (the game asks with vanilla's pitches). */
+const SYNTH_PITCH: Record<string, number> = { 'bat.idle': 1.8 / 0.95, 'ghast.moan': 0.7, 'ghast.scream': 0.7, 'ghast.death': 0.7 };
+
+/** At most this many sounds at once (vanilla's sound engine has a similar cap); more are skipped. */
+const MAX_VOICES = 64;
+
 export class Audio {
   ctx: AudioContext | null = null;
   master!: GainNode;
@@ -442,7 +479,32 @@ export class Audio {
   private musicPlaying = false;
   private rainNode: AudioBufferSourceNode | null = null;
   private rainGain: GainNode | null = null;
+  private rainCounter = 0;
+  private voices = 0;
   listener = { x: 0, y: 0, z: 0, yaw: 0 };
+  /** The recorded sounds, once downloaded (null: synthesised ones). */
+  bank: SoundBank | null = null;
+  /** Music tracks by kind (empty without a recorded set). */
+  private music: Record<string, string[]> = {};
+  private musicFailed = false;
+  private musicKind: MusicKind = 'menu';
+  private track: { el: HTMLAudioElement; gain: GainNode; kind: MusicKind } | null = null;
+  private base = import.meta.env?.BASE_URL ?? '/';
+  /** Resolves once the recorded set is in (or known not to be there). */
+  readonly ready: Promise<void>;
+
+  constructor() {
+    this.ready = typeof fetch === 'function' ? this.load() : Promise.resolve();
+  }
+
+  private async load() {
+    const idx = await loadSoundIndex(this.base);
+    if (!idx) return;
+    // music streams through an <audio> element: only where that plays Ogg Opus
+    if (document.createElement('audio').canPlayType('audio/ogg; codecs="opus"')) this.music = idx.music ?? {};
+    this.bank = await loadSoundBank(this.base, idx);
+    if (this.bank && this.ctx) void this.bank.warm(this.ctx);
+  }
 
   /** Must be called from a user gesture. */
   init() {
@@ -467,6 +529,7 @@ export class Audio {
     this.reverb.connect(this.musicGain);
     this.musicGain.connect(this.master);
     this.setVolume(this.volume, this.musicVolume);
+    if (this.bank) void this.bank.warm(c);
   }
 
   setVolume(v: number, music: number) {
@@ -475,6 +538,7 @@ export class Audio {
     if (!this.ctx) return;
     this.master.gain.value = v;
     this.musicGain.gain.value = music * 0.6;
+    if (this.track) this.track.gain.gain.value = music;
   }
 
   private impulse(sec: number): AudioBuffer {
@@ -486,6 +550,13 @@ export class Audio {
       for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.5);
     }
     return b;
+  }
+
+  /** The synthesised sound standing in for a name (itself, or what SYNTH_AS says). */
+  private synthName(name: string): string | null {
+    if (GENS[name]) return name;
+    const as = SYNTH_AS[name] ?? (/^(step|place)\./.test(name) ? 'dig.' + name.slice(name.indexOf('.') + 1) : '');
+    return as && GENS[as] ? as : null;
   }
 
   private get(name: string): AudioBuffer | null {
@@ -507,34 +578,60 @@ export class Audio {
     return list[this.rng.int(list.length)];
   }
 
+  /** A looping sound's audio: recorded if there is one (null until it's decoded), else synthesised. */
+  private loopBuffer(name: string): { buf: AudioBuffer | null; recorded: boolean } {
+    const s = this.bank?.sound(name);
+    if (s && this.ctx) return { buf: this.bank!.now(this.ctx, s.v[0]), recorded: true };
+    return { buf: this.get(name), recorded: false };
+  }
+
   setListener(x: number, y: number, z: number, yaw: number) {
     this.listener = { x, y, z, yaw };
   }
 
   /** Play a sound; position is optional (null = non-positional, e.g. UI). */
   play(name: string, pos: { x: number; y: number; z: number } | null = null, volume = 1, pitch = 1) {
-    if (!this.ctx || this.ctx.state !== 'running') return;
-    const buf = this.get(name);
-    if (!buf) return;
-    const c = this.ctx;
-    const src = c.createBufferSource();
-    src.buffer = buf;
-    src.playbackRate.value = pitch;
-    const g = c.createGain();
-    let vol = volume;
-    let pan = 0;
+    if (!this.ctx || this.ctx.state !== 'running' || this.voices >= MAX_VOICES) return;
+    let gain = 1, pan = 0;
     if (pos) {
       const dx = pos.x - this.listener.x, dy = pos.y - this.listener.y, dz = pos.z - this.listener.z;
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
       const range = 16 * Math.max(1, volume);
       if (d > range) return;
-      vol *= Math.max(0, 1 - d / range);
+      gain = Math.max(0, 1 - d / range);
       // stereo pan from listener yaw
       const yaw = (this.listener.yaw * Math.PI) / 180;
       const rx = -Math.cos(yaw), rz = -Math.sin(yaw);
       pan = d > 0.1 ? Math.max(-1, Math.min(1, (dx * rx + dz * rz) / d)) * 0.7 : 0;
     }
-    g.gain.value = Math.min(1.5, vol);
+    const s = this.bank?.sound(name);
+    if (s) {
+      // recorded: vanilla's rules (volume above 1 only carries further; pitch 0.5..2)
+      const g = Math.min(1, volume * (s.vol ?? 1)) * gain, p = Math.max(0.5, Math.min(2, pitch * (s.pitch ?? 1)));
+      const blob = s.v[this.rng.int(s.v.length)];
+      const buf = this.bank!.now(this.ctx, blob);
+      if (buf) { this.voice(buf, g, pan, p); return; }
+      // not decoded yet: play it when it is, unless that's too late to still belong to what made it
+      const t0 = performance.now();
+      void this.bank!.decode(this.ctx, blob).then((b) => {
+        if (b) { if (performance.now() - t0 < 250) this.voice(b, g, pan, p); }
+        else if (this.bank?.failed) this.play(name, pos, volume, pitch);
+      });
+      return;
+    }
+    const synth = this.synthName(name);
+    const buf = synth && this.get(synth);
+    if (buf) this.voice(buf, Math.min(1.5, volume) * gain, pan, pitch * (SYNTH_PITCH[synth] ?? 1));
+  }
+
+  private voice(buf: AudioBuffer, gain: number, pan: number, pitch: number) {
+    const c = this.ctx!;
+    if (gain <= 0.001 || this.voices >= MAX_VOICES) return;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = pitch;
+    const g = c.createGain();
+    g.gain.value = gain;
     src.connect(g);
     if (pan && c.createStereoPanner) {
       const p = c.createStereoPanner();
@@ -542,27 +639,31 @@ export class Audio {
       g.connect(p);
       p.connect(this.sfx);
     } else g.connect(this.sfx);
+    this.voices++;
+    src.onended = () => { this.voices--; src.disconnect(); g.disconnect(); };
     src.start();
   }
 
   private windNode: AudioBufferSourceNode | null = null;
   private windGain: GainNode | null = null;
+  private windScale = 0.6;
   /** The rush of air while gliding (0 stops it). */
   setWind(volume: number, pitch: number) {
     if (!this.ctx) return;
     if (volume > 0 && !this.windNode) {
-      const buf = this.get('wind');
+      const { buf, recorded } = this.loopBuffer('wind');
       if (!buf) return;
       this.windNode = this.ctx.createBufferSource();
       this.windNode.buffer = buf;
       this.windNode.loop = true;
       this.windGain = this.ctx.createGain();
+      this.windScale = recorded ? 1 : 0.6;
       this.windNode.connect(this.windGain);
       this.windGain.connect(this.sfx);
       this.windNode.start();
     }
     if (this.windGain && this.windNode) {
-      this.windGain.gain.value = volume * 0.6;
+      this.windGain.gain.value = volume * this.windScale;
       this.windNode.playbackRate.value = pitch;
     }
     if (volume <= 0 && this.windNode) {
@@ -572,8 +673,23 @@ export class Audio {
     }
   }
 
-  setRain(strength: number) {
+  /**
+   * Rain, called every tick: 0 for none. With recorded sounds it's vanilla's patter of short rain sounds around the
+   * player (muffled and lower when there's a roof overhead: `covered`); synthesised, one loop (silent under cover).
+   */
+  setRain(strength: number, covered = false) {
     if (!this.ctx) return;
+    if (this.bank?.has('rain')) {
+      if (this.rainNode) { this.rainNode.stop(); this.rainNode = null; this.rainGain = null; }
+      if (strength <= 0 || this.ctx.state !== 'running') return;
+      if (this.rng.int(3) < this.rainCounter++) {
+        this.rainCounter = 0;
+        const s = this.bank.sound('rain')!, buf = this.bank.now(this.ctx, s.v[this.rng.int(s.v.length)]);
+        if (buf) this.voice(buf, (covered ? 0.1 : 0.2) * strength, (this.rng.next() - 0.5) * 0.8, covered ? 0.5 : 1);
+      }
+      return;
+    }
+    if (covered) strength = 0;
     if (strength > 0 && !this.rainNode) {
       const buf = this.get('rain');
       if (!buf) return;
@@ -593,17 +709,91 @@ export class Audio {
     }
   }
 
-  // ------------------------------------------------------------------ generative music
-  /** Called every game tick. Occasionally plays a slow, sparse piano piece. */
-  tickMusic(menu: boolean) {
-    if (!this.ctx || this.musicVolume <= 0) return;
-    if (this.musicPlaying) return;
-    if (--this.musicTimer > 0) return;
-    this.musicTimer = (menu ? 20 * 60 : 20 * (300 + this.rng.int(600)));
-    this.playPiece();
+  // ------------------------------------------------------------------ music
+  /** The tracks that can play for a kind of music (none without a recorded set). */
+  private tracksFor(kind: MusicKind): string[] {
+    if (this.musicFailed) return [];
+    return MUSIC_TYPES[kind].from.flatMap((k) => this.music[k] ?? []);
   }
 
+  /**
+   * Called every game tick with what kind of music fits. Recorded music follows vanilla's MusicTicker: a track, then
+   * a quiet while (minutes in the world, seconds on the title screen); a change of kind ends the track. Without it,
+   * a slow, sparse synthesised piano piece now and then.
+   */
+  tickMusic(kind: MusicKind) {
+    this.musicKind = kind;
+    if (!this.ctx) return;
+    const tracks = this.tracksFor(kind);
+    if (!tracks.length) {
+      if (this.musicVolume <= 0 || this.musicPlaying) return;
+      if (--this.musicTimer > 0) return;
+      this.musicTimer = kind === 'menu' ? 20 * 60 : 20 * (300 + this.rng.int(600));
+      this.playPiece();
+      return;
+    }
+    const [lo, hi] = MUSIC_TYPES[kind].delay;
+    if (this.track && this.track.kind !== kind) {
+      this.stopTrack();
+      this.musicTimer = this.rng.int(lo / 2 + 1);
+    }
+    this.musicTimer = Math.min(this.musicTimer, hi);
+    if (this.track || this.musicVolume <= 0 || this.ctx.state !== 'running') return;
+    if (this.musicTimer-- <= 0) this.startTrack(kind);
+  }
+
+  /** Music now: a track that fits (or a synthesised piece). */
   playPiece() {
+    if (!this.ctx) return;
+    const tracks = this.tracksFor(this.musicKind);
+    if (tracks.length) { this.stopTrack(); this.startTrack(this.musicKind); return; }
+    this.synthPiece();
+  }
+
+  private startTrack(kind: MusicKind) {
+    const c = this.ctx!, tracks = this.tracksFor(kind);
+    if (!tracks.length) return;
+    const el = document.createElement('audio');
+    el.src = this.base + 'sounds/' + tracks[this.rng.int(tracks.length)];
+    el.preload = 'auto';
+    const gain = c.createGain();
+    gain.gain.value = this.musicVolume;
+    c.createMediaElementSource(el).connect(gain);
+    gain.connect(this.master);
+    const t = { el, gain, kind };
+    this.track = t;
+    // the quiet after it is chosen when it ends
+    this.musicTimer = Infinity;
+    const [lo, hi] = MUSIC_TYPES[kind].delay;
+    const done = () => {
+      if (this.track !== t) return;
+      this.track = null;
+      gain.disconnect();
+      this.musicTimer = Math.min(this.musicTimer, lo + this.rng.int(hi - lo + 1));
+    };
+    el.onended = done;
+    el.onerror = () => { if (this.track === t) { this.musicFailed = true; console.warn('music: cannot play', el.src); } done(); };
+    el.play().catch((e: Error) => {
+      // not allowed yet (no gesture): try again in a while
+      if (e.name === 'NotAllowedError' && this.track === t) { this.track = null; gain.disconnect(); this.musicTimer = 200; }
+    });
+  }
+
+  /** End the track playing (faded over a second). */
+  private stopTrack() {
+    const t = this.track;
+    if (!t) return;
+    this.track = null;
+    const now = this.ctx!.currentTime;
+    t.gain.gain.setValueAtTime(t.gain.gain.value, now);
+    t.gain.gain.linearRampToValueAtTime(0, now + 1);
+    setTimeout(() => { t.el.pause(); t.el.removeAttribute('src'); t.el.load(); t.gain.disconnect(); }, 1100);
+  }
+
+  /** What's playing (tests and the agent). */
+  musicNow() { return this.track ? { kind: this.track.kind, src: this.track.el.src, time: this.track.el.currentTime } : this.musicPlaying ? { kind: this.musicKind, src: 'synth', time: 0 } : null; }
+
+  private synthPiece() {
     if (!this.ctx) return;
     const c = this.ctx;
     this.musicPlaying = true;

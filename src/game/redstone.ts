@@ -314,7 +314,7 @@ export class Redstone {
         if (p !== open) {
           const nm = metaOf(lower) ^ 4;
           g.interact!.setAll([[x, ly, z, pack(B.OAK_DOOR, nm)], [x, ly + 1, z, pack(B.OAK_DOOR, (nm & 7) | 8)]]);
-          g.audio.play('door', { x: x + 0.5, y: ly + 0.5, z: z + 0.5 }, 1, 0.9 + Math.random() * 0.1);
+          g.audio.play(nm & 4 ? 'door.open' : 'door.close', { x: x + 0.5, y: ly + 0.5, z: z + 0.5 }, 1, 0.9 + Math.random() * 0.1);
         }
         return;
       }

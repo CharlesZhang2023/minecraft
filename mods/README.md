@@ -589,7 +589,7 @@ What `game` offers (a cheat sheet; read the file for more):
 | `game.ticks`, `game.time`, `game.dimension`, `game.dims`, `game.meta` (saved world info) | |
 | `game.interact` | `spawnMob(type, x, y, z)`, `explode(x, y, z, power, fire, source)`, `destroyBlocks(list, { drops, fire, fx })`, `breakBlock(x, y, z)` (as the acting player), `dropBlockItems`. |
 | `game.dropItem(x, y, z, stack)`, `game.spawnXpAt(x, y, z, n)` | |
-| `game.audio.play(name, pos, volume?, pitch?)` | Played for every player in earshot (`pos` null: only the acting player). Names are vanilla sounds (`'click'`, `'pop'`, `'explode'`, `'bow'`, `'dig.stone'`…) or ones a mod registered. |
+| `game.audio.play(name, pos, volume?, pitch?)` | Played for every player in earshot (`pos` null: only the acting player). Names are vanilla sounds (`'click'`, `'pop'`, `'explode'`, `'bow'`, `'dig.stone'`, `'step.stone'`, `'zombie.say'`…; the full list is `tools/sounds/vanilla.mjs`: recorded when the game has the vanilla set, else synthesised) or ones a mod registered. |
 | `game.particles.<method>(…)` | Sent to the players who can see it: `smoke(x, y, z, big?)`, `flame`, `crit`, `explosion`, `heart`, `spell(x, y, z, rgb)`, `blockBreak(x, y, z, id)`, `drip(x, y, z, lava)`… (`src/game/particles.ts`). |
 | `game.ui` | The acting player's UI: `chat.add(msg)`, `hud.actionBar(msg)`. `game.say(msg)` tells everyone. |
 | `game.commands.run('/time set 0')` | Run a command as the acting player. |

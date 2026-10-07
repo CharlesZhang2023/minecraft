@@ -12,3 +12,6 @@ work/
 !.env.example
 *.pem
 *.key
+
+# vanilla sounds made by tools/sounds/make.mjs from a sound pack: Mojang's audio stays out of git
+public/sounds/

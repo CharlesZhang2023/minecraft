@@ -201,7 +201,7 @@ export class LivingEntity extends Entity {
   override onLand(fall: number) {
     const f = Math.ceil(fall - 3 - (this.effectAmp('jump_boost') + 1));
     const below = this.world.getId(Math.floor(this.x), Math.floor(this.y - 0.2), Math.floor(this.z));
-    if (f > 0 && !this.inWater && below !== B.WATER) this.damage(f, 'fall');
+    if (f > 0 && !this.inWater && below !== B.WATER && this.damage(f, 'fall') && this.world.role === 'server') live.game?.audio.play(f > 4 ? 'fall.big' : 'fall.small', this, 1, 1);
     this.landed(fall, below);
   }
   landed(_fall: number, _below: number) {}
