@@ -12,14 +12,15 @@ import { swingDamage, sweep, shieldBlocks, shieldHand, crossbowLoadTicks, loadCr
 import { hiveBroken } from '../entity/bees';
 import { FISH_BUCKETS, releaseFish, FLOWER_EFFECTS } from '../entity/animals';
 import type { Game } from './game';
-import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor, isFence, isBanner, bannerColor, BANNERS, isCommandBlock } from '../world/blocks';
+import { debugStick } from './debugstick';
+import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor, isFence, isBanner, bannerColor, BANNERS, isCommandBlock, STRUCTURE_BLOCK, JIGSAW, JIGSAW_ORIENTS } from '../world/blocks';
 import { familyPlacement, doubleSlab, partners, toggled } from './families';
 import { stationUse, stationItemUse, stationTile, isShulkerBox } from './stations';
 import { blockIs } from './tags';
 import { angerPiglins } from '../entity/nethermobs';
 import { ItemFrame, Painting } from '../entity/hanging';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, I7, stack, ItemDef, POTION_ITEMS, itemId, I9, I11 } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, I7, stack, ItemDef, POTION_ITEMS, itemId, I9, I11, I12 } from './items';
 import { FireworkRocket } from '../entity/firework';
 import { ThrownPotion } from '../entity/potion';
 import { POTION_BY_KEY } from './potiondata';
@@ -152,6 +153,8 @@ export class Interaction {
     if (p.creative) {
       const held = p.inventory.held();
       if (held && getItem(held.id).tool?.type === 'sword') return;
+      // the debug stick picks a property instead of breaking (once per press)
+      if (held?.id === I12.DEBUG_STICK) { if (!this.leftWasDown) debugStick(g, p, held, t.x, t.y, t.z, false, p.sneaking); this.hitDelay = 5; return; }
       this.breakBlock(t.x, t.y, t.z);
       this.hitDelay = 5;
       return;
@@ -419,6 +422,7 @@ export class Interaction {
         if (r === 'success') { p.swing(); return; }
         if (r === 'fail') return;
       }
+      if (held?.id === I12.DEBUG_STICK && p.creative) { debugStick(g, p, held, t.x, t.y, t.z, true, p.sneaking); p.swing(); return; }
       const ib = item?.behavior;
       if (held && ib?.useOnBlock && guard(item!.mod, 'useOnBlock', () => ib.useOnBlock!({ ...this.itemCtx(held), x: t.x, y: t.y, z: t.z, face: t.face, v }), false)) { p.swing(); return; }
       // a fence ties the mobs on the player's leads
@@ -1121,6 +1125,12 @@ export class Interaction {
     else if (blockId === B.ANVIL) meta = (facing + 1) & 3;
     else if (isPiston(blockId) || blockId === B.DISPENSER || blockId === B.DROPPER) meta = this.facingFromEntity(x, y, z);
     else if (blockId === B.OBSERVER || isCommandBlock(blockId)) meta = this.facingFromEntity(x, y, z) ^ 1;
+    else if (blockId === STRUCTURE_BLOCK) meta = 3;
+    else if (blockId === JIGSAW) {
+      // the front points out of the face clicked; on a floor or ceiling its top points back at the player
+      const front = FACE_TO_FACING6[face], top = front < 2 ? [2, 5, 3, 4][(facing + 2) & 3] : 1;
+      meta = Math.max(0, JIGSAW_ORIENTS.findIndex(([f, t]) => f === front && t === top));
+    }
     else if (blockId === B.HOPPER) { meta = FACE_TO_FACING6[face] ^ 1; if (meta === 1) meta = 0; }
     else if (isRail(blockId)) meta = facing & 1 ? 1 : 0;
     const v = pack(blockId, meta);

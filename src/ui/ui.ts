@@ -6,7 +6,7 @@ import { Gui, Ctx } from './gui';
 import { Hud, drawDurability } from './hud';
 import { Chat } from './chat';
 import { Screen } from './screen';
-import { ItemStack, starTint, I7, leatherColor } from '../game/items';
+import { ItemStack, starTint, I7, leatherColor, getItem } from '../game/items';
 import { BANNERS } from '../world/blocks';
 import * as Menus from './menus';
 import * as Containers from './containers';
@@ -15,6 +15,7 @@ import { EnchantScreen } from './enchant';
 import { HopperScreen, DispenserScreen, BrewingScreen, AnvilScreen } from './devices';
 import { BookScreen } from './book';
 import { CommandBlockScreen } from './commandblock';
+import { StructureBlockScreen, JigsawScreen } from './structureblock';
 import { AdvancementsScreen } from './advancements';
 import { bannerCanvas } from './stations';
 import { SmithingScreen, StonecutterScreen, BeaconScreen, GrindstoneScreen, CartScreen, SignScreen, LoomScreen, CartographyScreen } from './stations';
@@ -205,6 +206,8 @@ export class UI {
   openLoom(x: number, y: number, z: number) { this.open(new LoomScreen(this, x, y, z)); }
   openBook(slot: number) { this.open(new BookScreen(this, { slot })); }
   openCommandBlock(x: number, y: number, z: number) { this.open(new CommandBlockScreen(this, x, y, z)); }
+  openStructureBlock(x: number, y: number, z: number) { this.open(new StructureBlockScreen(this, x, y, z)); }
+  openJigsaw(x: number, y: number, z: number) { this.open(new JigsawScreen(this, x, y, z)); }
   openLectern(x: number, y: number, z: number) { this.open(new BookScreen(this, { lectern: [x, y, z] })); }
   openCartography(x: number, y: number, z: number) { this.open(new CartographyScreen(this, x, y, z)); }
   /** A container's contents changed outside the UI (hoppers, droppers): open screens read tiles live. */
@@ -350,7 +353,7 @@ export class UI {
     let icon = this.game.icons.get(s.id, starTint(s));
     const dye = leatherColor(s);
     if (dye !== undefined) icon = this.dyed(icon, dye);
-    if (s.ench) icon = this.glinted(icon);
+    if (s.ench || getItem(s.id).foil) icon = this.glinted(icon);
     if (pop > 0) {
       const f = 1 + pop / 5;
       ctx.save();

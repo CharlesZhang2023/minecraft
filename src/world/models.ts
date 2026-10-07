@@ -1,5 +1,5 @@
 // Box models for non-cube blocks. Shared by the mesher (rendering), physics (collision) and raycasting.
-import { B, B2, BLOCKS, OPAQUE, REDSTONE, Render, T, T2, idOf, metaOf, isStairs, isFence, HORIZ, FACING6, FACING6_TO_FACE, SHAPE, Shape as BS, BED_TEX, SHULKER_BOXES, WOOD, COMMAND_BLOCKS, isCommandBlock } from './blocks';
+import { B, B2, BLOCKS, OPAQUE, REDSTONE, Render, T, T2, idOf, metaOf, isStairs, isFence, HORIZ, FACING6, FACING6_TO_FACE, SHAPE, Shape as BS, BED_TEX, SHULKER_BOXES, WOOD, COMMAND_BLOCKS, isCommandBlock, STRUCTURE_BLOCK, JIGSAW, JIGSAW_ORIENTS, STRUCTURE_VOID } from './blocks';
 
 export interface Box {
   x0: number; y0: number; z0: number;
@@ -142,6 +142,22 @@ export function facing6CubeFaces(id: number, meta: number, tex: Int32Array, rot:
   const frontFace = FACING6_TO_FACE[fc];
   const backFace = frontFace ^ 1;
   const vertical = fc < 2;
+  if (id === STRUCTURE_BLOCK) {
+    // the same face all round, lettered by mode
+    for (let f = 0; f < 6; f++) { tex[f] = T2.structureModes[meta & 3]; rot[f] = 0; }
+    return;
+  }
+  if (id === JIGSAW) {
+    // the front carries the connector (its arrow toward the top), the sides arrows toward the front
+    const [fr, top] = JIGSAW_ORIENTS[meta] ?? JIGSAW_ORIENTS[10];
+    const front = FACING6_TO_FACE[fr], dir = FACING6[fr];
+    for (let f = 0; f < 6; f++) { tex[f] = def.faces[0]; rot[f] = rotFor(f, dir); }
+    tex[front] = def.faces[3];
+    rot[front] = rotFor(front, FACING6[top]);
+    tex[front ^ 1] = def.faces[2];
+    rot[front ^ 1] = rotFor(front ^ 1, FACING6[top]);
+    return;
+  }
   if (isCommandBlock(id)) {
     // sides carry arrows along the facing (conditional ones a different mark); the front and back their own faces
     const dir = FACING6[fc], k = COMMAND_BLOCKS.indexOf(id);
@@ -515,6 +531,7 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
   if (mb) {
     try { return mb(meta, nb, f); } catch (e) { console.error(`[mod ${def.mod}] model of ${def.name}:`, e); return [box(0, 0, 0, 16, 16, 16, f[0])]; }
   }
+  if (id === STRUCTURE_VOID) return [box(5, 5, 5, 11, 11, 11, f[0])];
   if (SHAPE[id] !== BS.Cube) {
     const fam = familyBoxes(id, meta, nb, f);
     if (fam) return fam;

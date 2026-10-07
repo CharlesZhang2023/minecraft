@@ -1,7 +1,8 @@
 // Command blocks (1.4-1.16): an impulse block runs its command once when powered, a repeating one every tick while
 // powered (or always, when set to), and a chain block runs when the block pointing into it has run. Conditional
-// ones only run if the block behind them succeeded. Coordinates (~) are the block's own; commands that act on a
-// player act on the nearest one. Comparators read the last success count.
+// ones only run if the block behind them succeeded. Coordinates (~) and selector distances are the block's own,
+// @s is nobody, and commands written without a target act on the nearest player. Comparators read the last
+// success count.
 import type { Game } from './game';
 import { BLOCKS, COMMAND_BLOCKS, FACING6, idOf, metaOf } from '../world/blocks';
 import type { World } from '../world/world';
@@ -44,13 +45,11 @@ function execute(g: Game, x: number, y: number, z: number, depth = 0) {
     if (nt.auto || g.redstone.isPowered(nx, ny, nz)) execute(g, nx, ny, nz, depth + 1);
   }
 }
-/** Run a command from the block (its position for ~), as the nearest player for whatever needs one. */
+/** Run a command from the block (its position for ~ and selectors; the nearest player when no target is given). */
 function runAsWorld(g: Game, cmd: string, x: number, y: number, z: number): string[] {
-  const near = g.players.filter((q) => q.dim === g.world!.dimension).sort((a, b) => Math.hypot(a.entity.x - x, a.entity.z - z) - Math.hypot(b.entity.x - x, b.entity.z - z))[0];
-  if (!near) return [];
-  let out: string[] = [];
-  g.asActor(near, () => { out = g.commands.run(cmd, { x: x + 0.5, y, z: z + 0.5 }); });
-  return out;
+  const near = g.players.filter((q) => q.dim === g.world!.dimension).sort((a, b) => Math.hypot(a.entity.x - x, a.entity.y - y, a.entity.z - z) - Math.hypot(b.entity.x - x, b.entity.y - y, b.entity.z - z))[0];
+  const at = { x: x + 0.5, y, z: z + 0.5 }, src = { self: null, name: '@' };
+  return near ? g.asActor(near, () => g.commands.run(cmd, at, src)) : g.commands.run(cmd, at, src);
 }
 
 /** Redstone around a command block changed: impulse blocks fire on the rising edge, repeating ones start ticking. */

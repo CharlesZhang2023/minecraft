@@ -859,6 +859,8 @@ export class Game {
     this.interact?.spawnXp(x, y, z, n);
   }
 
+  /** A new entity of a saved type (not yet added to the world). */
+  newEntity(type: string): Entity | null { return createEntity(type, this.world!, this); }
   addEntity(e: Entity) {
     this.entities.push(e);
   }

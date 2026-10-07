@@ -1,6 +1,6 @@
 // Block states in words, for programs driving the game: `stone`, `oak_stairs[facing=east,half=top]`, `oak_log:1`.
 // A packed block (id | meta << 12) turns into such a name and back, and turns with a structure that's rotated.
-import { B, B2, BLOCKS, idOf, metaOf, pack, blockByName, isStairs, isSlab, isLeaves, isOriented, isPiston, isRepeater, isRail, isPillar, isDoor, isBed, isButton, isTrapdoor, isGate, isDoublePlant, SHAPE, Shape } from '../world/blocks';
+import { B, B2, BLOCKS, idOf, metaOf, pack, blockByName, isStairs, isSlab, isLeaves, isOriented, isPiston, isRepeater, isRail, isPillar, isDoor, isBed, isButton, isTrapdoor, isGate, isDoublePlant, SHAPE, Shape, isCommandBlock, JIGSAW, JIGSAW_ORIENTS, STRUCTURE_BLOCK, STRUCTURE_MODES, waterloggable } from '../world/blocks';
 
 const H4 = ['north', 'east', 'south', 'west'];
 const F6 = ['down', 'up', 'north', 'south', 'west', 'east'];
@@ -8,7 +8,15 @@ const F6 = ['down', 'up', 'north', 'south', 'west', 'east'];
 const H_TO_F6 = [2, 5, 3, 4];
 const F6_TO_H: Record<number, number> = { 2: 0, 5: 1, 3: 2, 4: 3 };
 
-type Family = 'stairs' | 'slab' | 'log' | 'leaves' | 'front' | 'door' | 'bed' | 'torch' | 'switch' | 'ladder' | 'diode' | 'anvil' | 'facing6' | 'hopper' | 'trapdoor' | 'rot16' | 'vine' | 'plant2' | 'none';
+type Family = 'stairs' | 'slab' | 'log' | 'leaves' | 'front' | 'door' | 'bed' | 'torch' | 'switch' | 'ladder' | 'diode' | 'anvil' | 'facing6' | 'hopper' | 'trapdoor' | 'rot16' | 'vine' | 'plant2' | 'jigsaw' | 'structure' | 'none';
+/** Jigsaw orientations by name (vanilla's front_top). */
+const ORIENT_NAMES = JIGSAW_ORIENTS.map(([f, t]) => `${F6[f]}_${F6[t]}`);
+/** Blocks whose meta is a plain number (age, power, level...): the property's name and its largest value. */
+const NUMBERED: Record<number, [string, number]> = {
+  [B.WHEAT]: ['age', 7], [B.CARROTS]: ['age', 7], [B.POTATOES]: ['age', 7], [B2.BEETROOTS]: ['age', 3], [B.NETHER_WART]: ['age', 3],
+  [B2.SWEET_BERRY_BUSH]: ['age', 3], [B.REDSTONE_WIRE]: ['power', 15], [B2.CAULDRON]: ['level', 3], [B2.COMPOSTER]: ['level', 8],
+  [B2.RESPAWN_ANCHOR]: ['charges', 4], [B2.CAKE]: ['bites', 6], [B.FARMLAND]: ['moisture', 1],
+};
 
 export function familyOf(id: number): Family {
   if (isStairs(id)) return 'stairs';
@@ -27,7 +35,9 @@ export function familyOf(id: number): Family {
   if (SHAPE[id] === Shape.Vine) return 'vine';
   if (isRepeater(id) || id === B.COMPARATOR) return 'diode';
   if (id === B.ANVIL) return 'anvil';
-  if (isPiston(id) || id === B.DISPENSER || id === B.DROPPER || id === B.OBSERVER) return 'facing6';
+  if (isPiston(id) || id === B.DISPENSER || id === B.DROPPER || id === B.OBSERVER || isCommandBlock(id)) return 'facing6';
+  if (id === JIGSAW) return 'jigsaw';
+  if (id === STRUCTURE_BLOCK) return 'structure';
   if (id === B.HOPPER) return 'hopper';
   return 'none';
 }
@@ -35,7 +45,18 @@ export function familyOf(id: number): Family {
 /** The named properties of a block state (only the ones that have names here; `meta` always works). */
 export function stateOf(v: number): Record<string, string> {
   const id = idOf(v), m = metaOf(v);
+  const st = familyState(id, m);
+  if (NUMBERED[id]) st[NUMBERED[id][0]] = String(m);
+  if (isRepeater(id)) st.delay = String(((m >> 2) & 3) + 1);
+  if (id === B.COMPARATOR) { st.mode = m & 4 ? 'subtract' : 'compare'; st.powered = m & 8 ? 'true' : 'false'; }
+  if (isCommandBlock(id)) st.conditional = m & 8 ? 'true' : 'false';
+  if (waterloggable(id) && !st.waterlogged && !(isSlab(id) && (m & 7) === 2)) st.waterlogged = m & 8 ? 'true' : 'false';
+  return st;
+}
+function familyState(id: number, m: number): Record<string, string> {
   switch (familyOf(id)) {
+    case 'jigsaw': return { orientation: ORIENT_NAMES[m] ?? ORIENT_NAMES[10] };
+    case 'structure': return { mode: STRUCTURE_MODES[m & 3] };
     case 'stairs': return { facing: H4[m & 3], half: m & 4 ? 'top' : 'bottom', ...(m & 8 ? { waterlogged: 'true' } : {}) };
     case 'trapdoor': return { facing: H4[m & 3], half: m & 4 ? 'top' : 'bottom', open: m & 8 ? 'true' : 'false' };
     case 'rot16': return { rotation: String(m) };
@@ -82,6 +103,14 @@ function applyState(id: number, meta: number, props: Record<string, string>): nu
     else if (k === 'part' && fam === 'bed') meta = (meta & ~8) | (v === 'head' ? 8 : 0);
     else if (k === 'powered' && fam === 'switch') meta = (meta & ~8) | (v === 'true' ? 8 : 0);
     else if (k === 'persistent' && fam === 'leaves') meta = v === 'true' ? 1 : 0;
+    else if (k === 'orientation' && fam === 'jigsaw') { const o = ORIENT_NAMES.indexOf(v); if (o < 0) throw bad(k, v); meta = o; }
+    else if (k === 'mode' && fam === 'structure') { const o = (STRUCTURE_MODES as readonly string[]).indexOf(v); if (o < 0) throw bad(k, v); meta = o; }
+    else if (NUMBERED[id] && k === NUMBERED[id][0]) { const n = parseInt(v); if (!(n >= 0 && n <= NUMBERED[id][1])) throw bad(k, v); meta = n; }
+    else if (k === 'delay' && isRepeater(id)) { const n = parseInt(v); if (!(n >= 1 && n <= 4)) throw bad(k, v); meta = (meta & ~12) | ((n - 1) << 2); }
+    else if (k === 'mode' && id === B.COMPARATOR && (v === 'compare' || v === 'subtract')) meta = (meta & ~4) | (v === 'subtract' ? 4 : 0);
+    else if (k === 'powered' && id === B.COMPARATOR) meta = (meta & ~8) | (v === 'true' ? 8 : 0);
+    else if (k === 'conditional' && isCommandBlock(id)) meta = (meta & ~8) | (v === 'true' ? 8 : 0);
+    else if (k === 'waterlogged' && waterloggable(id)) meta = (meta & ~8) | (v === 'true' ? 8 : 0);
     else throw bad(k, v);
   }
   return meta & 15;
@@ -173,8 +202,68 @@ export function rotateBlock(v: number, q: number): number {
     case 'log': return q & 1 && (m & 7) !== 0 ? pack(id, (m & 8) | ((m & 7) === 1 ? 2 : 1)) : v;
     case 'torch': case 'switch': { const a = m & 7; return a === 0 ? v : pack(id, (m & 8) | (turn(a - 1) + 1)); }
     case 'facing6': case 'hopper': { const f = m & 7, h = F6_TO_H[f]; return h === undefined ? v : pack(id, (m & 8) | H_TO_F6[turn(h)]); }
+    case 'jigsaw': return pack(id, jigsawMap(m, (f) => { const h = F6_TO_H[f]; return h === undefined ? f : H_TO_F6[turn(h)]; }));
     default: return isRail(id) && q & 1 && m < 2 ? pack(id, m ^ 1) : v;
   }
+}
+
+/** A jigsaw orientation with both its directions (FACING6 indices) mapped through f. */
+function jigsawMap(m: number, f: (d: number) => number): number {
+  const [fr, top] = JIGSAW_ORIENTS[m] ?? JIGSAW_ORIENTS[10];
+  const a = f(fr), b = f(top);
+  const i = JIGSAW_ORIENTS.findIndex(([x, y]) => x === a && y === b);
+  return i < 0 ? m : i;
+}
+
+/**
+ * The same block mirrored: 'z' flips north and south (vanilla's LEFT_RIGHT), 'x' flips east and west (FRONT_BACK).
+ */
+export function mirrorBlock(v: number, axis: 'x' | 'z' | null): number {
+  if (!axis) return v;
+  const id = idOf(v), m = metaOf(v);
+  const mh = (h: number) => (axis === 'z' ? ((h & 1) === 0 ? h ^ 2 : h) : (h & 1 ? h ^ 2 : h));
+  const m6 = (f: number) => { const h = F6_TO_H[f]; return h === undefined ? f : H_TO_F6[mh(h)]; };
+  switch (familyOf(id)) {
+    case 'stairs': case 'front': case 'diode': case 'door': case 'bed': case 'trapdoor': case 'ladder': return pack(id, (m & ~3) | mh(m & 3));
+    case 'anvil': return pack(id, (mh((m + 3) & 3) + 1) & 3);
+    case 'rot16': return pack(id, (axis === 'z' ? 8 - m + 16 : 16 - m) & 15);
+    case 'vine': { let o = 0; for (let d = 0; d < 4; d++) if (m & (1 << d)) o |= 1 << mh(d); return pack(id, o); }
+    case 'torch': case 'switch': { const a = m & 7; return a === 0 ? v : pack(id, (m & 8) | (mh(a - 1) + 1)); }
+    case 'facing6': case 'hopper': return pack(id, (m & 8) | m6(m & 7));
+    case 'jigsaw': return pack(id, jigsawMap(m, m6));
+    default: return v;
+  }
+}
+
+/**
+ * Every value each named property of a block can take (what the debug stick cycles through), in a stable order;
+ * only values that give back a state with that value are kept.
+ */
+export function stateValues(id: number): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  const seen: Record<string, Set<string>> = {};
+  const metas = id === B2.CAULDRON ? [0, 1, 2, 3] : Array.from({ length: 16 }, (_, i) => i);
+  for (const m of metas) for (const [k, val] of Object.entries(stateOf(pack(id, m)))) (seen[k] ??= new Set()).add(val);
+  const ORDER = ['north', 'east', 'south', 'west', 'up', 'down', 'false', 'true', 'bottom', 'top', 'lower', 'upper', 'foot', 'head', 'x', 'y', 'z'];
+  for (const [k, vals] of Object.entries(seen)) {
+    const list = [...vals].sort((a, b) => {
+      const na = Number(a), nb = Number(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      const ia = ORDER.indexOf(a), ib = ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+    });
+    out[k] = list;
+  }
+  return out;
+}
+
+/** Set one property (null if the block can't take that value). */
+export function withState(v: number, key: string, value: string): number | null {
+  const id = idOf(v);
+  try {
+    const n = pack(id, applyState(id, metaOf(v), { [key]: value }));
+    return stateOf(n)[key] === value ? n : null;
+  } catch { return null; }
 }
 
 /** Blocks made of two halves (doors, beds): the other half's offset and block, for a lower/foot half. */

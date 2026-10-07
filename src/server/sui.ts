@@ -30,7 +30,7 @@ let sharedGui: Gui | null = null;
 
 /** Screen openers gameplay code calls, mirrored to the client by name. */
 const OPENERS = ['openCrafting', 'openFurnace', 'openChest', 'openEnderChest', 'openHorse', 'openInventory', 'openTrade', 'openEnchant',
-  'openHopper', 'openDispenser', 'openBrewing', 'openAnvil', 'openMod', 'openSmithing', 'openStonecutter', 'openGrindstone', 'openBeacon', 'openCart', 'openSign', 'openLoom', 'openCartography', 'openBook', 'openLectern', 'openCommandBlock'] as const;
+  'openHopper', 'openDispenser', 'openBrewing', 'openAnvil', 'openMod', 'openSmithing', 'openStonecutter', 'openGrindstone', 'openBeacon', 'openCart', 'openSign', 'openLoom', 'openCartography', 'openBook', 'openLectern', 'openCommandBlock', 'openStructureBlock', 'openJigsaw'] as const;
 
 type Openers = Pick<UI, (typeof OPENERS)[number]>;
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unsafe-declaration-merging

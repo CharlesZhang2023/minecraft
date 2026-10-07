@@ -1621,7 +1621,7 @@ export class EntityRenderer {
     const dm = this.handMesh;
     dm.reset();
     this.appendItem(dm, held.id, m, sky, blk);
-    const glint: [number, number, number, number] | undefined = held.ench ? [0.55, 0.3, 1, 0.22 + Math.sin(performance.now() / 300) * 0.08] : undefined;
+    const glint: [number, number, number, number] | undefined = (held.ench || getItem(held.id).foil) ? [0.55, 0.3, 1, 0.22 + Math.sin(performance.now() / 300) * 0.08] : undefined;
     this.r.drawDyn(dm, { cull: false, viewProj: proj, overlay: glint });
     this.drawOffhand(game, t, proj, sky, blk);
     this.currentVP = this.r.viewProj;

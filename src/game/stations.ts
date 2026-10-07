@@ -6,7 +6,9 @@ import type { Game } from './game';
 import type { World } from '../world/world';
 import type { Player } from './player';
 import { commandTile } from './commandblocks';
-import { B, B2, BLOCKS, OPAQUE, WOOD, SHULKER_BOXES, BANNERS, isCommandBlock, idOf, metaOf, pack, WATERLOGGED, waterloggable, blockByName, isLog } from '../world/blocks';
+import { structureTile } from './structureblocks';
+import { jigsawTile } from './jigsaw';
+import { B, B2, BLOCKS, OPAQUE, WOOD, SHULKER_BOXES, BANNERS, isCommandBlock, STRUCTURE_BLOCK, JIGSAW, idOf, metaOf, pack, WATERLOGGED, waterloggable, blockByName, isLog } from '../world/blocks';
 import { I, I3, I7, I11, ItemStack, ItemDef, getItem, stack, POTION_ITEMS, DISCS, isDyeable, DYES } from './items';
 import { SMELTING } from './recipes';
 import { POT_PLANTS } from '../world/models';
@@ -62,6 +64,9 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
   }
   // command blocks: only someone in creative may edit them
   if (isCommandBlock(id)) { if (!p.creative) return false; commandTile(w, x, y, z); (g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>).openCommandBlock?.(x, y, z); return true; }
+  // structure and jigsaw blocks too
+  if (id === STRUCTURE_BLOCK) { if (!p.creative) return false; structureTile(w, x, y, z); (g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>).openStructureBlock?.(x, y, z); return true; }
+  if (id === JIGSAW) { if (!p.creative) return false; jigsawTile(w, x, y, z); (g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>).openJigsaw?.(x, y, z); return true; }
   const ui = g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>;
   switch (id) {
     case B2.SMOKER: case B2.BLAST_FURNACE: g.ui.openFurnace(x, y, z); return true;

@@ -726,6 +726,16 @@ export const COMMAND_BLOCKS = (['command_block', 'chain_command_block', 'repeati
   reg(n, n === 'command_block' ? 'Command Block' : n === 'chain_command_block' ? 'Chain Command Block' : 'Repeating Command Block', { side: `${n}_side`, top: `${n}_side`, bottom: `${n}_side`, front: `${n}_front`, hardness: -1, blastResistance: 3600000, sound: 'metal' }));
 export const isCommandBlock = (id: number) => COMMAND_BLOCKS.includes(id);
 
+/** Structure blocks (1.10): meta is the mode (STRUCTURE_MODES); the name, box and settings live in the tile. */
+export const STRUCTURE_BLOCK = reg('structure_block', 'Structure Block', { tex: 'structure_block_save', hardness: -1, blastResistance: 3600000, sound: 'metal' });
+export const STRUCTURE_MODES = ['save', 'load', 'corner', 'data'] as const;
+/** Jigsaw blocks (1.14): meta is an index into JIGSAW_ORIENTS; pool, names and final state in the tile. */
+export const JIGSAW = reg('jigsaw', 'Jigsaw Block', { side: 'jigsaw_side', top: 'jigsaw_top', bottom: 'jigsaw_bottom', front: 'jigsaw_top', hardness: -1, blastResistance: 3600000, sound: 'metal' });
+/** Vanilla's twelve jigsaw orientations: [front, top] as FACING6 indices (down_east ... south_up). */
+export const JIGSAW_ORIENTS: readonly (readonly [number, number])[] = [[0, 5], [0, 2], [0, 3], [0, 4], [1, 5], [1, 2], [1, 3], [1, 4], [4, 1], [5, 1], [2, 1], [3, 1]];
+/** Structure voids (1.10): cells a saved structure leaves alone when it's loaded. */
+export const STRUCTURE_VOID = reg('structure_void', 'Structure Void', { render: Render.Model, tex: 'structure_void', hardness: 0, solid: false, opaque: false, lightOpacity: 0, replaceable: true, drop: null, sound: 'stone' });
+
 /** Painting motifs and their sizes in blocks (vanilla's 26); each cell of each motif is a texture of its own. */
 export const PAINTINGS: [string, number, number][] = [
   ['kebab', 1, 1], ['aztec', 1, 1], ['alban', 1, 1], ['aztec2', 1, 1], ['bomb', 1, 1], ['plant', 1, 1], ['wasteland', 1, 1],
@@ -766,6 +776,7 @@ export const T2 = {
   lecternBook: tex('lectern_book'),
   commandBack: ['command_block', 'chain_command_block', 'repeating_command_block'].map((n) => tex(n + '_back')),
   commandCond: ['command_block', 'chain_command_block', 'repeating_command_block'].map((n) => tex(n + '_conditional')),
+  structureModes: ['save', 'load', 'corner', 'data'].map((n) => tex('structure_block_' + n)),
   stem: tex('pumpkin_stem'),
   itemFrame: tex('item_frame'),
   paintingBack: tex('painting_back'),
@@ -965,7 +976,9 @@ export const isPiston = (id: number) => id === B.PISTON || id === B.STICKY_PISTO
 export const isRedstoneComponent = (id: number) =>
   id === B.REDSTONE_WIRE || id === B.LEVER || isButton(id) || isPlate(id) || isRedstoneTorch(id) || isDoor(id) || isTrapdoor(id) || isGate(id) ||
   id === B.REDSTONE_LAMP || id === B.LIT_REDSTONE_LAMP || id === B.REDSTONE_BLOCK || id === B.TNT || id === B2.TARGET || id === B2.NOTE_BLOCK || id === B2.DAYLIGHT_DETECTOR || id === B2.TRAPPED_CHEST ||
-  isDiode(id) || isPiston(id) || id === B.OBSERVER || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER || isRail(id) || REDSTONE[id] === 1;
+  isDiode(id) || isPiston(id) || id === B.OBSERVER || id === B.DISPENSER || id === B.DROPPER || id === B.HOPPER || isRail(id) || REDSTONE[id] === 1 ||
+  // (behaviours given after registration, like command and structure blocks')
+  !!BLOCKS[id]?.behavior?.redstone?.update;
 export const isRail = (id: number) => id === B.RAIL || id === B.POWERED_RAIL || id === B.DETECTOR_RAIL || id === B.ACTIVATOR_RAIL;
 
 /** 6-way facing (vanilla order): 0 down, 1 up, 2 north, 3 south, 4 west, 5 east. */
@@ -973,7 +986,7 @@ export const FACING6: ReadonlyArray<readonly [number, number, number]> = [[0, -1
 /** FACING6 index -> FACE_DIRS face index */
 export const FACING6_TO_FACE = [2, 3, 4, 5, 0, 1];
 export const FACE_TO_FACING6 = [4, 5, 0, 1, 2, 3];
-export const isFacing6Cube = (id: number) => id === B.DISPENSER || id === B.DROPPER || id === B.OBSERVER || isCommandBlock(id);
+export const isFacing6Cube = (id: number) => id === B.DISPENSER || id === B.DROPPER || id === B.OBSERVER || isCommandBlock(id) || id === STRUCTURE_BLOCK || id === JIGSAW;
 /** Crop texture for a crop block and growth meta. */
 export function cropTexture(id: number, meta: number): number {
   if (id === B.NETHER_WART) return T.netherWart[meta >= 3 ? 2 : meta >= 1 ? 1 : 0];
