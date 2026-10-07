@@ -16,3 +16,5 @@ work/
 # resource packs made by other people: their files stay out of git (see packs/README.md)
 packs/*/*.zip
 packs/pastoral/icon.png
+# vanilla sounds made by tools/sounds/make.mjs from a sound pack: Mojang's audio stays out of git
+public/sounds/

@@ -6,7 +6,7 @@ import type { Entity } from './entity';
 import type { World } from '../world/world';
 import type { Game } from '../game/game';
 import type { DamageSource } from './living';
-import { B } from '../world/blocks';
+import { B, BLOCKS } from '../world/blocks';
 import { I, I3, I5, HORSE_ARMOR, ItemStack, stack } from '../game/items';
 import type { Player } from '../game/player';
 import { Random } from '../noise';
@@ -43,7 +43,8 @@ export class Horse extends Animal implements Mount {
   override skin = 'horse';
   override sayName = 'horse.say';
   override hurtName = 'horse.hurt';
-  override deathName = 'horse.hurt';
+  override deathName = 'horse.death';
+  override stepSound() {}
   override temptItems: number[] = [];
   kind: HorseKind = 'horse';
   color = 0;
@@ -183,7 +184,8 @@ export class Horse extends Animal implements Mount {
     const fast = d > 0.25;
     if (this.stepDist > (fast ? 1.6 : 0.9)) {
       this.stepDist = 0;
-      this.game.audio.play(fast ? 'horse.gallop' : 'horse.step', this, fast ? 0.5 : 0.3, 0.9 + rng.next() * 0.2);
+      const wood = BLOCKS[this.world.getId(Math.floor(this.x), Math.floor(this.y - 0.2), Math.floor(this.z))].sound === 'wood';
+      this.game.audio.play(fast ? 'horse.gallop' : wood ? 'horse.stepWood' : 'horse.step', this, fast ? 0.5 : 0.3, 0.9 + rng.next() * 0.2);
       if (fast && ++this.gallop % 7 === 0 && rng.int(3) === 0) this.game.audio.play('horse.breathe', this, 0.5, 1);
     }
   }
@@ -251,7 +253,7 @@ export class Horse extends Animal implements Mount {
 
   makeRear() {
     this.rearTicks = 20;
-    this.game.audio.play(this.kind === 'horse' ? 'horse.angry' : 'donkey.say', this, 1, 1);
+    this.game.audio.play(this.kind === 'horse' ? 'horse.angry' : 'donkey.angry', this, 1, 1);
   }
 
   override onLand(fall: number) {
@@ -383,8 +385,8 @@ export class Horse extends Animal implements Mount {
 export class Donkey extends Horse {
   override typeName = 'Donkey';
   override sayName = 'donkey.say';
-  override hurtName = 'donkey.say';
-  override deathName = 'donkey.say';
+  override hurtName = 'donkey.hurt';
+  override deathName = 'donkey.death';
   override kind: HorseKind = 'donkey';
   constructor(world: World, game: Game) {
     super(world, game);
@@ -398,8 +400,8 @@ export class Donkey extends Horse {
 export class Mule extends Horse {
   override typeName = 'Mule';
   override sayName = 'donkey.say';
-  override hurtName = 'donkey.say';
-  override deathName = 'donkey.say';
+  override hurtName = 'donkey.hurt';
+  override deathName = 'donkey.death';
   override kind: HorseKind = 'mule';
   constructor(world: World, game: Game) {
     super(world, game);

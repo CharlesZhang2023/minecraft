@@ -8,7 +8,7 @@ import { World, Dimension, TileEntity } from '../world/world';
 import { Player } from '../game/player';
 import { Input } from '../game/input';
 import { device } from '../game/device';
-import { Audio, SOUND_FOR } from '../game/audio';
+import { Audio, SOUND_FOR, type MusicKind } from '../game/audio';
 import { Options, loadOptions, saveOptions, myLook } from '../game/options';
 import { Particles } from '../game/particles';
 import { computeEnv, netherEnv, endEnv } from '../game/env';
@@ -29,6 +29,7 @@ import { ItemEntity, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
 import { Minecart } from '../entity/minecart';
 import { FireworkRocket } from '../entity/firework';
+import { EnderDragon } from '../entity/dragon';
 import { EntityRenderer } from '../render/entityrender';
 import { Weather, rainTexture, snowTexture } from '../game/weather';
 import { rayAABB, clamp } from '../math';
@@ -536,7 +537,7 @@ export class Client {
   tick() {
     this.ticks++;
     const w = this.world, p = this.player;
-    this.audio.tickMusic(!w || this.panorama);
+    this.audio.tickMusic(this.musicKind());
     if (this.conn && !this.server) this.applyBundles();
     if (this.conn?.closed && !this.server) { this.disconnected(this.conn.closeReason); return; }
     if (!w || !p) return;
@@ -610,7 +611,7 @@ export class Client {
     if (p.onGround && !p.sneaking && Math.floor(p.distWalked) !== Math.floor(p.pDistWalked)) {
       const below = w.getId(Math.floor(p.x), Math.floor(p.y - 0.2), Math.floor(p.z));
       const snd = SOUND_FOR[BLOCKS[below].sound];
-      if (snd) this.audio.play(snd, null, 0.15, 1);
+      if (snd) this.audio.play('step.' + snd.slice(4), null, 0.15, 1);
     }
     if (p.inWater && Math.floor(p.distWalked * 2) !== Math.floor(p.pDistWalked * 2) && this.rng.int(3) === 0) this.audio.play('swim', null, 0.2, 1 + (this.rng.next() - 0.5) * 0.4);
     this.ui.hud.tick();
@@ -619,7 +620,10 @@ export class Client {
       const [sl, bl] = w.getLight(Math.floor(p.x), Math.floor(p.y + 1), Math.floor(p.z));
       if (sl === 0 && bl < 8 && p.y < 60) this.audio.play('cave', null, 0.7, 0.8 + this.rng.next() * 0.3);
     }
-    this.audio.setRain(this.dimension === 'overworld' && this.weather!.rainAt(p.x, p.y, p.z) && !p.isInsideOpaque() ? this.weather!.rain : 0);
+    // rain: on the player, or drumming on the roof over them
+    const wx = this.weather!, raining = this.dimension === 'overworld' && wx.rain > 0 && wx.canRainIn(Math.floor(p.x), Math.floor(p.z)) && !p.isInsideOpaque();
+    this.audio.setRain(raining ? wx.rain : 0, raining && !wx.rainAt(p.x, p.y, p.z));
+    this.ambientSounds();
     // wind while gliding: louder with speed, faded in over the first two seconds (vanilla's ElytraSound)
     let wind = 0;
     if (p.gliding && p.glideTicks > 20) wind = Math.min(1, (p.vx * p.vx + p.vy * p.vy + p.vz * p.vz) / 4) * Math.min(1, (p.glideTicks - 20) / 20);
@@ -1182,6 +1186,36 @@ export class Client {
   isDaytime() {
     const t = this.time % 24000;
     return t < 12500 || t > 23500;
+  }
+
+  /** What music fits now (vanilla's choice: the title screen, the credits, the dragon fight, the End, the Nether, creative, the world). */
+  private musicKind(): MusicKind {
+    if (!this.world || !this.player || this.panorama) return 'menu';
+    if (this.ui.screen instanceof CreditsScreen) return 'credits';
+    if (this.dimension === 'end') return this.entities.some((e) => e instanceof EnderDragon && !e.dead) ? 'boss' : 'end';
+    if (this.dimension === 'nether') return 'nether';
+    return this.player.creative ? 'creative' : 'game';
+  }
+
+  /**
+   * Blocks that sound by themselves nearby: fire crackling, lava popping, portals humming, flowing water (vanilla's
+   * random display ticks: blocks sampled every tick, most of them close to the player). Recorded sounds only.
+   */
+  private ambientSounds() {
+    const p = this.player!, w = this.world!, r = this.rng, a = this.audio;
+    if (!a.bank) return;
+    const px = Math.floor(p.x), py = Math.floor(p.y), pz = Math.floor(p.z);
+    for (let i = 0; i < 120; i++) {
+      const x = px + r.int(16) - r.int(16), y = py + r.int(16) - r.int(16), z = pz + r.int(16) - r.int(16);
+      const v = w.get(x, y, z), id = idOf(v), at = { x: x + 0.5, y: y + 0.5, z: z + 0.5 };
+      if (id === B.FIRE) { if (r.int(4) === 0) a.play('fire.ambient', at, 1 + r.next(), r.next() * 0.7 + 0.3); }
+      else if (id === B.LAVA) {
+        if (w.getId(x, y + 1, z) !== B.AIR) continue;
+        if (r.int(18) === 0) a.play('lava.pop', at, 0.2 + r.next() * 0.2, 0.9 + r.next() * 0.15);
+        if (r.int(36) === 0) a.play('lava.ambient', at, 0.2 + r.next() * 0.2, 0.9 + r.next() * 0.15);
+      } else if (id === B.NETHER_PORTAL) { if (r.int(18) === 0) a.play('portal', at, 0.5, r.next() * 0.4 + 0.8); }
+      else if (id === B.WATER && metaOf(v) !== 0 && r.int(12) === 0) a.play('water.ambient', at, r.next() * 0.25 + 0.75, r.next() + 0.5);
+    }
   }
 
   private ambientParticles() {

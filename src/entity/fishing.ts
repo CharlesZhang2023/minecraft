@@ -83,7 +83,7 @@ export class FishingHook extends Entity {
       if (this.approach === 0) {
         this.bite = 20 + rng.int(20);
         this.vy -= 0.2;
-        this.game.audio.play('splash', this, 0.25, 1 + (rng.next() - rng.next()) * 0.4);
+        this.game.audio.play('bobber.splash', this, 0.25, 1 + (rng.next() - rng.next()) * 0.4);
         for (let i = 0; i < 12; i++) pt?.splash(this.x + (rng.next() - 0.5) * 0.5, surface, this.z + (rng.next() - 0.5) * 0.5);
       }
       return;

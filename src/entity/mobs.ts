@@ -32,7 +32,13 @@ export abstract class Mob extends LivingEntity {
   sayName = '';
   hurtName = '';
   deathName = '';
+  /** Its own footsteps ('' = the block's it walks on). */
+  stepName = '';
+  /** Vanilla's sound volume and pitch for the mob (a volume above 1 carries further). */
+  soundVolume = 1;
   soundPitch = 1;
+  private walked = 0;
+  private nextStep = 1;
   xp = 5;
   burnsInDay = false;
   attackCooldown = 0;
@@ -84,7 +90,12 @@ export abstract class Mob extends LivingEntity {
     // ambient sound
     if (this.sayName && --this.sayTimer <= 0) {
       this.sayTimer = 80 + rng.int(160);
-      this.game.audio.play(this.sayName, this, 1, (this.baby ? 1.5 : 1) * this.soundPitch * (0.9 + rng.next() * 0.2));
+      this.game.audio.play(this.ambientSound(), this, this.soundVolume, (this.baby ? 1.5 : 1) * this.soundPitch * (0.9 + rng.next() * 0.2));
+    }
+    // footsteps, every block and a bit walked on the ground
+    if (this.onGround && !this.noAi) {
+      this.walked += Math.hypot(this.x - this.px, this.z - this.pz) * 0.6;
+      if (this.walked > this.nextStep) { this.nextStep = this.walked + 1; this.stepSound(); }
     }
     // daylight burning
     if (this.burnsInDay && this.game.isDaytime() && !this.inWater && (this.game.weather?.rain ?? 0) < 0.2) {
@@ -196,16 +207,26 @@ export abstract class Mob extends LivingEntity {
 
   override damage(amount: number, source: DamageSource, attacker?: Entity | null): boolean {
     const r = super.damage(amount, source, attacker);
-    if (r && !this.dead && this.hurtName) this.game.audio.play(this.hurtName, this, 1, (this.baby ? 1.5 : 1) * this.soundPitch * (0.9 + rng.next() * 0.2));
+    if (r && !this.dead && this.hurtName) this.game.audio.play(this.hurtName, this, this.soundVolume, (this.baby ? 1.5 : 1) * this.soundPitch * (0.9 + rng.next() * 0.2));
     if (r) this.onDamaged(attacker ?? null);
     return r;
   }
   onDamaged(_attacker: Entity | null) {}
 
+  /** What it says now and then (some mobs sound different when angry). */
+  ambientSound() { return this.sayName; }
+
+  /** A footstep: its own sound, or the block's under it (vanilla's playStepSound). */
+  stepSound() {
+    if (this.stepName) { this.game.audio.play(this.stepName, this, 0.15, 1); return; }
+    const below = this.world.getId(Math.floor(this.x), Math.floor(this.y - 0.2), Math.floor(this.z));
+    this.game.playBlockSound(below, Math.floor(this.x), Math.floor(this.y - 0.2), Math.floor(this.z), 'step');
+  }
+
   override die(source: DamageSource, attacker: Entity | null) {
     super.die(source, attacker);
     this.deathTime = 0;
-    if (this.deathName) this.game.audio.play(this.deathName, this, 1, (this.baby ? 1.5 : 1) * this.soundPitch);
+    if (this.deathName) this.game.audio.play(this.deathName, this, this.soundVolume, (this.baby ? 1.5 : 1) * this.soundPitch);
     const shooter = (attacker as unknown as { shooter?: Entity })?.shooter;
     const killer = attacker instanceof Player ? attacker : shooter instanceof Player ? shooter : null;
     const byPlayer = !!killer;
@@ -329,6 +350,7 @@ export class Zombie extends Monster {
   override sayName = 'zombie.say';
   override hurtName = 'zombie.hurt';
   override deathName = 'zombie.death';
+  override stepName = 'zombie.step';
   override burnsInDay = true;
   override speedAttr = 0.23;
   override chaseSpeed = 0.23 * 0.23 * 1.0 * 1.0;
@@ -355,7 +377,8 @@ export class Skeleton extends Monster {
   armsPose = 'bow';
   override sayName = 'skeleton.say';
   override hurtName = 'skeleton.hurt';
-  override deathName = 'skeleton.hurt';
+  override deathName = 'skeleton.death';
+  override stepName = 'skeleton.step';
   override burnsInDay = true;
   override speedAttr = 0.25;
   override chaseSpeed = 0.25 * 0.25;
@@ -413,7 +436,7 @@ export class Creeper extends Monster {
   override model = 'creeper';
   override skin = 'creeper';
   override hurtName = 'creeper.hurt';
-  override deathName = 'creeper.hurt';
+  override deathName = 'creeper.death';
   override speedAttr = 0.25;
   override chaseSpeed = 0.25 * 0.25;
   swell = 0;
@@ -458,8 +481,9 @@ export class Spider extends Monster {
   override skin = 'spider';
   override arthropod = true;
   override sayName = 'spider.say';
-  override hurtName = 'spider.say';
-  override deathName = 'spider.say';
+  override hurtName = 'spider.hurt';
+  override deathName = 'spider.death';
+  override stepName = 'spider.step';
   override speedAttr = 0.3;
   override chaseSpeed = 0.3 * 0.3;
   constructor(world: World, game: Game) {
@@ -580,8 +604,9 @@ export class Pig extends Animal {
   override model = 'pig';
   override skin = 'pig';
   override sayName = 'pig.say';
-  override hurtName = 'pig.say';
-  override deathName = 'animal.hurt';
+  override hurtName = 'pig.hurt';
+  override deathName = 'pig.death';
+  override stepName = 'pig.step';
   override temptItems = [I.WHEAT, I.APPLE];
   constructor(world: World, game: Game) {
     super(world, game);
@@ -599,8 +624,9 @@ export class Cow extends Animal {
   override model = 'cow';
   override skin = 'cow';
   override sayName = 'cow.say';
-  override hurtName = 'cow.say';
-  override deathName = 'cow.say';
+  override hurtName = 'cow.hurt';
+  override deathName = 'cow.death';
+  override stepName = 'cow.step';
   constructor(world: World, game: Game) {
     super(world, game);
     this.width = 0.9; this.height = 1.4;
@@ -634,8 +660,9 @@ export class Sheep extends Animal {
   override model = 'sheep';
   override skin = 'sheep';
   override sayName = 'sheep.say';
-  override hurtName = 'sheep.say';
-  override deathName = 'sheep.say';
+  override hurtName = 'sheep.hurt';
+  override deathName = 'sheep.death';
+  override stepName = 'sheep.step';
   sheared = false;
   color = 0;
   eatTimer = 0;
@@ -685,7 +712,7 @@ export class Sheep extends Animal {
         if (e) { e.vy += rng.next() * 0.05; e.vx += (rng.next() - rng.next()) * 0.1; e.vz += (rng.next() - rng.next()) * 0.1; }
       }
       game.interact!.damageHeld(1);
-      game.audio.play('dig.cloth', this, 1, 1);
+      game.audio.play('shears', this, 1, 1);
       return true;
     }
     return super.interact(game, held);
@@ -699,8 +726,9 @@ export class Chicken extends Animal {
   override model = 'chicken';
   override skin = 'chicken';
   override sayName = 'chicken.say';
-  override hurtName = 'chicken.say';
-  override deathName = 'chicken.say';
+  override hurtName = 'chicken.hurt';
+  override deathName = 'chicken.death';
+  override stepName = 'chicken.step';
   override temptItems = [I.WHEAT_SEEDS, I.PUMPKIN_SEEDS];
   flap = 0;
   flapSpeed = 0;
@@ -720,7 +748,7 @@ export class Chicken extends Animal {
     if (!this.onGround && this.vy < 0) this.vy *= 0.6;
     this.fallDistance = 0;
     if (!this.baby && --this.eggTimer <= 0) {
-      this.game.audio.play('pop', this, 1, (rng.next() - rng.next()) * 0.2 + 1);
+      this.game.audio.play('chicken.plop', this, 1, (rng.next() - rng.next()) * 0.2 + 1);
       this.game.dropItem(this.x, this.y, this.z, stack(I.EGG));
       this.eggTimer = 6000 + rng.int(6000);
     }
@@ -745,6 +773,7 @@ export class Enderman extends Monster {
   override canBreathe = true;
   carried = 0;
   private stareTicks = 0;
+  override ambientSound() { return this.target ? 'enderman.scream' : 'enderman.idle'; }
   constructor(world: World, game: Game) {
     super(world, game);
     this.width = 0.6; this.height = 2.9;
@@ -856,6 +885,7 @@ export class Slime extends Mob {
   pSquish = 0;
   private jumpDelay = 20;
   private wasOnGround = false;
+  override stepSound() {}
   constructor(world: World, game: Game) {
     super(world, game);
     this.setSize([1, 2, 4][rng.int(3)]);
@@ -878,7 +908,7 @@ export class Slime extends Mob {
       this.jumping = true;
       this.forward = 1;
       this.aiSpeed = 0.2 + this.size * 0.03;
-      this.game.audio.play('slime.jump', this, 0.4 * this.size, ((rng.next() - rng.next()) * 0.2 + 1) / 0.8);
+      this.game.audio.play(this.size > 1 ? 'slime.jump' : 'slime.small', this, 0.4 * this.size, ((rng.next() - rng.next()) * 0.2 + 1) / 0.8);
     } else if (!this.onGround) {
       this.forward = 1;
       this.aiSpeed = 0.2 + this.size * 0.03;
@@ -926,7 +956,8 @@ export class Wolf extends Animal {
   override skin = 'wolf';
   override sayName = 'wolf.say';
   override hurtName = 'wolf.hurt';
-  override deathName = 'wolf.hurt';
+  override deathName = 'wolf.death';
+  override stepName = 'wolf.step';
   override temptItems = [I.BONE];
   owner = false;
   /** Who tamed it ('' = the world's owner, for wolves tamed before multiplayer). */
@@ -934,6 +965,12 @@ export class Wolf extends Animal {
   sitting = false;
   angry = false;
   override xp = 1 + rng.int(3);
+  /** Vanilla: growls when angry, whines when tame and hurt, pants a third of the time, else barks. */
+  override ambientSound() {
+    if (this.angry) return 'wolf.growl';
+    if (this.owner && this.health < 10) return 'wolf.whine';
+    return rng.int(3) === 0 ? 'wolf.pant' : 'wolf.say';
+  }
   constructor(world: World, game: Game) {
     super(world, game);
     this.width = 0.6; this.height = 0.85;
@@ -1086,8 +1123,8 @@ export class Bat extends Mob {
   override model = 'bat';
   override skin = 'bat';
   override sayName = 'bat.idle';
-  override hurtName = 'bat.idle';
-  override deathName = 'bat.idle';
+  override hurtName = 'bat.hurt';
+  override deathName = 'bat.death';
   override xp = 0;
   hanging = false;
   private target2: { x: number; y: number; z: number } | null = null;
@@ -1095,7 +1132,8 @@ export class Bat extends Mob {
     super(world, game);
     this.width = 0.5; this.height = 0.9;
     this.maxHealth = this.health = 6;
-    this.soundPitch = 1.8;
+    this.soundVolume = 0.1;
+    this.soundPitch = 0.95;
   }
   override gravity() { return 0; }
   override isFlying() { return true; }
@@ -1141,7 +1179,7 @@ export class Villager extends Mob {
   override model = 'villager';
   override sayName = 'villager.idle';
   override hurtName = 'villager.hurt';
-  override deathName = 'villager.hurt';
+  override deathName = 'villager.death';
   override speedAttr = 0.25;
   profession = 'farmer';
   trades: Trade[] | null = null;
@@ -1204,7 +1242,8 @@ export class ZombiePigman extends Monster {
   override skin = 'pigman';
   override sayName = 'pigman.say';
   override hurtName = 'pigman.hurt';
-  override deathName = 'pigman.hurt';
+  override deathName = 'pigman.death';
+  override stepName = 'zombie.step';
   override speedAttr = 0.23;
   override chaseSpeed = 0.23 * 0.23 * 1.1;
   override heldItem = 0;
@@ -1213,6 +1252,7 @@ export class ZombiePigman extends Monster {
   override undead = true;
   anger = 0;
   override holding = true;
+  override ambientSound() { return this.anger > 0 ? 'pigman.angry' : 'pigman.say'; }
   constructor(world: World, game: Game) {
     super(world, game);
     this.width = 0.6; this.height = 1.95;
@@ -1265,7 +1305,7 @@ export class Ghast extends Mob {
     super(world, game);
     this.width = 4; this.height = 4;
     this.maxHealth = this.health = 10;
-    this.soundPitch = 0.7;
+    this.soundVolume = 10;
   }
   override eyeHeight() { return 2.6; }
   override gravity() { return 0; }
@@ -1395,6 +1435,7 @@ export class Silverfish extends Monster {
   override sayName = 'silverfish.say';
   override hurtName = 'silverfish.hit';
   override deathName = 'silverfish.kill';
+  override stepName = 'silverfish.step';
   override arthropod = true;
   override canBreathe = false;
   override xp = 5;

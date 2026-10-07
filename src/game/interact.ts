@@ -427,7 +427,7 @@ export class Interaction {
         const lower = w.get(t.x, lowerY, t.z);
         const nm = metaOf(lower) ^ 4;
         this.setAll([[t.x, lowerY, t.z, pack(B.OAK_DOOR, nm)], [t.x, lowerY + 1, t.z, pack(B.OAK_DOOR, (nm & 7) | 8)]]);
-        g.audio.play('door', { x: t.x + 0.5, y: t.y + 0.5, z: t.z + 0.5 }, 1, 0.9 + Math.random() * 0.1);
+        g.audio.play(nm & 4 ? 'door.open' : 'door.close', { x: t.x + 0.5, y: t.y + 0.5, z: t.z + 0.5 }, 1, 0.9 + Math.random() * 0.1);
         return true;
       }
       case B.BED: return this.sleep(t.x, t.y, t.z);
@@ -564,7 +564,7 @@ export class Interaction {
         if (cur !== B.AIR && !BLOCKS[cur].fluid) g.interact!.dropBlockItems(px, py, pz, w.get(px, py, pz));
         w.set(px, py, pz, fluid);
         g.ticker!.schedule(px, py, pz, fluid === B.WATER ? 5 : 30);
-        g.audio.play(fluid === B.WATER ? 'splash' : 'fizz', { x: px + 0.5, y: py + 0.5, z: pz + 0.5 }, 0.5, 1);
+        g.audio.play(fluid === B.WATER ? 'bucket.empty' : 'bucket.emptyLava', { x: px + 0.5, y: py + 0.5, z: pz + 0.5 }, 1, 1);
         if (!p.creative) p.inventory.setHeld(stack(I.BUCKET));
         return true;
       }
@@ -598,7 +598,7 @@ export class Interaction {
       const hit = raycastBlocks(w, eye.x, eye.y, eye.z, d.x, d.y, d.z, g.reach(), true);
       if (hit && w.getId(hit.x, hit.y, hit.z) === B.WATER) {
         const filled = stack(POTION_ITEMS.water);
-        g.audio.play('swim', hit, 0.6, 1.2);
+        g.audio.play('bottle.fill', hit, 1, 1);
         if (held.count === 1 && !p.creative) p.inventory.setHeld(filled);
         else { if (!p.creative) held.count--; if (p.inventory.add(filled) > 0) g.dropItem(p.x, p.y + 1, p.z, filled); }
         p.swing();
@@ -656,7 +656,7 @@ export class Interaction {
         const v = w.get(hit.x, hit.y, hit.z);
         if ((idOf(v) === B.WATER || idOf(v) === B.LAVA) && metaOf(v) === 0) {
           w.set(hit.x, hit.y, hit.z, B.AIR);
-          g.audio.play(idOf(v) === B.WATER ? 'splash' : 'fizz', hit, 0.4, 1);
+          g.audio.play(idOf(v) === B.WATER ? 'bucket.fill' : 'bucket.fillLava', hit, 1, 1);
           const filled = stack(idOf(v) === B.WATER ? I.WATER_BUCKET : I.LAVA_BUCKET);
           if (idOf(v) === B.LAVA) g.achievements.unlock('onFire');
           if (p.creative) { p.inventory.add(filled); return; }

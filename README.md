@@ -23,6 +23,21 @@ npm run preview
 
 Click the game to capture the mouse. Worlds save automatically to IndexedDB.
 
+### Vanilla sounds (optional)
+
+The game synthesises its own sounds. To play Minecraft's recorded ones instead, make the sound set from a Java
+Edition sound pack (`assets/minecraft/sounds/`, with `ffmpeg` installed):
+
+```bash
+npm run sounds -- ~/Downloads/SoundPack/assets/minecraft/sounds
+```
+
+It takes only the sounds the game plays (`tools/sounds/vanilla.mjs` says which file is which) and re-encodes them
+as Opus into `public/sounds/`: the sound effects as one ~1.8 MB file that's kept for offline play, and the music
+(~42 MB, 28 tracks) as one file per track, streamed only when it plays. Options: `--sfx-kbps 32`,
+`--music-kbps 40`, `--no-music`. The folder is Mojang's audio, so it stays out of git; without it (or in a browser
+that can't decode Ogg Opus) the synthesised sounds play.
+
 ## Agents (Claude Code, scripts)
 
 The dev server lets programs on this computer look at and change the running game: blocks, text blueprints,
@@ -124,6 +139,10 @@ agents work in that world. With no game open, `mc launch` starts a headless brow
   F2 screenshots and F1 to hide the HUD.
 - Synthesized sound effects: per-material digging and footsteps, mob voices, explosions, fizzes and portals.
   Generative ambient piano music.
+- Or vanilla's recorded sounds and music (see [Vanilla sounds](#vanilla-sounds-optional)), played by vanilla's
+  rules: separate break/place/footstep sounds per material, mob footsteps, hurt and death voices, fall sounds,
+  rain pattering (muffled under a roof), fire, lava, portal and flowing-water ambience, and music that fits
+  (title screen, survival, creative, Nether, End, the dragon fight, credits) with quiet spells in between.
 
 **Packs**
 - **Resource packs** in the Java Edition format (Options > Resource Packs...): block, item and particle textures at
