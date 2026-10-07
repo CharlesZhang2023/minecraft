@@ -11,7 +11,8 @@ import { addToSlots } from '../game/inventory';
 import { PATTERNS } from '../game/banners';
 import { RecipeBook } from './recipebook';
 import { GENERATIONS } from './book';
-import { BLOCKS, Render, B, B2, STONE2, WOOD, isLeaves, isSapling, isStairs, isSlab, DYE_COLORS } from '../world/blocks';
+import { BLOCKS, Render, B, B2, STONE2, WOOD, isLeaves, isSapling, isStairs, isSlab, DYE_COLORS, idOf, metaOf } from '../world/blocks';
+import { chestPartnerDir } from '../world/models';
 import { FurnaceTile, cooks, cookTime } from '../game/furnace';
 import { enchName, ENCHANTS } from '../game/enchant';
 import { drawEffectList } from './effects';
@@ -630,14 +631,26 @@ export class FurnaceScreen extends ContainerScreen {
 
 export class ChestScreen extends ContainerScreen {
   title = 'Chest';
+  /** The other half of a large chest (its 27 slots go below or above ours). */
+  partner: [number, number, number] | null = null;
   constructor(ui: UI, public x: number, public y: number, public z: number) { super(ui); }
-  override buildSlots() {
+  override init() {
+    const w = this.game.world!, v = w.get(this.x, this.y, this.z), id = idOf(v);
+    const d = id === B.CHEST || id === B2.TRAPPED_CHEST ? chestPartnerDir(id, metaOf(v), (dx, dz) => w.get(this.x + dx, this.y, this.z + dz)) : null;
+    this.partner = d ? [this.x + d[0], this.y, this.z + d[1]] : null;
+    this.ph = this.partner ? 222 : 166;
+    super.init();
+  }
+  private tileAt(x: number, y: number, z: number) {
     const w = this.game.world!;
-    let t = w.getTile(this.x, this.y, this.z) as unknown as { type: 'chest'; items: (ItemStack | null)[] } | undefined;
-    if (!t) {
-      t = { type: 'chest', items: new Array(27).fill(null) };
-      w.setTile(this.x, this.y, this.z, t);
-    }
+    let t = w.getTile(x, y, z) as unknown as { type: 'chest'; items: (ItemStack | null)[] } | undefined;
+    if (!t) { t = { type: 'chest', items: new Array(27).fill(null) }; w.setTile(x, y, z, t as never); }
+    return t;
+  }
+  override buildSlots() {
+    if (this.partner) { this.buildLarge(); return; }
+    const w = this.game.world!;
+    const t = this.tileAt(this.x, this.y, this.z);
     // the same 27 slots serve chests, trapped chests and barrels
     this.title = BLOCKS[w.getId(this.x, this.y, this.z)]?.display ?? 'Chest';
     // a trapped chest powers redstone while someone looks inside (counted on the server)
@@ -656,16 +669,32 @@ export class ChestScreen extends ContainerScreen {
       }
     this.addPlayerSlots();
   }
+  /** A large chest: the half with the lower coordinates on top, then the other; the inventory below both. */
+  private buildLarge() {
+    const w = this.game.world!, p = this.partner!;
+    const first = p[0] + p[2] < this.x + this.z ? p : [this.x, this.y, this.z];
+    const second = first === p ? [this.x, this.y, this.z] : p;
+    this.title = 'Large ' + (BLOCKS[w.getId(this.x, this.y, this.z)]?.display ?? 'Chest');
+    [first, second].forEach(([x, y, z], half) => {
+      const items = this.tileAt(x, y, z).items;
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 9; c++) {
+        const i = r * 9 + c;
+        this.slots.push({ x: 8 + c * 18, y: 18 + (half * 3 + r) * 18, get: () => items[i], set: (s) => (items[i] = s), group: 'chest' });
+      }
+    });
+    this.addPlayerSlots(8, 140, 198);
+  }
   override quickTargets(s: Slot): string[] {
     return s.group === 'chest' ? ['hotbar', 'main'] : ['chest'];
   }
   override changed() {
     const c = this.game.world!.chunkAt(this.x, this.z);
     if (c) c.modified = true;
+    if (this.partner) { const c2 = this.game.world!.chunkAt(this.partner[0], this.partner[2]); if (c2) c2.modified = true; }
   }
   override drawForeground(ctx: Ctx) {
     this.label(ctx, this.title, 8, 6);
-    this.label(ctx, 'Inventory', 8, 72);
+    this.label(ctx, 'Inventory', 8, this.partner ? 128 : 72);
   }
   private counted = false;
   override onClose() {

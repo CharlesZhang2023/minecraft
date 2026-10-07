@@ -481,7 +481,7 @@ function newBlockBoxes(id: number, meta: number, nb: Neighbor | undefined, f: nu
     case B2.SHULKER_BOX: return [box(0, 0, 0, 16, 16, 16, faces)];
     case B2.TRAPPED_CHEST: {
       const b = box(1, 0, 1, 15, 14, 15, [T.chestSide, T.chestSide, T.chestTop, T.chestTop, f[6], T.chestSide]);
-      return [rotY(b, meta & 3)];
+      return [joinChest(rotY(b, meta & 3), id, meta, nb)];
     }
   }
   if (SHULKER_IDS.has(id)) return [box(0, 0, 0, 16, 16, 16, faces)];
@@ -490,6 +490,22 @@ function newBlockBoxes(id: number, meta: number, nb: Neighbor | undefined, f: nu
 const SHULKER_IDS = new Set(SHULKER_BOXES);
 /** What a flower pot holds, by meta (0 = empty). */
 export const POT_PLANTS: number[] = [0, B.OAK_SAPLING, B.SPRUCE_SAPLING, B.BIRCH_SAPLING, WOOD.jungle.sapling, WOOD.acacia.sapling, WOOD.dark_oak.sapling, B.DANDELION, B.POPPY, B2.BLUE_ORCHID, B.CORNFLOWER, B.RED_MUSHROOM, B.BROWN_MUSHROOM, B.DEAD_BUSH, B.FERN, B.CACTUS];
+
+/** The chest next to this one (same kind, same facing, along its side), as [dx, dz]; null if it stands alone. */
+export function chestPartnerDir(id: number, meta: number, at: (dx: number, dz: number) => number): [number, number] | null {
+  const sides: [number, number][] = (meta & 1) === 0 ? [[-1, 0], [1, 0]] : [[0, -1], [0, 1]];
+  for (const [dx, dz] of sides) { const v = at(dx, dz); if (idOf(v) === id && (metaOf(v) & 3) === (meta & 3)) return [dx, dz]; }
+  return null;
+}
+/** A chest with a partner reaches across the gap to it (the two draw as one large chest). */
+function joinChest(b: Box, id: number, meta: number, nb?: Neighbor): Box {
+  if (!nb) return b;
+  const d = chestPartnerDir(id, meta, (dx, dz) => nb(dx, 0, dz));
+  if (!d) return b;
+  if (d[0] > 0) b.x1 = 16; else if (d[0] < 0) b.x0 = 0;
+  if (d[1] > 0) b.z1 = 16; else if (d[1] < 0) b.z0 = 0;
+  return b;
+}
 
 export function modelBoxes(v: number, nb?: Neighbor): Box[] {
   const id = idOf(v), meta = metaOf(v);
@@ -516,7 +532,7 @@ export function modelBoxes(v: number, nb?: Neighbor): Box[] {
       return [box(1, 0, 1, 15, 16, 15, [f[0], f[1], f[2], f[3], f[4], f[5]], { cullSame: true })];
     case B.CHEST: {
       const b = box(1, 0, 1, 15, 14, 15, [T.chestSide, T.chestSide, T.chestTop, T.chestTop, T.chestFront, T.chestSide]);
-      return [rotY(b, meta & 3)];
+      return [joinChest(rotY(b, meta & 3), id, meta, nb)];
     }
     case B.ENDER_CHEST: {
       const b = box(1, 0, 1, 15, 14, 15, [T.enderChestSide, T.enderChestSide, T.enderChestTop, T.enderChestTop, T.enderChestFront, T.enderChestSide]);
