@@ -6,8 +6,8 @@ import type { Game } from './game';
 import type { World } from '../world/world';
 import type { Player } from './player';
 import { commandTile } from './commandblocks';
-import { B, B2, BLOCKS, OPAQUE, WOOD, SHULKER_BOXES, isCommandBlock, idOf, metaOf, pack, WATERLOGGED, waterloggable, blockByName, isLog } from '../world/blocks';
-import { I, I3, I7, I11, ItemStack, ItemDef, getItem, stack, POTION_ITEMS, DISCS } from './items';
+import { B, B2, BLOCKS, OPAQUE, WOOD, SHULKER_BOXES, BANNERS, isCommandBlock, idOf, metaOf, pack, WATERLOGGED, waterloggable, blockByName, isLog } from '../world/blocks';
+import { I, I3, I7, I11, ItemStack, ItemDef, getItem, stack, POTION_ITEMS, DISCS, isDyeable } from './items';
 import { SMELTING } from './recipes';
 import { POT_PLANTS } from '../world/models';
 import { Random } from '../noise';
@@ -150,6 +150,21 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
         h.consume(1);
         if (!p.creative) p.inventory.add(stack(POTION_ITEMS.water));
         g.audio.play('splash', at(x, y, z), 0.3, 1.4);
+        return true;
+      }
+      if (lvl > 0 && isDyeable(held.id) && held.tag?.color !== undefined) {
+        const tag = { ...held.tag }; delete tag.color;
+        p.inventory.setHeld({ ...held, tag });
+        w.set(x, y, z, pack(id, lvl - 1));
+        g.audio.play('splash', at(x, y, z), 0.3, 1.2);
+        return true;
+      }
+      if (lvl > 0 && held.banner?.length && BANNERS.includes(held.id)) {
+        const one: ItemStack = { ...held, count: 1, banner: held.banner.slice(0, -1) };
+        if (!one.banner!.length) delete one.banner;
+        if (held.count > 1) { held.count--; if (p.inventory.add(one) > 0) g.dropItem(p.x, p.y + 1, p.z, one); } else p.inventory.setHeld(one);
+        w.set(x, y, z, pack(id, lvl - 1));
+        g.audio.play('splash', at(x, y, z), 0.3, 1.2);
         return true;
       }
       if (held.id === POTION_ITEMS.water && lvl < 3) {

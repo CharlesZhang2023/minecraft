@@ -6,7 +6,7 @@ import { Gui, Ctx } from './gui';
 import { Hud, drawDurability } from './hud';
 import { Chat } from './chat';
 import { Screen } from './screen';
-import { ItemStack, starTint, I7 } from '../game/items';
+import { ItemStack, starTint, I7, leatherColor } from '../game/items';
 import { BANNERS } from '../world/blocks';
 import * as Menus from './menus';
 import * as Containers from './containers';
@@ -299,6 +299,33 @@ export class UI {
 
   /** Draw an item icon with count / durability overlays at GUI position. */
   private glintCanvas = document.createElement('canvas');
+  private dyedIcons = new Map<string, HTMLCanvasElement>();
+  /** An icon washed with a dye colour (leather armour), keeping its shape and shading. */
+  private dyed(icon: HTMLCanvasElement, col: number): HTMLCanvasElement {
+    let k = this.iconKeys.get(icon);
+    if (!k) { k = String(++this.iconCount); this.iconKeys.set(icon, k); }
+    const id = k + ':' + col;
+    let c = this.dyedIcons.get(id);
+    if (!c) {
+      c = document.createElement('canvas');
+      c.width = icon.width; c.height = icon.height;
+      const g = c.getContext('2d')!;
+      g.drawImage(icon, 0, 0);
+      // each pixel's lightness (brightened, as vanilla's leather sprites are pale) times the dye
+      const img = g.getImageData(0, 0, c.width, c.height), d = img.data;
+      const cr = (col >> 16) & 255, cg = (col >> 8) & 255, cb = col & 255;
+      for (let i = 0; i < d.length; i += 4) {
+        if (!d[i + 3]) continue;
+        const l = Math.min(1.15, ((d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) / 255) * 2.2);
+        d[i] = Math.min(255, cr * l); d[i + 1] = Math.min(255, cg * l); d[i + 2] = Math.min(255, cb * l);
+      }
+      g.putImageData(img, 0, 0);
+      this.dyedIcons.set(id, c);
+    }
+    return c;
+  }
+  private iconKeys = new WeakMap<HTMLCanvasElement, string>();
+  private iconCount = 0;
   private glinted(icon: HTMLCanvasElement): HTMLCanvasElement {
     const c = this.glintCanvas;
     if (c.width !== icon.width) { c.width = icon.width; c.height = icon.height; }
@@ -319,6 +346,8 @@ export class UI {
 
   drawItem(ctx: Ctx, s: ItemStack, x: number, y: number, pop = 0) {
     let icon = this.game.icons.get(s.id, starTint(s));
+    const dye = leatherColor(s);
+    if (dye !== undefined) icon = this.dyed(icon, dye);
     if (s.ench) icon = this.glinted(icon);
     if (pop > 0) {
       const f = 1 + pop / 5;

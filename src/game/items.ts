@@ -306,6 +306,9 @@ export function starTint(s: ItemStack): number | undefined {
   const n = cs.length;
   return (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(b / n);
 }
+/** Leather gear takes dye (1.4): its colour is kept in the tag. */
+export const isDyeable = (id: number) => ['leather_helmet', 'leather_chestplate', 'leather_leggings', 'leather_boots', 'leather_horse_armor'].includes(ITEMS.get(id)?.name ?? '');
+export const leatherColor = (s: { id: number; tag?: Record<string, unknown> } | null | undefined): number | undefined => (s && typeof s.tag?.color === 'number' ? (s.tag.color as number) : undefined);
 export function dyeColor(id: number): number | undefined {
   return FIREWORK_DYES.find((d) => d.id() === id)?.col;
 }

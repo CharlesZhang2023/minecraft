@@ -408,6 +408,7 @@ export function tooltipLines(s: ItemStack): string[] {
     else lines.push('§7No Effects');
   }
   if (s.ench) for (const [k, v] of Object.entries(s.ench)) lines.push('§7' + enchName(k, v));
+  if (typeof s.tag?.color === 'number') lines.push('§7Dyed');
   if (s.id === I7.SHIELD && s.tag?.shieldBase !== undefined) lines.push(`§7${DYE_COLORS[s.tag.shieldBase as number].split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')}`);
   for (const l of s.banner ?? []) lines.push(`§7${DYE_COLORS[l.c].split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')} ${PATTERNS[l.p]?.[0] ?? l.p}`);
   if (s.id === I9.OMINOUS_BANNER) lines[0] = '§6§o' + (s.name ?? 'Ominous Banner');

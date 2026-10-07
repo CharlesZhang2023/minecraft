@@ -115,6 +115,38 @@ await wait(500);
 await t.shot('banner-icons');
 await t.page.keyboard.press('Escape');
 
+// leather dyeing (1.4) and washing in a cauldron (1.9), which also takes a banner's last layer off
+const dye = await t.page.evaluate(async () => {
+  const { craft } = await import('/src/game/recipes.ts');
+  const { DYES, stack, itemId } = await import('/src/game/items.ts');
+  const { B2, BANNERS, pack } = await import('/src/world/blocks.ts');
+  const { stationUse } = await import('/src/game/stations.ts');
+  const red = craft([stack(itemId('leather_chestplate')), stack(DYES[14]), null, null], 2);
+  const purple = craft([red, stack(DYES[11]), null, null], 2);
+  const r = await window.sim((g, p) => {
+    const w = g.world, x = Math.floor(p.x) - 3, y = Math.floor(p.y) + 12, z = Math.floor(p.z) - 3;
+    w.set(x, y - 1, z, 1); w.set(x, y, z, pack(B2.CAULDRON, 3));
+    p.inventory.main[p.inventory.selected] = { ...red };
+    stationUse(g.interact, x, y, z, w.get(x, y, z), p.inventory.held());
+    const washed = p.inventory.held()?.tag?.color === undefined;
+    p.inventory.main[p.inventory.selected] = { id: BANNERS[0], count: 1, banner: [{ p: 'bs', c: 1 }, { p: 'mc', c: 2 }] };
+    stationUse(g.interact, x, y, z, w.get(x, y, z), p.inventory.held());
+    const layers = p.inventory.held()?.banner?.length;
+    p.inventory.main[1] = { ...purple };
+    p.inventory.armor[1] = { ...purple };
+    return { washed, layers, level: w.get(x, y, z) >>> 12 };
+  });
+  return { red: red?.tag?.color, purple: purple?.tag?.color, ...r };
+});
+ok(dye.red === 0xb02e26, `leather and red dye make red leather (${dye.red?.toString(16)})`);
+ok(dye.purple !== undefined && dye.purple !== dye.red, `dyeing again mixes the colours (${dye.purple?.toString(16)})`);
+ok(dye.washed && dye.layers === 1 && dye.level === 1, `a cauldron washes the dye out and a banner's last layer off (${JSON.stringify(dye)})`);
+await wait(400);
+await t.page.keyboard.press('KeyE');
+await wait(500);
+await t.shot('dyed-leather');
+await t.page.keyboard.press('Escape');
+
 ok(t.errors.length === 0, 'no page errors ' + t.errors.slice(0, 3).join(' | '));
 await t.close();
 console.log(fails.length ? `${fails.length} failed` : 'all passed');

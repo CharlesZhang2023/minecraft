@@ -934,7 +934,7 @@ export class EntityRenderer {
   }
 
   /** Armor layers over a biped pose. */
-  private drawArmor(armor: ({ id: number } | null)[], base: Mat4, pose: Record<string, [number, number, number]>, light: [number, number], overlay: [number, number, number, number], offs?: Record<string, [number, number, number]>) {
+  private drawArmor(armor: ({ id: number; tag?: Record<string, unknown> } | null)[], base: Mat4, pose: Record<string, [number, number, number]>, light: [number, number], overlay: [number, number, number, number], offs?: Record<string, [number, number, number]>) {
     const all = ['head', 'hat', 'body', 'rightArm', 'leftArm', 'rightLeg', 'leftLeg'];
     const parts: [number, number, string[]][] = [[0, 1, ['head']], [1, 1, ['body', 'rightArm', 'leftArm']], [2, 2, ['body', 'rightLeg', 'leftLeg']], [3, 1, ['rightLeg', 'leftLeg']]];
     for (const [slot, layer, show] of parts) {
@@ -944,7 +944,10 @@ export class EntityRenderer {
       const mat = name.split('_')[0];
       const skin = `armor_${mat}_${layer}`;
       if (!this.skins.has(skin)) continue;
-      this.drawModel(layer === 1 ? 'armor1' : 'armor2', skin, base, pose, light, overlay, new Set(all.filter((p) => !show.includes(p))), 1, offs);
+      // dyed leather: washed towards its colour (unless the hurt flash is showing)
+      const col = typeof a.tag?.color === 'number' ? (a.tag.color as number) : undefined;
+      const ov: [number, number, number, number] = col !== undefined && overlay[3] === 0 ? [((col >> 16) & 255) / 255, ((col >> 8) & 255) / 255, (col & 255) / 255, 0.55] : overlay;
+      this.drawModel(layer === 1 ? 'armor1' : 'armor2', skin, base, pose, light, ov, new Set(all.filter((p) => !show.includes(p))), 1, offs);
     }
   }
 

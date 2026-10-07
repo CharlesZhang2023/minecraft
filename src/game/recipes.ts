@@ -1,6 +1,6 @@
 // Crafting & smelting recipes.
 import { B, WOOL_COLORS, BANNERS, blockByName } from '../world/blocks';
-import { I, I2, I3, I4, I5, I6, I7, I11, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion, itemByName } from './items';
+import { I, I2, I3, I4, I5, I6, I7, I11, TOOLS, ARMOR, ItemStack, stack, getItem, dyeColor, FireworkExplosion, itemByName, isDyeable, leatherColor, DYES, DYE_RGB } from './items';
 import { ITEM_TAGS } from './tags';
 import { registerRecipes116, type Smelt } from './recipes2';
 export { STONECUTTING, SMITHING } from './recipes2';
@@ -201,6 +201,21 @@ function bookCopy(items: ItemStack[]): ItemStack | null {
   if (gen >= 2) return null;
   return { id: I11.WRITTEN_BOOK, count: blanks.length, tag: { ...structuredClone(src[0].tag ?? {}), generation: gen + 1 } };
 }
+/** Leather gear and up to eight dyes: vanilla's colour mix (the average, brightened back to the brightest part). */
+function dyeLeather(items: ItemStack[]): ItemStack | null {
+  const gear = items.filter((s) => isDyeable(s.id)), dyes = items.filter((s) => DYES.includes(s.id));
+  if (gear.length !== 1 || !dyes.length || gear.length + dyes.length !== items.length) return null;
+  const cols = dyes.map((d) => DYE_RGB[DYES.indexOf(d.id)]);
+  const old = leatherColor(gear[0]);
+  if (old !== undefined) cols.push(old);
+  let r = 0, g = 0, b = 0, mx = 0;
+  for (const c of cols) { const cr = (c >> 16) & 255, cg = (c >> 8) & 255, cb = c & 255; r += cr; g += cg; b += cb; mx += Math.max(cr, cg, cb); }
+  const n = cols.length;
+  r /= n; g /= n; b /= n;
+  const k = mx / n / Math.max(r, g, b, 1);
+  const color = (Math.round(r * k) << 16) | (Math.round(g * k) << 8) | Math.round(b * k);
+  return { ...gear[0], count: 1, tag: { ...(gear[0].tag ?? {}), color } };
+}
 /** A banner on a plain shield (1.9): the shield takes its colour and patterns. */
 function shieldDecoration(items: ItemStack[]): ItemStack | null {
   if (items.length !== 2) return null;
@@ -252,6 +267,8 @@ export function craft(grid: (ItemStack | null)[], w: number): ItemStack | null {
   if (copy) return copy;
   const sh = shieldDecoration(items);
   if (sh) return sh;
+  const dyed = dyeLeather(items);
+  if (dyed) return dyed;
   for (const r of shapeless) {
     if (r.ingredients.length !== items.length) continue;
     const used = new Array(items.length).fill(false);
