@@ -1,4 +1,5 @@
 import { device } from './device';
+import type { GfxChoice } from '../render/backend';
 
 export interface Options {
   fov: number;
@@ -27,6 +28,10 @@ export interface Options {
   lod: boolean; // distant terrain: low-detail land out past the render distance
   lodDistance: number; // how far it reaches, in chunks
   lodQuality: number; // 0 low, 1 medium, 2 high: how soon detail falls off with distance
+  gfx: GfxChoice; // what draws the world: WebGPU when there is one ('auto'), or WebGL 2; read at start-up
+  resourcePacks: string[]; // resource packs in use, by id, the first winning
+  shaderPack: string; // the shader pack in use ('' = none)
+  shaderSettings: Record<string, Record<string, boolean | number>>; // each shader pack's settings, by pack id
 }
 
 export const DEFAULT_OPTIONS: Options = {
@@ -56,6 +61,10 @@ export const DEFAULT_OPTIONS: Options = {
   lod: !device.touch,
   lodDistance: 64,
   lodQuality: 1,
+  gfx: 'auto',
+  resourcePacks: [],
+  shaderPack: '',
+  shaderSettings: {},
 };
 
 /** A name for players who haven't picked one: Steve or Alex with a number. */

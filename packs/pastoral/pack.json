@@ -1,0 +1,11 @@
+{
+  "id": "pastoral",
+  "kind": "resource",
+  "version": "1.5.3",
+  "name": "Pastoral",
+  "description": "Soft, warm countryside textures (Pastoral Beta 1.5.3)",
+  "authors": ["花籃"],
+  "credit": "Pastoral Beta 1.5.3 by 花籃: someone else's work; its zip isn't kept in git",
+  "zip": "pastoral-1.5.3.zip",
+  "iconFile": "icon.png"
+}

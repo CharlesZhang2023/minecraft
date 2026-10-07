@@ -162,10 +162,7 @@ export class Weather {
         m.v(px + ox, y1 - cam.y, pz + oz, 1 + uo, vy0, layer, 0xffffff, a, sky, blk);
         m.v(px - ox, y1 - cam.y, pz - oz, uo, vy0, layer, 0xffffff, a, sky, blk);
       }
-    const gl = r.gl;
-    gl.depthMask(false);
-    r.drawDyn(m, { blend: true, cull: false, wrap: true });
-    gl.depthMask(true);
+    r.drawDyn(m, { blend: true, cull: false, wrap: true, depthWrite: false });
     if (this.flash > 0) r.drawOverlay([1, 1, 1, 0.3 * this.flash / 4]);
   }
 }

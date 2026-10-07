@@ -1,0 +1,37 @@
+{
+  "id": "vibrant",
+  "kind": "shader",
+  "version": "1.0.0",
+  "name": "Vibrant",
+  "description": "Warm sunlight and soft shadows, swaying plants, glossy water, god rays and bloom",
+  "authors": ["Minecraft Web"],
+  "credit": "In the spirit of Sildur's Vibrant Shaders (written from scratch for this game's WebGPU renderer)",
+  "icon": "#e8a33c",
+  "settings": [
+    { "id": "SHADOWS", "name": "Shadows", "type": "bool", "default": true },
+    { "id": "SHADOW_RES", "name": "Shadow Quality", "type": "enum", "options": [1024, 2048, 4096], "labels": ["Low", "Medium", "High"], "default": 2048 },
+    { "id": "SHADOW_DIST", "name": "Shadow Distance", "type": "number", "min": 48, "max": 192, "step": 16, "default": 112 },
+    { "id": "SOFT_SHADOWS", "name": "Shadow Softness", "type": "number", "min": 0.5, "max": 4, "step": 0.5, "default": 1.5 },
+    { "id": "WAVING", "name": "Waving Plants", "type": "bool", "default": true },
+    { "id": "WATER_REFLECTIONS", "name": "Water Reflections", "type": "bool", "default": true },
+    { "id": "GODRAYS", "name": "God Rays", "type": "bool", "default": true },
+    { "id": "GODRAY_STRENGTH", "name": "God Ray Strength", "type": "number", "min": 0, "max": 2, "step": 0.1, "default": 0.8 },
+    { "id": "BLOOM", "name": "Bloom", "type": "bool", "default": true },
+    { "id": "BLOOM_STRENGTH", "name": "Bloom Strength", "type": "number", "min": 0, "max": 2, "step": 0.1, "default": 0.6 },
+    { "id": "EXPOSURE", "name": "Brightness", "type": "number", "min": 0.5, "max": 2, "step": 0.05, "default": 1.0 },
+    { "id": "SATURATION", "name": "Colour", "type": "number", "min": 0.6, "max": 1.6, "step": 0.05, "default": 1.1 },
+    { "id": "VIGNETTE", "name": "Vignette", "type": "bool", "default": true }
+  ],
+  "shadow": { "enabled": "SHADOWS", "resolution": "SHADOW_RES", "distance": "SHADOW_DIST" },
+  "common": ["common.wgsl"],
+  "gbuffers": "gbuffers.wgsl",
+  "passes": [
+    { "name": "godrays", "file": "godrays.wgsl", "inputs": ["scene"], "scale": 0.5, "enabled": "GODRAYS" },
+    { "name": "bright", "file": "bright.wgsl", "inputs": ["scene"], "scale": 0.5, "enabled": "BLOOM" },
+    { "name": "bloom1", "file": "blur.wgsl", "inputs": ["bright"], "scale": 0.25, "enabled": "BLOOM" },
+    { "name": "bloom2", "file": "blur.wgsl", "inputs": ["bloom1"], "scale": 0.125, "enabled": "BLOOM" },
+    { "name": "bloom3", "file": "blur.wgsl", "inputs": ["bloom2"], "scale": 0.0625, "enabled": "BLOOM" }
+  ],
+  "final": "final.wgsl",
+  "vanillaClouds": true
+}

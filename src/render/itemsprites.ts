@@ -1,4 +1,5 @@
 // 16x16 item sprites as hand-authored pixel art. Outlines are added automatically.
+import { OVERRIDES, small } from './overrides';
 import { Img, RGB, newImg, hex, set, get, art, shade, S } from './pixels';
 import { POTION_SPRITES } from '../game/potiondata';
 import { SPAWN_EGGS, EXTRA_EGGS, EXTRA_EGGS2 } from '../game/items';
@@ -1160,6 +1161,8 @@ sprites.missing = () => {
 };
 
 export function getItemSprite(name: string): Img | null {
+  const o = OVERRIDES.items.get(name);
+  if (o) return new Uint8ClampedArray(small(o));
   const f = sprites[name];
   return f ? f() : null;
 }

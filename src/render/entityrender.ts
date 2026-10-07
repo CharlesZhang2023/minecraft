@@ -3,7 +3,7 @@ import { makeRenderContext, drawModTiles, modEntityRenderer, type RenderContext 
 import { Events } from '../mod/events';
 import { modState, guard } from '../mod/state';
 import type { Client } from '../client/client';
-import type { Renderer } from './renderer';
+import type { Renderer, Tex, ModelMesh } from './renderer';
 import type { Client as Game } from '../client/client';
 import { Mat4, mat4, identity, translate, rotateX, rotateY, rotateZ, scale, multiply } from '../math';
 import * as M from './models';
@@ -15,7 +15,7 @@ import { getItem, I, I6 } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
 import { BLOCKS, TEXTURES, Render, B, T, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE } from '../world/blocks';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
-import { DynMesh } from './gl';
+import { DynMesh } from './dynmesh';
 import { poseMat4 } from '../sublevel/pose';
 import { getTexture } from './textures';
 import { Player } from '../game/player';
@@ -29,7 +29,7 @@ import { EyeOfEnder } from '../entity/eye';
 import { dragonModel, dragonSkin } from './dragonmodel';
 import { decodeSkin, isCustom, isPreset, lookSlim, presetSkin } from './skins';
 
-interface PartGPU { vao: WebGLVertexArrayObject; count: number; def: M.ModelPart }
+interface PartGPU { mesh: ModelMesh; def: M.ModelPart }
 interface ModelGPU { parts: Map<string, PartGPU> }
 
 const DEG = Math.PI / 180;
@@ -44,7 +44,9 @@ function withOverlays<T>(pose: Record<string, T>) {
 
 export class EntityRenderer {
   private models = new Map<string, ModelGPU>();
-  private skins = new Map<string, WebGLTexture>();
+  private skins = new Map<string, Tex>();
+  /** Models drawn next are see-through (slimes' outsides, End crystals' glass). */
+  private blend = false;
   private itemGeo = new Map<number, Float32Array>();
   private tmp = mat4();
   private tmp2 = mat4();
@@ -52,7 +54,6 @@ export class EntityRenderer {
   private pickups: { e: ItemEntity; p: Entity; age: number; x: number; y: number; z: number }[] = [];
 
   constructor(private r: Renderer) {
-    const gl = r.gl;
     const defs: Record<string, M.ModelDef> = {
       biped: M.bipedModel(), bipedThin: M.bipedModel(true), creeper: M.creeperModel(), pig: M.pigModel(), cow: M.cowModel(),
       sheep: M.sheepModel(), wool: M.sheepWoolModel(), chicken: M.chickenModel(), spider: M.spiderModel(), ghast: M.ghastModel(), blaze: M.blazeModel(),
@@ -72,10 +73,7 @@ export class EntityRenderer {
     for (const k of ['iron', 'gold', 'diamond']) { const sk = M.horseArmorSkin(k); this.skins.set('horseArmor_' + k, r.makeTexture(sk.data, sk.w)); }
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
     for (const m of M.ARMOR_MATERIALS) for (const l of [1, 2] as const) { const sk = M.armorSkin(m, l); this.skins.set(`armor_${m}_${l}`, r.makeTexture(sk.data, sk.w)); }
-    this.handMesh = new DynMesh(gl);
-    gl.bindVertexArray(this.handMesh.vao);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.indexBuffer);
-    gl.bindVertexArray(null);
+    this.handMesh = new DynMesh();
   }
 
   // ------------------------------------------------------------------ player skins
@@ -109,25 +107,11 @@ export class EntityRenderer {
 
   // ------------------------------------------------------------------ model building
   private build(def: M.ModelDef): ModelGPU {
-    const gl = this.r.gl;
     const out: ModelGPU = { parts: new Map() };
     for (const p of def.parts) {
       const v: number[] = [];
       for (const b of p.boxes) this.boxGeometry(v, b, def.texW, def.texH);
-      const vao = gl.createVertexArray()!;
-      const vbo = gl.createBuffer()!;
-      gl.bindVertexArray(vao);
-      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(0);
-      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 32, 0);
-      gl.enableVertexAttribArray(1);
-      gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 32, 12);
-      gl.enableVertexAttribArray(2);
-      gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 32, 20);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.r.indexBuffer);
-      gl.bindVertexArray(null);
-      out.parts.set(p.name, { vao, count: v.length / 8, def: p });
+      out.parts.set(p.name, { mesh: this.r.createModel(new Float32Array(v)), def: p });
     }
     return out;
   }
@@ -158,18 +142,8 @@ export class EntityRenderer {
 
   // ------------------------------------------------------------------ drawing
   private drawModel(model: string, skin: string, base: Mat4, pose: Record<string, [number, number, number]>, light: [number, number], overlay: [number, number, number, number], skip?: Set<string>, alpha = 1, offsets?: Record<string, [number, number, number]>) {
-    const gl = this.r.gl;
     const m = this.models.get(model)!;
-    const p = this.r.entityProg;
-    gl.useProgram(p.prog);
-    gl.uniformMatrix4fv(p.u.u_viewProj, false, this.currentVP);
-    this.r.setCommonUniforms(p);
-    gl.uniform2f(p.u.u_light, light[0], light[1]);
-    gl.uniform4fv(p.u.u_overlay, overlay);
-    gl.uniform1f(p.u.u_alpha, alpha);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.skins.get(skin)!);
-    gl.uniform1i(p.u.u_skin, 0);
+    const tex = this.skins.get(skin)!;
     for (const [name, part] of m.parts) {
       if (skip?.has(name)) continue;
       const d = part.def;
@@ -181,11 +155,8 @@ export class EntityRenderer {
       if (rot[1]) rotateY(mm, mm, rot[1]);
       if (rot[0]) rotateX(mm, mm, rot[0]);
       scale(mm, mm, 1 / 16, 1 / 16, 1 / 16);
-      gl.uniformMatrix4fv(p.u.u_model, false, mm);
-      gl.bindVertexArray(part.vao);
-      gl.drawElements(gl.TRIANGLES, (part.count / 4) * 6, gl.UNSIGNED_INT, 0);
+      this.r.drawModel(part.mesh, tex, { viewProj: this.currentVP, model: mm, light, overlay, alpha, blend: this.blend });
     }
-    gl.bindVertexArray(null);
   }
 
   private currentVP: Mat4 = mat4();
@@ -208,11 +179,9 @@ export class EntityRenderer {
   }
 
   render(game: Game, t: number) {
-    const gl = this.r.gl, cam = this.r.cam, w = game.world!;
+    const cam = this.r.cam, w = game.world!;
     this.currentVP = this.r.viewProj;
-    gl.enable(gl.DEPTH_TEST);
-    gl.disable(gl.CULL_FACE);
-    gl.disable(gl.BLEND);
+    this.blend = false;
     const dyn = this.r.dyn;
     dyn.reset();
     let modCtx: RenderContext | null = null;
@@ -336,9 +305,7 @@ export class EntityRenderer {
           }
     }
     if (sh.count) {
-      gl.depthMask(false);
-      this.r.drawDyn(sh, { blend: true, cull: false, fullbright: true, alphaCut: 0.002 });
-      gl.depthMask(true);
+      this.r.drawDyn(sh, { blend: true, cull: false, fullbright: true, alphaCut: 0.002, depthWrite: false });
     }
   }
 
@@ -370,22 +337,8 @@ export class EntityRenderer {
 
   /** Draw one part of a model with an explicit, fully prepared matrix (already scaled by 1/16). */
   private drawPart(model: string, skin: string, partName: string, mm: Mat4, light: [number, number], overlay: [number, number, number, number], alpha = 1) {
-    const gl = this.r.gl;
     const part = this.models.get(model)!.parts.get(partName)!;
-    const p = this.r.entityProg;
-    gl.useProgram(p.prog);
-    gl.uniformMatrix4fv(p.u.u_viewProj, false, this.currentVP);
-    this.r.setCommonUniforms(p);
-    gl.uniform2f(p.u.u_light, light[0], light[1]);
-    gl.uniform4fv(p.u.u_overlay, overlay);
-    gl.uniform1f(p.u.u_alpha, alpha);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.skins.get(skin)!);
-    gl.uniform1i(p.u.u_skin, 0);
-    gl.uniformMatrix4fv(p.u.u_model, false, mm);
-    gl.bindVertexArray(part.vao);
-    gl.drawElements(gl.TRIANGLES, (part.count / 4) * 6, gl.UNSIGNED_INT, 0);
-    gl.bindVertexArray(null);
+    this.r.drawModel(part.mesh, this.skins.get(skin)!, { viewProj: this.currentVP, model: mm, light, overlay, alpha, blend: this.blend });
   }
 
   private drawDragon(e: EnderDragon, x: number, y: number, z: number, t: number, sky: number, blk: number) {
@@ -441,7 +394,6 @@ export class EntityRenderer {
   }
 
   private drawCrystal(e: EndCrystal, x: number, y: number, z: number, t: number, sky: number, blk: number) {
-    const gl = this.r.gl;
     const age = e.age + t;
     const bob = Math.sin(age * 0.2) * 0.12 + 0.2;
     const spin = age * 0.05;
@@ -457,9 +409,9 @@ export class EntityRenderer {
       rotateX(m, m, 0.9553);
       rotateY(m, m, spin * k * 0.7);
       scale(q, m, 1 / 16, 1 / 16, 1 / 16);
-      if (alpha) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); }
+      this.blend = alpha;
       this.drawPart('crystal', 'crystal', name, q, light, overlay);
-      if (alpha) gl.disable(gl.BLEND);
+      this.blend = false;
     };
     cube('inner', 1.3, false);
     cube('outer', 1, true);
@@ -471,7 +423,6 @@ export class EntityRenderer {
   }
 
   private drawLiving(game: Game, e: LivingEntity, x: number, y: number, z: number, t: number, sky: number, blk: number) {
-    const gl = this.r.gl;
     const anyE = e as unknown as Record<string, unknown>;
     const model = (anyE.model as string) ?? 'biped';
     const skin = model === 'villager' ? 'villager_' + (anyE.profession as string) : (anyE.skin as string) ?? 'steve';
@@ -694,10 +645,9 @@ export class EntityRenderer {
         scale(sb, sb, -1, -1, 1);
         translate(sb, sb, 0, -1.501, 0);
         this.drawModel('slimeInner', 'slime', sb, pose, light, overlay);
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        this.blend = true;
         this.drawModel('slimeOuter', 'slime', sb, pose, light, overlay, undefined, 1);
-        gl.disable(gl.BLEND);
+        this.blend = false;
         break;
       }
       case 'blaze': {
@@ -1158,7 +1108,7 @@ export class EntityRenderer {
 
   /** Depth-only plane inside each boat's hull, so the water surface drawn later doesn't show inside it. */
   private boatMasks(game: Game, list: Entity[], t: number) {
-    const cam = this.r.cam, mesh = this.r.dyn, gl = this.r.gl;
+    const cam = this.r.cam, mesh = this.r.dyn;
     mesh.reset();
     for (const e of list) {
       if (!(e instanceof Boat)) continue;
@@ -1169,9 +1119,7 @@ export class EntityRenderer {
     }
     if (!mesh.count) return;
     void game;
-    gl.colorMask(false, false, false, false);
-    this.r.drawDyn(mesh, { cull: false, alphaCut: -1, fullbright: true });
-    gl.colorMask(true, true, true, true);
+    this.r.drawDyn(mesh, { cull: false, alphaCut: -1, fullbright: true, colorWrite: false });
   }
 
   private drawArrow(mesh: DynMesh, e: Arrow, x: number, y: number, z: number, t: number, sky: number, blk: number) {
@@ -1190,14 +1138,10 @@ export class EntityRenderer {
 
   /** Player model in the inventory screen, drawn into a GUI rectangle. */
   renderPreview(game: Game, box: { x: number; y: number; w: number; h: number; yaw: number; pitch: number; entity?: Entity; look?: string; slim?: boolean }, guiScale: number) {
-    const gl = this.r.gl, p = game.player!;
+    const p = game.player!;
     const sx = Math.round(box.x * guiScale), sw = Math.round(box.w * guiScale), sh = Math.round(box.h * guiScale);
-    const sy = this.r.height - Math.round((box.y + box.h) * guiScale);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(sx, sy, sw, sh);
-    gl.viewport(sx, sy, sw, sh);
-    gl.clearColor(0, 0, 0, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    this.r.beginInset(sx, Math.round(box.y * guiScale), sw, sh);
+    this.blend = false;
     const proj = mat4();
     const aspect = sw / sh;
     const hh = 1.15;
@@ -1229,8 +1173,7 @@ export class EntityRenderer {
       translate(hb, hb, 0, -1.501, 0);
       this.drawHorse(box.entity, hb, 1, [15, 15], [0, 0, 0, 0], 0, 0, 0, 0, box.entity.age);
       this.r.env = saved;
-      gl.disable(gl.SCISSOR_TEST);
-      gl.viewport(0, 0, this.r.width, this.r.height);
+      this.r.endInset();
       this.currentVP = this.r.viewProj;
       return;
     }
@@ -1243,16 +1186,15 @@ export class EntityRenderer {
       if (it) this.drawHeldThirdPerson(it.id, base, pose.rightArm, [15, 15]);
     }
     this.r.env = saved;
-    gl.disable(gl.SCISSOR_TEST);
-    gl.viewport(0, 0, this.r.width, this.r.height);
+    this.r.endInset();
     this.currentVP = this.r.viewProj;
   }
 
   // ------------------------------------------------------------------ first person
   renderHand(game: Game, t: number) {
-    const gl = this.r.gl;
     const p = game.player!;
-    gl.clear(gl.DEPTH_BUFFER_BIT);
+    this.r.clearDepth();
+    this.blend = false;
     const proj = this.r.handViewProj(70);
     this.currentVP = proj;
     const [sky, blk] = game.world!.getLight(Math.floor(p.x), Math.floor(p.y + p.eyeHeight()), Math.floor(p.z));

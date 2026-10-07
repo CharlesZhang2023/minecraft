@@ -238,6 +238,8 @@ export class UI {
     c.width = g.renderer.width;
     c.height = g.renderer.height;
     const ctx = c.getContext('2d')!;
+    // a fresh frame: a WebGPU canvas only holds its picture while it's being drawn
+    g.render();
     ctx.drawImage(g.renderer.canvas, 0, 0);
     ctx.drawImage(g.ctx.canvas, 0, 0);
     const a = document.createElement('a');

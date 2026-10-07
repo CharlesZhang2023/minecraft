@@ -1,7 +1,8 @@
-// WebGL2 world renderer.
-import { GL, program, Program, DynMesh } from './gl';
-import * as SH from './shaders';
-import { BlockAtlas } from './atlas';
+// The world renderer: what every backend shares (camera, culling, which chunk sections to draw and in what order,
+// distant terrain tiles, the sky's sun and moon, clouds) and the drawing calls the game makes. WebGPU
+// (gpurenderer.ts) and WebGL 2 (glrenderer.ts) do the drawing; `createRenderer` (backend.ts) picks one.
+import { BlockAtlas, type AtlasTarget } from './atlas';
+import { DynMesh } from './dynmesh';
 import { Mat4, mat4, perspective, ortho, lookDir, multiply, invert, identity } from '../math';
 import type { Chunk } from '../world/world';
 import { isShipyardChunk } from '../sublevel/shipyard';
@@ -9,6 +10,8 @@ import type { MeshResult } from '../world/mesher';
 import type { LodDraw } from '../world/lod';
 import { Random } from '../noise';
 import { Img } from './pixels';
+import { OVERRIDES } from './overrides';
+import type { ShaderPackSource } from '../packs/types';
 
 export interface Camera {
   x: number; y: number; z: number;
@@ -28,16 +31,6 @@ export interface Camera {
   background?: [number, number, number];
   roll?: number;
   bobX?: number; bobY?: number;
-}
-
-interface ChunkGPU {
-  opaqueVao: WebGLVertexArrayObject | null;
-  opaqueVbo: WebGLBuffer | null;
-  transVao: WebGLVertexArrayObject | null;
-  transVbo: WebGLBuffer | null;
-  opaqueSections: Int32Array;
-  transSections: Int32Array;
-  bytes: number;
 }
 
 export interface EnvState {
@@ -62,159 +55,155 @@ export interface EnvState {
   ambientCol: [number, number, number];
   noSky?: boolean;
   nightVision?: number;
+  // for shader packs
+  ticks?: number;
+  dim?: 'overworld' | 'nether' | 'end';
+  /** 1 in water, 2 in lava */
+  eyeInWater?: number;
+  thunder?: number;
 }
 
-const MAX_QUADS = 1 << 18;
+/** A chunk's meshes on the GPU (each backend adds its buffers): where each 16-block section's quads start. */
+export interface ChunkMesh {
+  opaqueSections: Int32Array;
+  transSections: Int32Array;
+  opaque: number; // quads
+  trans: number;
+  bytes: number;
+}
 
-/** A distant-terrain tile's vertex buffer. */
-interface LodGPU { vao: WebGLVertexArrayObject; waterVao: WebGLVertexArrayObject; vbo: WebGLBuffer; bytes: number }
+/** A sub-level to draw: its chunks, its rotation (column-major 3x3) and where its pivot is (world and local). */
+export interface ShipDraw { rot: Float32Array; tx: number; ty: number; tz: number; lx: number; ly: number; lz: number; chunks: Chunk[] }
+
+/** One chunk to draw: its mesh, placed (`offset`) and turned (`rot` about the pivot, `pre` from it), and the runs of quads to draw. */
+export interface ChunkDraw {
+  mesh: ChunkMesh;
+  ox: number; oy: number; oz: number;
+  rot: Float32Array;
+  px: number; py: number; pz: number;
+  /** [first quad, end quad] pairs */
+  runs: number[];
+}
+
+/** A texture made by `makeTexture` (entity skins). */
+export interface Tex { readonly w: number; readonly h: number }
+/** A model part's vertices (`createModel`): pos(3) uv(2) normal(3) floats, in quads. */
+export interface ModelMesh { readonly quads: number }
+
+export interface DynOpts {
+  blend?: boolean;
+  /** Added light (glows, spells): fades out into the fog instead of turning fog-coloured. */
+  additive?: boolean;
+  model?: Mat4;
+  overlay?: [number, number, number, number];
+  cull?: boolean;
+  fullbright?: boolean;
+  depthTest?: boolean;
+  /** false: drawn without writing depth (things seen through other blended things). */
+  depthWrite?: boolean;
+  /** false: depth only (masks). */
+  colorWrite?: boolean;
+  /** Pulled toward the camera (decals over the faces they lie on: cracks). */
+  polygonOffset?: boolean;
+  alphaCut?: number;
+  viewProj?: Mat4;
+  /** Texture coordinates repeat (rain and snow columns). */
+  wrap?: boolean;
+}
+
+export interface ModelOpts {
+  viewProj: Mat4;
+  model: Mat4;
+  light: [number, number];
+  overlay: [number, number, number, number];
+  alpha: number;
+  blend?: boolean;
+}
+
+/** Distant-terrain tile drawing parameters (set up by `drawLod`). */
+export interface LodPass {
+  tiles: LodDraw[];
+  mask: Uint8Array;
+  mcx: number; mcz: number;
+  snow: [number, number, number];
+  pixel: number;
+}
+
+export interface SkyParams { end: boolean; sunDir: [number, number, number]; stars: number; celestial: number; endLod: number }
+
 /** Chunks across the distant-terrain mask (centred on the player, wrapping). */
-const LOD_MASK = 64;
+export const LOD_MASK = 64;
+/** Quads in the shared index buffer: the most one draw can have. */
+export const MAX_QUADS = 1 << 18;
 
-export class Renderer {
-  gl: GL;
+export abstract class Renderer {
+  /** 'webgpu' or 'webgl2' */
+  abstract readonly backend: 'webgpu' | 'webgl2';
   atlas!: BlockAtlas;
-  chunkProg: Program;
-  dynProg: Program;
-  entityProg: Program;
-  skyProg: Program;
-  endSkyTex: WebGLTexture;
-  sunProg: Program;
-  cloudProg: Program;
-  lineProg: Program;
-  overlayProg: Program;
-  lodProg: Program;
-  lodBytes = 0;
-  drawnLod = 0;
-  private lodMaskTex: WebGLTexture;
-  private lodProj = mat4();
-  private lodViewProj = mat4();
-  private lodPlanes = new Float32Array(24);
-  indexBuffer: WebGLBuffer;
   proj: Mat4 = mat4();
   view: Mat4 = mat4();
   viewProj: Mat4 = mat4();
   invViewProj: Mat4 = mat4();
-  private tmp = mat4();
-  private planes = new Float32Array(24);
+  protected planes = new Float32Array(24);
+  protected lodProj = mat4();
+  protected lodViewProj = mat4();
+  private lodPlanes = new Float32Array(24);
   width = 1;
   height = 1;
   cam: Camera = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 70 };
   chunkBytes = 0;
   drawnChunks = 0;
-  dyn: DynMesh;
-  lineVao: WebGLVertexArrayObject;
-  lineVbo: WebGLBuffer;
-  sunTex: WebGLTexture;
-  moonTex: WebGLTexture;
-  sunVao: WebGLVertexArrayObject;
-  sunVbo: WebGLBuffer;
-  cloudVao: WebGLVertexArrayObject;
-  cloudVbo: WebGLBuffer;
-  cloudCount = 0;
-  private cloudCell = [1e9, 1e9];
-  private cloudMap: Uint8Array;
-  emptyVao: WebGLVertexArrayObject;
+  lodBytes = 0;
+  drawnLod = 0;
+  /** The frame's scratch mesh (particles, entities, selection cracks...). */
+  dyn = new DynMesh();
   env!: EnvState;
+  /** The GPU was lost and is back: everything uploaded (chunks, distant terrain, the atlas) has to be made again. */
+  onRestore: (() => void) | null = null;
+  // clouds: rebuilt on the CPU when the camera crosses a cell, uploaded by the backend when `cloudVersion` changes
+  protected cloudVerts = new Float32Array(0);
+  protected cloudVersion = 0;
+  private cloudCell = [1e9, 1e9];
+  private cloudMap = makeCloudMap();
 
-  constructor(public canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
-    if (!gl) throw new Error('WebGL2 is not supported by this browser.');
-    this.gl = gl;
-    this.chunkProg = program(gl, SH.CHUNK_VS, SH.CHUNK_FS);
-    this.dynProg = program(gl, SH.DYN_VS, SH.DYN_FS);
-    this.entityProg = program(gl, SH.ENTITY_VS, SH.ENTITY_FS);
-    this.skyProg = program(gl, SH.SKY_VS, SH.SKY_FS);
-    this.sunProg = program(gl, SH.SUN_VS, SH.SUN_FS);
-    this.cloudProg = program(gl, SH.CLOUD_VS, SH.CLOUD_FS);
-    this.lineProg = program(gl, SH.LINE_VS, SH.LINE_FS);
-    this.overlayProg = program(gl, SH.OVERLAY_VS, SH.OVERLAY_FS);
-    this.lodProg = program(gl, SH.LOD_VS, SH.LOD_FS);
-    this.lodMaskTex = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, this.lodMaskTex);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8, LOD_MASK, LOD_MASK);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  constructor(public canvas: HTMLCanvasElement) {}
 
-    // shared quad index buffer
-    const idx = new Uint32Array(MAX_QUADS * 6);
-    for (let q = 0; q < MAX_QUADS; q++) {
-      const o = q * 6, v = q * 4;
-      idx[o] = v; idx[o + 1] = v + 1; idx[o + 2] = v + 2;
-      idx[o + 3] = v; idx[o + 4] = v + 2; idx[o + 5] = v + 3;
-    }
-    this.indexBuffer = gl.createBuffer()!;
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+  /** For F3: the backend and what it runs on. */
+  abstract describe(): string;
 
-    this.dyn = new DynMesh(gl);
-    gl.bindVertexArray(this.dyn.vao);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-    gl.bindVertexArray(null);
-
-    this.lineVao = gl.createVertexArray()!;
-    this.lineVbo = gl.createBuffer()!;
-    gl.bindVertexArray(this.lineVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.lineVbo);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
-    gl.bindVertexArray(null);
-
-    this.emptyVao = gl.createVertexArray()!;
-
-    // sun & moon
-    this.sunTex = this.makeTexture(sunImage(), 32);
-    this.moonTex = this.makeTexture(moonImage(), 32);
-    // End sky: tiling noise with mipmaps, so the fine grain doesn't shimmer
-    this.endSkyTex = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, this.endSkyTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 128, 128, 0, gl.RGBA, gl.UNSIGNED_BYTE, endSkyImage());
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    this.sunVao = gl.createVertexArray()!;
-    this.sunVbo = gl.createBuffer()!;
-    gl.bindVertexArray(this.sunVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.sunVbo);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0);
-    gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-    gl.bindVertexArray(null);
-
-    // clouds
-    this.cloudVao = gl.createVertexArray()!;
-    this.cloudVbo = gl.createBuffer()!;
-    gl.bindVertexArray(this.cloudVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.cloudVbo);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 16, 0);
-    gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 16, 12);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-    gl.bindVertexArray(null);
-    this.cloudMap = makeCloudMap();
+  /**
+   * Draw with a shader pack (null: the game's own look). Resolves with an error message ('' when it's in use);
+   * on an error the game's own look stays.
+   */
+  async setShaderPack(src: ShaderPackSource | null): Promise<string> {
+    return src ? 'Shader packs need WebGPU (Options > More... > Graphics)' : '';
   }
+  /** The shader pack in use, if any. */
+  shaderPackName(): string { return ''; }
 
+  // ------------------------------------------------------------------ resources
+  /** Build the block atlas (again: mods that add textures, a restored GPU); the old one is freed. */
   initAtlas(extra: { name: string; img: Img }[]) {
-    this.atlas = new BlockAtlas(this.gl, extra);
+    const old = this.atlas;
+    this.atlas = new BlockAtlas(this.atlasTarget(), extra);
+    old?.destroy();
+    // the sun and moon: a resource pack's, or the game's own
+    const sun = OVERRIDES.sky.get('sun'), moon = OVERRIDES.sky.get('moon');
+    this.skyImages(sun ? { img: sun.img, w: sun.w } : { img: sunImage(), w: 32 }, moon ? { img: moon.img, w: moon.w } : { img: moonImage(), w: 32 });
   }
+  protected abstract atlasTarget(): AtlasTarget;
+  /** The sun's texture, and the moon's (its 8 phases in 4 columns and 2 rows). */
+  protected abstract skyImages(sun: { img: Img; w: number }, moon: { img: Img; w: number }): void;
 
-  makeTexture(img: Img | HTMLCanvasElement, size: number, filter: number = this.gl.NEAREST): WebGLTexture {
-    const gl = this.gl;
-    const t = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, t);
-    if (img instanceof HTMLCanvasElement) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, img.length / 4 / size, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    return t;
-  }
+  abstract makeTexture(img: Img, w: number): Tex;
+  abstract freeTexture(t: Tex): void;
+  abstract createModel(verts: Float32Array): ModelMesh;
+
+  abstract uploadChunk(c: Chunk, r: MeshResult): void;
+  abstract freeChunk(c: Chunk): void;
+  /** A tile's quads (16 bytes each, see LodTileMesh); the water quads follow the `opaque` ground quads. */
+  abstract uploadLod(data: ArrayBuffer, opaque: number): unknown;
+  abstract freeLod(m: unknown): void;
 
   resize(w: number, h: number) {
     this.width = w;
@@ -223,64 +212,13 @@ export class Renderer {
     this.canvas.height = h;
   }
 
-  // ------------------------------------------------------------------ chunk meshes
-  uploadChunk(c: Chunk, r: MeshResult) {
-    const gl = this.gl;
-    let g = c.mesh as ChunkGPU | null;
-    if (!g) {
-      g = { opaqueVao: null, opaqueVbo: null, transVao: null, transVbo: null, opaqueSections: r.opaqueSections, transSections: r.transSections, bytes: 0 };
-      c.mesh = g;
-    }
-    this.chunkBytes -= g.bytes;
-    const mk = (data: ArrayBuffer, vao: WebGLVertexArrayObject | null, vbo: WebGLBuffer | null): [WebGLVertexArrayObject | null, WebGLBuffer | null] => {
-      if (data.byteLength === 0) {
-        if (vao) gl.deleteVertexArray(vao);
-        if (vbo) gl.deleteBuffer(vbo);
-        return [null, null];
-      }
-      if (!vao) {
-        vao = gl.createVertexArray()!;
-        vbo = gl.createBuffer()!;
-        gl.bindVertexArray(vao);
-        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-        gl.enableVertexAttribArray(0);
-        gl.vertexAttribIPointer(0, 4, gl.UNSIGNED_SHORT, 16, 0);
-        gl.enableVertexAttribArray(1);
-        gl.vertexAttribPointer(1, 4, gl.UNSIGNED_BYTE, false, 16, 8);
-        gl.enableVertexAttribArray(2);
-        gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, 16, 12);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-      } else {
-        gl.bindVertexArray(vao);
-        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-      }
-      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      gl.bindVertexArray(null);
-      return [vao, vbo];
-    };
-    [g.opaqueVao, g.opaqueVbo] = mk(r.opaque, g.opaqueVao, g.opaqueVbo);
-    [g.transVao, g.transVbo] = mk(r.trans, g.transVao, g.transVbo);
-    g.opaqueSections = r.opaqueSections;
-    g.transSections = r.transSections;
-    g.bytes = r.opaque.byteLength + r.trans.byteLength;
-    this.chunkBytes += g.bytes;
-  }
-
-  freeChunk(c: Chunk) {
-    const g = c.mesh as ChunkGPU | null;
-    if (!g) return;
-    const gl = this.gl;
-    if (g.opaqueVao) gl.deleteVertexArray(g.opaqueVao);
-    if (g.opaqueVbo) gl.deleteBuffer(g.opaqueVbo);
-    if (g.transVao) gl.deleteVertexArray(g.transVao);
-    if (g.transVbo) gl.deleteBuffer(g.transVbo);
-    this.chunkBytes -= g.bytes;
-    c.mesh = null;
-  }
-
   // ------------------------------------------------------------------ camera
+  near = 0.05;
+  far = 1000;
   setupCamera(cam: Camera, near = 0.05, far = 1000) {
     this.cam = cam;
+    this.near = near;
+    this.far = far;
     if (cam.ortho) {
       const h = cam.ortho, w = (h * this.width) / this.height;
       ortho(this.proj, -w, w, -h, h, cam.near ?? -far, cam.depth ?? far);
@@ -315,145 +253,70 @@ export class Renderer {
     return this.boxVisible(x0, -this.cam.y, z0, x0 + 16, 256 - this.cam.y, z0 + 16);
   }
 
-  setCommonUniforms(p: Program) {
-    const gl = this.gl, e = this.env;
-    gl.uniform1f(p.u.u_sunBright, e.sunBright);
-    gl.uniform3fv(p.u.u_skyLightCol, e.skyLightCol);
-    gl.uniform1f(p.u.u_gamma, e.gamma);
-    gl.uniform1f(p.u.u_flicker, e.flicker);
-    gl.uniform1f(p.u.u_ambient, e.ambient);
-    gl.uniform3fv(p.u.u_ambientCol, e.ambientCol);
-    gl.uniform1f(p.u.u_nightVision, e.nightVision ?? 0);
-    gl.uniform3fv(p.u.u_fogColor, e.fogColor);
-    gl.uniform3fv(p.u.u_fogSky, e.skyColor);
-    gl.uniform2f(p.u.u_fog, e.fogStart, e.fogEnd);
+  /** Projection for the first-person hand (fixed fov, own depth range). */
+  handViewProj(fov = 70): Mat4 {
+    const p = mat4();
+    perspective(p, (fov * Math.PI) / 180, this.width / this.height, 0.05, 10);
+    return p;
   }
 
   // ------------------------------------------------------------------ frame
-  beginFrame(env: EnvState) {
-    const gl = this.gl;
-    this.env = env;
-    gl.viewport(0, 0, this.width, this.height);
-    gl.clearColor(env.fogColor[0], env.fogColor[1], env.fogColor[2], 1);
-    gl.depthMask(true);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  }
+  /** Start a frame: clear to the fog colour. Everything drawn until `endFrame` shows together. */
+  abstract beginFrame(env: EnvState): void;
+  /** Send the frame to the screen. */
+  abstract endFrame(): void;
+  /** Forget what's in front (the first-person hand is drawn over everything). */
+  abstract clearDepth(): void;
+  /** Draw into a rectangle of the screen (device pixels from the top left), cleared to black, until `endInset`. */
+  abstract beginInset(x: number, y: number, w: number, h: number): void;
+  abstract endInset(): void;
 
+  /** The sky: gradient, sunrise glow and stars, then the sun and moon. */
   drawSky() {
-    const gl = this.gl, e = this.env;
-    gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.CULL_FACE);
-    gl.disable(gl.BLEND);
-    gl.useProgram(this.skyProg.prog);
-    const u = this.skyProg.u;
-    gl.uniformMatrix4fv(u.u_invViewProj, false, this.invViewProj);
-    gl.uniform3fv(u.u_skyColor, e.skyColor);
-    gl.uniform3fv(u.u_fogColor, e.fogColor);
-    gl.uniform3fv(u.u_voidColor, e.voidColor);
-    gl.uniform4fv(u.u_sunrise, e.sunrise);
+    const e = this.env;
     const a = e.celestial * Math.PI * 2;
-    gl.uniform3f(u.u_sunDir, -Math.sin(a), Math.cos(a), 0);
-    gl.uniform1f(u.u_stars, e.stars);
-    gl.uniform1f(u.u_celestial, e.celestial);
-    gl.uniform1f(u.u_end, 0);
-    gl.bindVertexArray(this.emptyVao);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-    // sun & moon
-    if (e.rain < 1) {
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-      gl.useProgram(this.sunProg.prog);
-      gl.uniformMatrix4fv(this.sunProg.u.u_viewProj, false, this.viewProj);
-      gl.uniform1f(this.sunProg.u.u_alpha, 1 - e.rain);
-      const quad = (dirSign: number, size: number, tex: WebGLTexture, uv: number[]) => {
-        const s = Math.sin(a), c = Math.cos(a);
-        const dx = -s * dirSign, dy = c * dirSign;
-        const D = 100;
-        // tangent axes: along the sun path (perp to dir in the xy plane) and z
-        const tx = c, ty = s;
-        const cx = dx * D, cy = dy * D;
-        const verts = new Float32Array([
-          cx - tx * size, cy - ty * size, -size, uv[0], uv[1],
-          cx - tx * size, cy - ty * size, size, uv[0], uv[3],
-          cx + tx * size, cy + ty * size, size, uv[2], uv[3],
-          cx + tx * size, cy + ty * size, -size, uv[2], uv[1],
-        ]);
-        gl.bindVertexArray(this.sunVao);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.sunVbo);
-        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 0);
-      };
-      gl.activeTexture(gl.TEXTURE0);
-      quad(1, 30, this.sunTex, [0, 0, 1, 1]);
-      const ph = e.moonPhase % 8;
-      const mu = (ph % 4) / 4, mv = Math.floor(ph / 4) / 2;
-      quad(-1, 20, this.moonTex, [mu, mv, mu + 0.25, mv + 0.5]);
-    }
-    gl.disable(gl.BLEND);
+    this.skyPass({ end: false, sunDir: [-Math.sin(a), Math.cos(a), 0], stars: e.stars, celestial: e.celestial, endLod: 0 });
+    if (e.rain >= 1) return;
+    const quad = (dirSign: number, size: number, uv: number[]) => {
+      const s = Math.sin(a), c = Math.cos(a);
+      const dx = -s * dirSign, dy = c * dirSign;
+      const D = 100;
+      // tangent axes: along the sun path (perp to dir in the xy plane) and z
+      const tx = c, ty = s;
+      const cx = dx * D, cy = dy * D;
+      return new Float32Array([
+        cx - tx * size, cy - ty * size, -size, uv[0], uv[1],
+        cx - tx * size, cy - ty * size, size, uv[0], uv[3],
+        cx + tx * size, cy + ty * size, size, uv[2], uv[3],
+        cx + tx * size, cy + ty * size, -size, uv[2], uv[1],
+      ]);
+    };
+    this.sunPass(quad(1, 30, [0, 0, 1, 1]), 'sun', 1 - e.rain);
+    const ph = e.moonPhase % 8;
+    const mu = (ph % 4) / 4, mv = Math.floor(ph / 4) / 2;
+    this.sunPass(quad(-1, 20, [mu, mv, mu + 0.25, mv + 0.5]), 'moon', 1 - e.rain);
   }
 
   /** The End's sky: a dark mottled purple box with no sun, moon or stars. */
   drawEndSky() {
-    const gl = this.gl, e = this.env;
-    gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.CULL_FACE);
-    gl.disable(gl.BLEND);
-    gl.useProgram(this.skyProg.prog);
-    const u = this.skyProg.u;
-    gl.uniformMatrix4fv(u.u_invViewProj, false, this.invViewProj);
-    gl.uniform3fv(u.u_skyColor, e.skyColor);
-    gl.uniform3fv(u.u_fogColor, e.fogColor);
-    gl.uniform3fv(u.u_voidColor, e.voidColor);
-    gl.uniform4fv(u.u_sunrise, e.sunrise);
-    gl.uniform3f(u.u_sunDir, 0, 1, 0);
-    gl.uniform1f(u.u_stars, 0);
-    gl.uniform1f(u.u_celestial, 0);
-    gl.uniform1f(u.u_end, 1);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.endSkyTex);
-    gl.uniform1i(u.u_endSky, 0);
     // about one texel per pixel at the middle of a face (2048 texels across 90 degrees)
     const fov = ((this.cam?.fov ?? 70) * Math.PI) / 180;
-    gl.uniform1f(u.u_endLod, Math.max(0, Math.log2((2048 * Math.tan(fov / 2)) / this.height) - 0.3));
-    gl.bindVertexArray(this.emptyVao);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.uniform1f(u.u_end, 0);
+    this.skyPass({ end: true, sunDir: [0, 1, 0], stars: 0, celestial: 0, endLod: Math.max(0, Math.log2((2048 * Math.tan(fov / 2)) / this.height) - 0.3) });
   }
+  protected abstract skyPass(p: SkyParams): void;
+  /** A sun or moon quad (pos 3, uv 2 floats a vertex, around the camera), added on. */
+  protected abstract sunPass(verts: Float32Array, tex: 'sun' | 'moon', alpha: number): void;
 
-  drawChunks(chunks: Iterable<Chunk>, pass: 'opaque' | 'trans', ships: ShipDraw[] = []) {
-    const gl = this.gl;
+  /** Chunks near to far (opaque) or far to near (translucent), section runs that are in view, then sub-levels' chunks. */
+  drawChunks(chunkList: Iterable<Chunk>, pass: 'opaque' | 'trans', ships: ShipDraw[] = []) {
     const cam = this.cam;
-    const p = this.chunkProg;
-    gl.useProgram(p.prog);
-    gl.uniformMatrix4fv(p.u.u_viewProj, false, this.viewProj);
-    gl.uniformMatrix3fv(p.u.u_rot, false, IDENT3);
-    gl.uniform3f(p.u.u_pre, 0, 0, 0);
-    this.setCommonUniforms(p);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.atlas.texture);
-    gl.uniform1i(p.u.u_tex, 0);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-    gl.enable(gl.CULL_FACE);
-    gl.cullFace(gl.BACK);
-    gl.frontFace(gl.CCW);
-    if (pass === 'opaque') {
-      gl.disable(gl.BLEND);
-      gl.depthMask(true);
-      gl.uniform1f(p.u.u_alphaCut, 0.5);
-    } else {
-      gl.enable(gl.BLEND);
-      gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.depthMask(true);
-      gl.uniform1f(p.u.u_alphaCut, 0.01);
-    }
+    // (often an iterator, and the shadows go through it too)
+    const chunks = Array.isArray(chunkList) ? chunkList : [...chunkList];
+    if (pass === 'opaque') this.prepareShadows(chunks, ships);
     const list: [number, Chunk][] = [];
     for (const c of chunks) {
-      const g = c.mesh as ChunkGPU | null;
-      if (!g) continue;
-      if (pass === 'opaque' ? !g.opaqueVao : !g.transVao) continue;
+      const g = c.mesh as ChunkMesh | null;
+      if (!g || !(pass === 'opaque' ? g.opaque : g.trans)) continue;
       // sub-levels' chunks are drawn where their sub-level is, below
       if (isShipyardChunk(c.cx)) continue;
       if (!this.chunkVisible(c.cx, c.cz)) continue;
@@ -461,20 +324,16 @@ export class Renderer {
       list.push([dx * dx + dz * dz, c]);
     }
     list.sort((a, b) => (pass === 'opaque' ? a[0] - b[0] : b[0] - a[0]));
-    let drawn = 0;
-    const order = [...Array(16).keys()];
-    const drawSections = (g: ChunkGPU, visible: (s: number) => boolean) => {
-      gl.bindVertexArray(pass === 'opaque' ? g.opaqueVao : g.transVao);
+    const draws: ChunkDraw[] = [];
+    const runsOf = (g: ChunkMesh, visible: (s: number) => boolean) => {
       const secs = pass === 'opaque' ? g.opaqueSections : g.transSections;
+      const runs: number[] = [];
       let runStart = -1, runEnd = -1;
       const flush = () => {
-        if (runStart >= 0 && runEnd > runStart) {
-          gl.drawElements(gl.TRIANGLES, (runEnd - runStart) * 6, gl.UNSIGNED_INT, runStart * 24);
-          drawn++;
-        }
+        if (runStart >= 0 && runEnd > runStart) runs.push(runStart, runEnd);
         runStart = runEnd = -1;
       };
-      for (const s of order) {
+      for (let s = 0; s < 16; s++) {
         const a = secs[s], b = secs[s + 1];
         if (b <= a) continue;
         if (!visible(s)) { flush(); continue; }
@@ -483,81 +342,44 @@ export class Renderer {
         else { flush(); runStart = a; runEnd = b; }
       }
       flush();
+      return runs;
     };
     for (const [, c] of list) {
-      const ox = c.cx * 16 - cam.x, oz = c.cz * 16 - cam.z;
-      gl.uniform3f(p.u.u_offset, ox, -cam.y, oz);
-      drawSections(c.mesh as ChunkGPU, (s) => this.boxVisible(ox, s * 16 - cam.y, oz, ox + 16, s * 16 + 16 - cam.y, oz + 16));
+      const ox = c.cx * 16 - cam.x, oz = c.cz * 16 - cam.z, g = c.mesh as ChunkMesh;
+      const runs = runsOf(g, (s) => this.boxVisible(ox, s * 16 - cam.y, oz, ox + 16, s * 16 + 16 - cam.y, oz + 16));
+      if (runs.length) draws.push({ mesh: g, ox, oy: -cam.y, oz, rot: IDENT3, px: 0, py: 0, pz: 0, runs });
     }
     if (pass === 'opaque') this.drawnChunks = list.length;
     // sub-levels: each chunk turned about the pivot, then put where the pivot is
     for (const sd of ships) {
-      gl.uniformMatrix3fv(p.u.u_rot, false, sd.rot);
-      gl.uniform3f(p.u.u_offset, sd.tx - cam.x, sd.ty - cam.y, sd.tz - cam.z);
       const r = sd.rot;
       for (const c of sd.chunks) {
-        const g = c.mesh as ChunkGPU | null;
-        if (!g || (pass === 'opaque' ? !g.opaqueVao : !g.transVao)) continue;
+        const g = c.mesh as ChunkMesh | null;
+        if (!g || !(pass === 'opaque' ? g.opaque : g.trans)) continue;
         const px = c.cx * 16 - sd.lx, py = -sd.ly, pz = c.cz * 16 - sd.lz;
-        gl.uniform3f(p.u.u_pre, px, py, pz);
-        drawSections(g, (s) => {
+        const runs = runsOf(g, (s) => {
           // the section's centre, turned and placed, in a box big enough for any turn
           const lx = px + 8, ly = py + s * 16 + 8, lz = pz + 8;
           const x = r[0] * lx + r[3] * ly + r[6] * lz + sd.tx - cam.x, y = r[1] * lx + r[4] * ly + r[7] * lz + sd.ty - cam.y, z = r[2] * lx + r[5] * ly + r[8] * lz + sd.tz - cam.z;
           return this.boxVisible(x - 14, y - 14, z - 14, x + 14, y + 14, z + 14);
         });
+        if (runs.length) draws.push({ mesh: g, ox: sd.tx - cam.x, oy: sd.ty - cam.y, oz: sd.tz - cam.z, rot: r, px, py, pz, runs });
       }
     }
-    gl.uniformMatrix3fv(p.u.u_rot, false, IDENT3);
-    gl.uniform3f(p.u.u_pre, 0, 0, 0);
-    gl.bindVertexArray(null);
-    gl.disable(gl.BLEND);
-    return drawn;
+    if (draws.length) this.chunkPass(pass, draws);
   }
-
-  // ------------------------------------------------------------------ distant terrain
-  /** A tile's quads (16 bytes each, see LodTileMesh); the water quads follow the `opaque` ground quads. */
-  uploadLod(data: ArrayBuffer, opaque: number): LodGPU {
-    const gl = this.gl;
-    const vbo = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-    // one instance per quad; WebGL2 has no base instance, so the water quads get a second VAO pointing past the ground
-    const vaoAt = (first: number) => {
-      const vao = gl.createVertexArray()!, o = first * 16;
-      gl.bindVertexArray(vao);
-      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-      gl.enableVertexAttribArray(0);
-      gl.vertexAttribIPointer(0, 4, gl.SHORT, 16, o);
-      gl.vertexAttribDivisor(0, 1);
-      gl.enableVertexAttribArray(1);
-      gl.vertexAttribIPointer(1, 2, gl.UNSIGNED_SHORT, 16, o + 8);
-      gl.vertexAttribDivisor(1, 1);
-      gl.enableVertexAttribArray(2);
-      gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, 16, o + 12);
-      gl.vertexAttribDivisor(2, 1);
-      gl.bindVertexArray(null);
-      return vao;
-    };
-    this.lodBytes += data.byteLength;
-    return { vao: vaoAt(0), waterVao: vaoAt(opaque), vbo, bytes: data.byteLength };
-  }
-
-  freeLod(m: unknown) {
-    const g = m as LodGPU, gl = this.gl;
-    gl.deleteVertexArray(g.vao);
-    gl.deleteVertexArray(g.waterVao);
-    gl.deleteBuffer(g.vbo);
-    this.lodBytes -= g.bytes;
-  }
+  protected abstract chunkPass(pass: 'opaque' | 'trans', draws: ChunkDraw[]): void;
+  /** Before the world's solid chunks: a backend drawing shadows renders its shadow map here. */
+  protected prepareShadows(_chunks: Iterable<Chunk>, _ships: ShipDraw[]): void { /* none */ }
 
   /**
    * Distant terrain, drawn after the sky and before the chunks, with its own (much deeper) projection. `mask` marks the
    * chunks drawn in full (LOD_MASK x LOD_MASK, indexed by chunk coordinates modulo LOD_MASK, around chunk mcx, mcz):
-   * distant terrain is hidden there. `snow` is the colour of snow on tree tops (0..255). The depth buffer is cleared afterwards, so the chunks always draw over it.
+   * distant terrain is hidden there. `snow` is the colour of snow on tree tops (0..255). The depth buffer is cleared
+   * afterwards, so the chunks always draw over it.
    */
   drawLod(tiles: readonly LodDraw[], mask: Uint8Array, mcx: number, mcz: number, far: number, snow: [number, number, number]) {
-    const gl = this.gl, cam = this.cam, p = this.lodProg;
+    const cam = this.cam;
     perspective(this.lodProj, (cam.fov * Math.PI) / 180, this.width / this.height, 8, far);
     multiply(this.lodViewProj, this.lodProj, this.view);
     extractPlanes(this.lodViewProj, this.lodPlanes);
@@ -570,107 +392,24 @@ export class Renderer {
     const vis = tiles.filter((t) => t.mesh && boxInPlanes(this.lodPlanes, t.x - cam.x, t.minY - cam.y, t.z - cam.z, t.x + t.size - cam.x, t.maxY - cam.y, t.z + t.size - cam.z) && !covered(t));
     this.drawnLod = vis.length;
     if (!vis.length) return;
-    gl.useProgram(p.prog);
-    gl.uniformMatrix4fv(p.u.u_viewProj, false, this.lodViewProj);
     const pixel = (2 * Math.tan((cam.fov * Math.PI) / 360)) / this.height;
-    gl.uniform1f(p.u.u_pixelSize, pixel);
-    gl.uniform3f(p.u.u_snow, snow[0] / 255, snow[1] / 255, snow[2] / 255);
-    this.setCommonUniforms(p);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.lodMaskTex);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, LOD_MASK, LOD_MASK, gl.RED, gl.UNSIGNED_BYTE, mask);
-    gl.uniform1i(p.u.u_mask, 1);
-    gl.uniform2i(p.u.u_maskCenter, mcx, mcz);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-    gl.depthMask(true);
-    gl.enable(gl.CULL_FACE);
-    gl.cullFace(gl.BACK);
-    const each = (water: boolean) => {
-      gl.uniform1f(p.u.u_water, water ? 1 : 0);
-      for (const t of vis) {
-        const n = water ? t.water : t.opaque;
-        if (!n) continue;
-        gl.uniform3f(p.u.u_offset, t.x - cam.x, -cam.y, t.z - cam.z);
-        gl.uniform2i(p.u.u_tileChunk, t.x >> 4, t.z >> 4);
-        gl.uniform2i(p.u.u_tileCell, Math.floor(t.x / t.cell), Math.floor(t.z / t.cell));
-        gl.uniform1f(p.u.u_cell, t.cell);
-        const m = t.mesh as LodGPU;
-        gl.bindVertexArray(water ? m.waterVao : m.vao);
-        gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n);
-      }
-    };
-    gl.disable(gl.BLEND);
-    each(false);
-    gl.enable(gl.BLEND);
-    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    each(true);
-    gl.disable(gl.BLEND);
-    gl.bindVertexArray(null);
-    gl.clear(gl.DEPTH_BUFFER_BIT);
+    this.lodPass({ tiles: vis, mask, mcx, mcz, snow: [snow[0] / 255, snow[1] / 255, snow[2] / 255], pixel });
   }
+  protected abstract lodPass(p: LodPass): void;
 
   /** Draw the dynamic mesh (particles, items, falling blocks...) with the block atlas. */
-  drawDyn(mesh: DynMesh, opts: { blend?: boolean; additive?: boolean; model?: Mat4; overlay?: [number, number, number, number]; cull?: boolean; fullbright?: boolean; depthTest?: boolean; alphaCut?: number; viewProj?: Mat4; wrap?: boolean } = {}) {
-    if (mesh.count === 0) return;
-    const gl = this.gl;
-    mesh.upload();
-    const p = this.dynProg;
-    gl.useProgram(p.prog);
-    gl.uniformMatrix4fv(p.u.u_viewProj, false, opts.viewProj ?? this.viewProj);
-    gl.uniformMatrix4fv(p.u.u_model, false, opts.model ?? IDENT);
-    this.setCommonUniforms(p);
-    gl.uniform4fv(p.u.u_overlay, opts.overlay ?? [0, 0, 0, 0]);
-    gl.uniform1f(p.u.u_fullbright, opts.fullbright ? 1 : 0);
-    gl.uniform1f(p.u.u_wrap, opts.wrap ? 1 : 0);
-    gl.uniform1f(p.u.u_additive, opts.additive ? 1 : 0);
-    gl.uniform1f(p.u.u_alphaCut, opts.alphaCut ?? (opts.blend ? 0.01 : 0.5));
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.atlas.texture);
-    gl.uniform1i(p.u.u_tex, 0);
-    if (opts.depthTest === false) gl.disable(gl.DEPTH_TEST);
-    else gl.enable(gl.DEPTH_TEST);
-    if (opts.cull === false) gl.disable(gl.CULL_FACE);
-    else gl.enable(gl.CULL_FACE);
-    if (opts.blend) {
-      gl.enable(gl.BLEND);
-      if (opts.additive) gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE, gl.ZERO, gl.ONE);
-      else gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    } else gl.disable(gl.BLEND);
-    gl.bindVertexArray(mesh.vao);
-    gl.drawElements(gl.TRIANGLES, (mesh.count / 4) * 6, gl.UNSIGNED_INT, 0);
-    gl.bindVertexArray(null);
-    gl.disable(gl.BLEND);
-  }
-
+  abstract drawDyn(mesh: DynMesh, opts?: DynOpts): void;
+  /** A model part with a skin (entities). */
+  abstract drawModel(m: ModelMesh, tex: Tex, opts: ModelOpts): void;
   /** Line segments (pairs of camera-relative points); `xray` draws them through blocks too. */
-  drawLines(verts: Float32Array, color: [number, number, number, number], xray = false) {
-    const gl = this.gl;
-    gl.useProgram(this.lineProg.prog);
-    gl.uniformMatrix4fv(this.lineProg.u.u_viewProj, false, this.viewProj);
-    gl.uniform4fv(this.lineProg.u.u_color, color);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    if (xray) gl.disable(gl.DEPTH_TEST);
-    else gl.enable(gl.DEPTH_TEST);
-    gl.depthMask(false);
-    gl.bindVertexArray(this.lineVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.lineVbo);
-    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
-    gl.drawArrays(gl.LINES, 0, verts.length / 3);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthMask(true);
-    gl.disable(gl.BLEND);
-    gl.bindVertexArray(null);
-  }
+  abstract drawLines(verts: Float32Array, color: [number, number, number, number], xray?: boolean): void;
+  /** Full-screen colour overlay (underwater, damage, etc.) */
+  abstract drawOverlay(color: [number, number, number, number], vignette?: number): void;
 
   // ------------------------------------------------------------------ clouds
   drawClouds(height: number) {
     const e = this.env;
     if (!e.clouds) return;
-    const gl = this.gl;
     const CELL = 12;
     const wx = this.cam.x + e.cloudOffset, wz = this.cam.z + 3.96; // cloud-space camera position
     const ccx = Math.floor(wx / CELL), ccz = Math.floor(wz / CELL);
@@ -678,31 +417,10 @@ export class Renderer {
       this.cloudCell = [ccx, ccz];
       this.buildClouds(ccx, ccz);
     }
-    const p = this.cloudProg;
-    gl.useProgram(p.prog);
-    gl.uniformMatrix4fv(p.u.u_viewProj, false, this.viewProj);
-    gl.uniform3f(p.u.u_offset, ccx * CELL - wx, height - this.cam.y, ccz * CELL - wz);
-    gl.uniform3fv(p.u.u_color, e.cloudColor);
-    gl.uniform1f(p.u.u_range, 26 * CELL);
-    gl.uniform3fv(p.u.u_fogColor, e.fogColor);
-    gl.uniform2f(p.u.u_fog, 1e5, 1e5 + 1);
-    gl.enable(gl.DEPTH_TEST);
-    gl.enable(gl.CULL_FACE);
-    gl.bindVertexArray(this.cloudVao);
-    // pass 1: depth only, pass 2: colour where depth matches -> no double blending inside the cloud layer
-    gl.colorMask(false, false, false, false);
-    gl.depthMask(true);
-    gl.drawElements(gl.TRIANGLES, (this.cloudCount / 4) * 6, gl.UNSIGNED_INT, 0);
-    gl.colorMask(true, true, true, true);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.depthFunc(gl.LEQUAL);
-    gl.depthMask(false);
-    gl.drawElements(gl.TRIANGLES, (this.cloudCount / 4) * 6, gl.UNSIGNED_INT, 0);
-    gl.depthMask(true);
-    gl.disable(gl.BLEND);
-    gl.bindVertexArray(null);
+    if (this.cloudVerts.length) this.cloudPass(ccx * CELL - wx, height - this.cam.y, ccz * CELL - wz, 26 * CELL);
   }
+  /** Clouds (`cloudVerts`: pos 3 + shade 1 floats a vertex) at this offset from the camera: depth first, then colour where it's nearest. */
+  protected abstract cloudPass(ox: number, oy: number, oz: number, range: number): void;
 
   private buildClouds(ccx: number, ccz: number) {
     const CELL = 12, H = 4, R = 26;
@@ -722,41 +440,24 @@ export class Renderer {
         if (!has(cx, cz - 1)) q([[x1, 0, z0], [x0, 0, z0], [x0, H, z0], [x1, H, z0]], 0.8);
         if (!has(cx, cz + 1)) q([[x0, 0, z1], [x1, 0, z1], [x1, H, z1], [x0, H, z1]], 0.8);
       }
-    const gl = this.gl;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.cloudVbo);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(out), gl.STATIC_DRAW);
-    this.cloudCount = out.length / 4;
-  }
-
-  /** Full-screen colour overlay (underwater, damage, etc.) */
-  drawOverlay(color: [number, number, number, number], vignette = 0) {
-    if (color[3] <= 0 && vignette <= 0) return;
-    const gl = this.gl;
-    gl.disable(gl.DEPTH_TEST);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.useProgram(this.overlayProg.prog);
-    gl.uniform4fv(this.overlayProg.u.u_color, color);
-    gl.uniform1f(this.overlayProg.u.u_vignette, vignette);
-    gl.bindVertexArray(this.emptyVao);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.disable(gl.BLEND);
-    gl.enable(gl.DEPTH_TEST);
-  }
-
-  /** Projection for the first-person hand (fixed fov, own depth range). */
-  handViewProj(fov = 70): Mat4 {
-    const p = mat4();
-    perspective(p, (fov * Math.PI) / 180, this.width / this.height, 0.05, 10);
-    return p;
+    this.cloudVerts = new Float32Array(out);
+    this.cloudVersion++;
   }
 }
 
-const IDENT = mat4();
-const IDENT3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+export const IDENT = mat4();
+export const IDENT3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 
-/** A sub-level to draw: its chunks, its rotation (column-major 3x3) and where its pivot is (world and local). */
-export interface ShipDraw { rot: Float32Array; tx: number; ty: number; tz: number; lx: number; ly: number; lz: number; chunks: Chunk[] }
+/** Quad index buffer contents: 0 1 2, 0 2 3 for every quad. */
+export function quadIndices(): Uint32Array {
+  const idx = new Uint32Array(MAX_QUADS * 6);
+  for (let q = 0; q < MAX_QUADS; q++) {
+    const o = q * 6, v = q * 4;
+    idx[o] = v; idx[o + 1] = v + 1; idx[o + 2] = v + 2;
+    idx[o + 3] = v; idx[o + 4] = v + 2; idx[o + 5] = v + 3;
+  }
+  return idx;
+}
 
 function extractPlanes(m: Mat4, p: Float32Array) {
   const rows = [
@@ -801,7 +502,7 @@ function makeCloudMap(): Uint8Array {
   return m;
 }
 
-function sunImage(): Img {
+export function sunImage(): Img {
   const img = new Uint8ClampedArray(32 * 32 * 4);
   for (let y = 0; y < 32; y++)
     for (let x = 0; x < 32; x++) {
@@ -813,7 +514,7 @@ function sunImage(): Img {
   return img;
 }
 
-function moonImage(): Img {
+export function moonImage(): Img {
   // 4x2 phases, each 8x16 px region upscaled
   const W = 32, H = 32;
   const img = new Uint8ClampedArray(W * H * 4);
@@ -839,7 +540,7 @@ function moonImage(): Img {
 }
 
 /** 128x128 tiling texture for the End's sky: grey-violet static over soft blotches, like vanilla's end_sky. */
-function endSkyImage(): Uint8Array {
+export function endSkyImage(): Uint8Array {
   const N = 128, img = new Uint8Array(N * N * 4);
   let seed = 0x5eed1234;
   const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
@@ -867,3 +568,20 @@ function endSkyImage(): Uint8Array {
   return img;
 }
 
+/** Box-filtered mip chain of an RGBA image (square, power of two), smallest last. */
+export function mipChain(img: Uint8Array | Uint8ClampedArray, size: number): Uint8Array[] {
+  const out: Uint8Array[] = [new Uint8Array(img.buffer, img.byteOffset, img.byteLength)];
+  let cur = out[0];
+  for (let s = size; s > 1; s >>= 1) {
+    const n = s >> 1, next = new Uint8Array(n * n * 4);
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++)
+        for (let c = 0; c < 4; c++) {
+          const i = (y * 2 * s + x * 2) * 4 + c;
+          next[(y * n + x) * 4 + c] = (cur[i] + cur[i + 4] + cur[i + s * 4] + cur[i + s * 4 + 4] + 2) >> 2;
+        }
+    out.push(next);
+    cur = next;
+  }
+  return out;
+}

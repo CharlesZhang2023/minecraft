@@ -1,49 +1,74 @@
-import { GL } from './gl';
 import { TEXTURES, tex } from '../world/blocks';
 import { buildBlockTextures, ANIMATED, animatedFrame } from './textures';
 import { Img, S } from './pixels';
+import { OVERRIDES, resize, type TexOverride } from './overrides';
 
-/** Block textures as a TEXTURE_2D_ARRAY (one 16x16 layer per texture) with mip-maps. */
+/** Where a backend keeps the block textures: one square layer per texture, each with its mip levels. */
+export interface AtlasTarget {
+  /** Every layer at once: `levels[l]` holds all layers of mip level l, one after another; `size` is level 0's. */
+  all(levels: Uint8Array[], size: number): void;
+  /** One layer's mip levels (animated textures, every few ticks). */
+  layer(layer: number, mips: Img[]): void;
+  destroy(): void;
+}
+
+/** The biggest layer size (resource packs with bigger textures are scaled down to it). */
+export const MAX_ATLAS_RES = 128;
+
+interface Anim { layer: number; frames: Img[]; steps: { frame: number; ticks: number }[]; period: number; shown: number }
+
+/**
+ * Block textures (and item sprites, used for particles and dropped items) as an array texture with mip-maps, the same
+ * for every backend: the images, the mips and the animation are made here, the backend only stores them. Layers are
+ * 16x16 (the game's own textures), or as big as the biggest resource pack texture in use (the rest scaled up).
+ */
 export class BlockAtlas {
-  texture: WebGLTexture;
   layers: number;
-  private anim: { layer: number; frames: Img[]; speed: number }[] = [];
+  /** Size of a layer, in pixels. */
+  res = S;
+  levels = 5;
+  private anim: Anim[] = [];
   /** Each layer's average colour (its 1x1 mip level), r g b a in 0..255. */
   private averages: [number, number, number, number][] = [];
 
-  constructor(private gl: GL, extra: { name: string; img: Img }[] = []) {
+  constructor(public target: AtlasTarget, extra: { name: string; img: Img }[] = [], maxRes = MAX_ATLAS_RES) {
     // extra textures (item sprites used as particles, etc.)
     for (const e of extra) tex(e.name);
     const imgs = buildBlockTextures();
     for (const e of extra) imgs[TEXTURES.indexOf(e.name)] = e.img;
     this.layers = TEXTURES.length;
-    this.texture = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.texture);
-    const levels = 5;
-    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, levels, gl.RGBA8, S, S, this.layers);
-    for (let i = 0; i < this.layers; i++) this.uploadLayer(i, imgs[i]);
-    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, levels - 1);
-    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const packTex = (name: string): TexOverride | undefined => OVERRIDES.blocks.get(name) ?? (name.startsWith('item/') ? OVERRIDES.items.get(name.slice(5)) : undefined);
+    for (const n of TEXTURES) { const o = packTex(n); if (o) this.res = Math.max(this.res, Math.min(maxRes, o.size)); }
+    const res = this.res;
+    this.levels = Math.log2(res) + 1;
+    const levels: Uint8Array[] = [];
+    for (let l = 0, size = res; l < this.levels; l++, size >>= 1) levels.push(new Uint8Array(size * size * 4 * this.layers));
+    for (let i = 0; i < this.layers; i++) {
+      const o = packTex(TEXTURES[i]);
+      const m = this.mips(i, o ? resize(o.img, o.size, res) : resize(imgs[i], S, res));
+      for (let l = 0; l < this.levels; l++) levels[l].set(m[l], m[l].length * i);
+      if (o?.frames && o.steps?.length) {
+        const frames = o.frames.map((f) => resize(f, o.size, res));
+        this.anim.push({ layer: i, frames, steps: o.steps, period: o.steps.reduce((a, s) => a + s.ticks, 0), shown: -1 });
+      }
+    }
+    target.all(levels, res);
     for (const [name, a] of Object.entries(ANIMATED)) {
       const layer = TEXTURES.indexOf(name);
-      if (layer < 0) continue;
+      // a pack's texture (animated or not) replaces the game's animation
+      if (layer < 0 || packTex(name)) continue;
       const frames: Img[] = [];
-      for (let f = 0; f < a.frames; f++) frames.push(animatedFrame(name, f));
-      this.anim.push({ layer, frames, speed: a.speed });
+      for (let f = 0; f < a.frames; f++) frames.push(resize(animatedFrame(name, f), S, res));
+      this.anim.push({ layer, frames, steps: frames.map((_, i) => ({ frame: i, ticks: a.speed })), period: frames.length * a.speed, shown: -1 });
     }
   }
 
-  /** Upload a layer plus hand-built mips (alpha-aware box filter keeps cutout textures from vanishing). */
-  private uploadLayer(layer: number, img: Img) {
-    const gl = this.gl;
-    let size = S;
+  /** A layer plus hand-built mips (alpha-aware box filter keeps cutout textures from vanishing). */
+  private mips(layer: number, img: Img): Img[] {
+    let size = this.res;
     let cur = img;
-    for (let level = 0; level < 5; level++) {
-      gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, level, 0, 0, layer, size, size, 1, gl.RGBA, gl.UNSIGNED_BYTE, cur);
-      if (size === 1) break;
+    const out: Img[] = [cur];
+    while (size > 1) {
       const ns = size >> 1;
       const next = new Uint8ClampedArray(ns * ns * 4);
       for (let y = 0; y < ns; y++)
@@ -70,8 +95,10 @@ export class BlockAtlas {
         }
       cur = next;
       size = ns;
+      out.push(cur);
     }
     this.averages[layer] = [cur[0], cur[1], cur[2], cur[3]];
+    return out;
   }
 
   /** The average colour of a texture, by name. */
@@ -81,12 +108,14 @@ export class BlockAtlas {
   }
 
   tick(ticks: number) {
-    const gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.texture);
     for (const a of this.anim) {
-      if (ticks % a.speed !== 0) continue;
-      const f = Math.floor(ticks / a.speed) % a.frames.length;
-      this.uploadLayer(a.layer, a.frames[f]);
+      let t = ticks % a.period, f = a.steps[0].frame;
+      for (const s of a.steps) { if (t < s.ticks) { f = s.frame; break; } t -= s.ticks; }
+      if (f === a.shown) continue;
+      a.shown = f;
+      this.target.layer(a.layer, this.mips(a.layer, a.frames[f]));
     }
   }
+
+  destroy() { this.target.destroy(); }
 }

@@ -2,6 +2,7 @@
 import { TEXTURES, WOOL_COLORS, BLOCKS } from '../world/blocks';
 import { Random } from '../noise';
 import { S, Img, RGB, newImg, hex, set, get, rngFor, shade, mix, blobField, paletteNoise, art, copy, voronoi } from './pixels';
+import { OVERRIDES, small } from './overrides';
 
 type Gen = (r: Random) => Img;
 const gens: Record<string, Gen> = {};
@@ -14,6 +15,9 @@ export function registerTexture(name: string, gen: (r: Random) => Img) {
 }
 
 export function getTexture(name: string): Img {
+  // a resource pack's (at 16x16 here: the atlas takes it at its own size)
+  const o = OVERRIDES.blocks.get(name);
+  if (o) return small(o);
   if (cache[name]) return cache[name];
   const g = gens[name];
   let img: Img;

@@ -1,7 +1,7 @@
 // Drawing for mods: tile entity renderers (animated machine parts), entity renderers and world render hooks all
 // get a RenderContext that writes into the frame's dynamic mesh, in world coordinates, lit like the world.
 import type { Client } from '../client/client';
-import type { DynMesh } from '../render/gl';
+import type { DynMesh } from '../render/dynmesh';
 import { FACE_CORNERS, faceUV16, type EntityRenderer } from '../render/entityrender';
 import type { Box } from '../world/models';
 import { TEXTURES, BLOCKS, OPAQUE, FACE_DIRS, tex as texIndex } from '../world/blocks';

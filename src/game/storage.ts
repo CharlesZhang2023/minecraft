@@ -1,7 +1,7 @@
 // IndexedDB persistence for worlds, chunks and player data.
 
 const DB_NAME = 'webcraft';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export interface WorldMeta {
   id: string;
@@ -60,9 +60,17 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('chunks')) db.createObjectStore('chunks');
       // downloaded / imported mods, by the SHA-256 of their code
       if (!db.objectStoreNames.contains('mods')) db.createObjectStore('mods', { keyPath: 'sha256' });
+      // resource and shader packs, the same way
+      if (!db.objectStoreNames.contains('packs')) db.createObjectStore('packs', { keyPath: 'sha256' });
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // a newer version of the game in another tab wants to upgrade the database: let it (we reopen on next use)
+      db.onversionchange = () => { db.close(); dbPromise = null; };
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
+    req.onblocked = () => console.warn('Storage: waiting for another tab with an older version of the game to close');
   });
   return dbPromise;
 }
@@ -122,6 +130,22 @@ export const Storage = {
   async listMods(): Promise<import('../mod/types').ModPackage[]> {
     try {
       return (await tx<import('../mod/types').ModPackage[]>('mods', 'readonly', (s) => s.getAll() as IDBRequest<import('../mod/types').ModPackage[]>)) ?? [];
+    } catch {
+      return [];
+    }
+  },
+  getPack(sha: string): Promise<import('../packs/types').PackPackage | undefined> {
+    return tx<import('../packs/types').PackPackage>('packs', 'readonly', (s) => s.get(sha) as IDBRequest<import('../packs/types').PackPackage>).catch(() => undefined);
+  },
+  putPack(pkg: import('../packs/types').PackPackage) {
+    return tx('packs', 'readwrite', (s) => s.put(pkg));
+  },
+  deletePack(sha: string) {
+    return tx('packs', 'readwrite', (s) => s.delete(sha)).catch(() => undefined);
+  },
+  async listPacks(): Promise<import('../packs/types').PackPackage[]> {
+    try {
+      return (await tx<import('../packs/types').PackPackage[]>('packs', 'readonly', (s) => s.getAll() as IDBRequest<import('../packs/types').PackPackage[]>)) ?? [];
     } catch {
       return [];
     }

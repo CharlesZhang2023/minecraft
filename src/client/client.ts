@@ -177,9 +177,10 @@ export class Client {
   /** Connections that haven't introduced themselves yet. */
   private pendingGuests: { conn: Conn; since: number; name?: string; sent: Set<string> }[] = [];
 
-  constructor(glCanvas: HTMLCanvasElement, uiCanvas: HTMLCanvasElement) {
+  constructor(renderer: Renderer, uiCanvas: HTMLCanvasElement) {
     this.options = loadOptions();
-    this.renderer = new Renderer(glCanvas);
+    this.renderer = renderer;
+    renderer.onRestore = () => this.gpuRestored();
     this.uiCanvas = uiCanvas;
     this.ctx = uiCanvas.getContext('2d')!;
     live.client = this;
@@ -204,15 +205,25 @@ export class Client {
   /** Build the block atlas: every block texture plus item sprites (particles, dropped items) and a few extras. Mods
    * that add textures after start-up call it again. */
   rebuildAtlas() {
-    const old = this.renderer.atlas;
     const extra = itemSpriteNames().map((n) => ({ name: 'item/' + n, img: getItemSprite(n)! }));
     extra.push({ name: 'weather_rain', img: rainTexture() }, { name: 'weather_snow', img: snowTexture() });
     extra.push({ name: 'grass_side_item', img: tintMasked(getTexture('grass_side'), 0x7cbd6b) });
     extra.push({ name: 'entity_shadow', img: shadowTexture() });
     extra.push({ name: 'end_beam', img: getTexture('end_beam') });
     this.renderer.initAtlas(extra);
-    if (old) this.renderer.gl.deleteTexture(old.texture);
     this.icons.clear();
+    // distant terrain's colours come from the textures
+    this.stopLod();
+  }
+
+  /** The GPU was lost and came back: send it the textures, chunks and distant terrain again. */
+  private gpuRestored() {
+    this.rebuildAtlas();
+    const w = this.world;
+    // (chunks meshed while the GPU was away have nothing on it either)
+    if (w) for (const c of w.chunks.values()) { c.mesh = null; c.dirty = true; }
+    this.renderer.chunkBytes = 0;
+    this.stopLod();
   }
 
   private lastSize = '';
@@ -1230,6 +1241,7 @@ export class Client {
     ctx.clearRect(0, 0, this.uiCanvas.width, this.uiCanvas.height);
     if (!this.world || !this.player) {
       r.beginFrame(computeEnv({ time: 6000, renderDistance: 8, underwater: false, inLava: false, blind: 0, rain: 0, thunder: 0, cameraY: 64, gamma: 0.5, clouds: false, skyTemp: 0.8, flicker: 1.5, ticks: 0 }));
+      r.endFrame();
       this.ui.render(ctx);
       return;
     }
@@ -1292,6 +1304,10 @@ export class Client {
       cameraY: cam.y, gamma: this.options.gamma, clouds: this.options.clouds, skyTemp: biome.cold ? -0.5 : biome.name === 'Desert' ? 2 : 0.8,
       flicker: 1.5 + this.torchFlicker * 0.1, ticks: this.ticks + t,
     });
+    env.ticks = this.ticks + t;
+    env.dim = w.dimension;
+    env.eyeInWater = underwater ? 1 : inLava ? 2 : 0;
+    env.thunder = nether || end ? 0 : this.weather!.thunder;
     const nv = p.effects.get('night_vision');
     env.nightVision = nv ? (nv.dur > 200 ? 1 : 0.7 + Math.sin(((nv.dur - t) * Math.PI) * 0.2) * 0.3) : 0;
     if (view?.brightness) env.nightVision = Math.max(env.nightVision, view.brightness);
@@ -1333,18 +1349,14 @@ export class Client {
     pm.reset();
     this.particles!.build(pm, cam.x, cam.y, cam.z, t, yaw, pitch, true);
     if (pm.count) {
-      r.gl.depthMask(false);
-      r.drawDyn(pm, { blend: true, cull: false, fullbright: true, alphaCut: 0.004 });
-      r.gl.depthMask(true);
+      r.drawDyn(pm, { blend: true, cull: false, fullbright: true, alphaCut: 0.004, depthWrite: false });
     }
     // mods' glowing things (spells): added on top, so overlapping glows brighten like light does
     if (Events.worldRenderGlow.any && modState.active.size) {
       pm.reset();
       Events.worldRenderGlow.fire(makeRenderContext(this, this.entityRenderer, pm, t));
       if (pm.count) {
-        r.gl.depthMask(false);
-        r.drawDyn(pm, { blend: true, additive: true, cull: false, fullbright: true, alphaCut: 0.004 });
-        r.gl.depthMask(true);
+        r.drawDyn(pm, { blend: true, additive: true, cull: false, fullbright: true, alphaCut: 0.004, depthWrite: false });
       }
     }
     // first-person hand
@@ -1360,6 +1372,7 @@ export class Client {
       r.drawOverlay([0.45, 0.1, 0.8, f * 0.75 + Math.sin((this.ticks + t) * 0.3) * 0.05 * f]);
     }
     if (this.ui.previewBox) this.entityRenderer.renderPreview(this, this.ui.previewBox, this.gui.scale);
+    r.endFrame();
     this.ui.render(ctx);
   }
 
@@ -1407,10 +1420,7 @@ export class Client {
         const a = [ox + s.x0 - E, oy + s.y0 - E, oz + s.z0 - E], b = [ox + s.x1 + E, oy + s.y1 + E, oz + s.z1 + E];
         boxFaces(m, a, b, layer, s);
       }
-      r.gl.enable(r.gl.POLYGON_OFFSET_FILL);
-      r.gl.polygonOffset(-1, -10);
-      r.drawDyn(m, { blend: true, fullbright: true, alphaCut: 0.01 });
-      r.gl.disable(r.gl.POLYGON_OFFSET_FILL);
+      r.drawDyn(m, { blend: true, fullbright: true, alphaCut: 0.01, polygonOffset: true });
     }
   }
 
@@ -1436,10 +1446,7 @@ export class Client {
       m.reset();
       const E = 0.004, ox = tgt.x - pose.lx, oy = tgt.y - pose.ly, oz = tgt.z - pose.lz;
       for (const q of shapes) boxFaces(m, [ox + q.x0 - E, oy + q.y0 - E, oz + q.z0 - E], [ox + q.x1 + E, oy + q.y1 + E, oz + q.z1 + E], layer, q);
-      r.gl.enable(r.gl.POLYGON_OFFSET_FILL);
-      r.gl.polygonOffset(-1, -10);
-      r.drawDyn(m, { blend: true, fullbright: true, alphaCut: 0.01, model: poseMat4(pose, cam.x, cam.y, cam.z) });
-      r.gl.disable(r.gl.POLYGON_OFFSET_FILL);
+      r.drawDyn(m, { blend: true, fullbright: true, alphaCut: 0.01, model: poseMat4(pose, cam.x, cam.y, cam.z), polygonOffset: true });
     }
   }
 
@@ -1517,7 +1524,7 @@ function OPAQUE_BELOW(w: World, x: number, y: number, z: number) {
 }
 
 /** Emit 6 faces of a box into a dynamic mesh (used for crack overlays and dropped blocks). */
-export function boxFaces(m: import('../render/gl').DynMesh, a: number[], b: number[], layer: number, s: { x0: number; y0: number; z0: number; x1: number; y1: number; z1: number }, col = 0xffffff, alpha = 1, sky = 15, blk = 15) {
+export function boxFaces(m: import('../render/dynmesh').DynMesh, a: number[], b: number[], layer: number, s: { x0: number; y0: number; z0: number; x1: number; y1: number; z1: number }, col = 0xffffff, alpha = 1, sky = 15, blk = 15) {
   const [x0, y0, z0] = a, [x1, y1, z1] = b;
   const u = (v: number) => v;
   // -x

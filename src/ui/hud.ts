@@ -356,7 +356,7 @@ export class Hud {
       `JS: ${navigator.userAgent.includes('Chrome') ? 'V8' : 'JS'} ${navigator.hardwareConcurrency} threads`,
       mem ? `Mem: ${Math.round((mem.usedJSHeapSize / mem.jsHeapSizeLimit) * 100)}% ${Math.round(mem.usedJSHeapSize / 1048576)}/${Math.round(mem.jsHeapSizeLimit / 1048576)}MB` : '',
       `Display: ${g.renderer.width}x${g.renderer.height} (GUI x${gui.scale})`,
-      'WebGL 2.0',
+      g.renderer.describe(),
     ];
     y = 2;
     for (const l of right) {

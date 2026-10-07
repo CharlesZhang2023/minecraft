@@ -1,6 +1,6 @@
 # Writing mods
 
-This is the complete guide to writing a mod for this game (a browser Minecraft written in TypeScript and WebGL2).
+This is the complete guide to writing a mod for this game (a browser Minecraft written in TypeScript, drawn with WebGPU or WebGL 2).
 It is written so that a developer, or an AI agent working from a copy of the repository, can build a working mod
 from it alone. It explains how the game is put together, the whole mod API, how to build and test a mod, and the
 mistakes that are easy to make.
@@ -647,8 +647,10 @@ decides the outcome.
 Client hooks receive `client: Client` (`src/client/client.ts`): `client.player` (yours), `client.world` (a
 **read-only replica**), `client.entities` (puppets), `client.ui` (`open(screen)`, `close()`, `screen`, `gui`,
 `chat.add(msg)`), `client.input`, `client.options`, `client.audio.play(name, pos?, volume?, pitch?)` (only you
-hear it), `client.particles` (local particles: same methods as above), `client.renderer` (`cam`, `viewProj`),
-`client.ticks` and `client.partial` (the fraction of a tick, for smooth drawing).
+hear it), `client.particles` (local particles: same methods as above), `client.renderer` (`cam`, `viewProj`,
+`backend`: `'webgpu'` or `'webgl2'`), `client.ticks` and `client.partial` (the fraction of a tick, for smooth
+drawing). Mods draw through a `RenderContext` (renderers, `worldRender`, `worldRenderGlow`), never through the GPU
+API, so the same mod looks the same with either backend.
 
 **Textures and sprites.** These are registered from `client`, before the texture atlas is built at load:
 
@@ -659,7 +661,10 @@ mod.client.itemSprite('mymod:gizmo', () => img, '#202020');   // item sprite, op
 ```
 
 `Img` is a `Uint8ClampedArray` of 16×16 RGBA. Paint it with `mod.mc.pixels`. A texture that only your renderers
-use still has to be registered this way, because that is what gives it a layer in the atlas.
+use still has to be registered this way, because that is what gives it a layer in the atlas. Resource packs can replace
+it: `mymod:glow` is `assets/mymod/textures/block/glow.png` (or `item/glow.png`) in a pack (see `packs/README.md`).
+Shader packs light your blocks and renderers like the game's own; a texture whose name ends in `_leaves`, or is
+one of the game's plants, sways with them.
 
 **Sounds.** `mod.client.sound('mymod:zap', (r) => Float32Array)` takes mono samples at `mc.SAMPLE_RATE` (22050).
 Build them with `mod.mc.synth`, for example

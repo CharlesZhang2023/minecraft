@@ -12,6 +12,7 @@
     "mcp": "node tools/agent/mcp.mjs"
   },
   "devDependencies": {
+    "@webgpu/types": "^0.1.74",
     "playwright": "1.57",
     "typescript": "^7.0.2",
     "vite": "^8.3.1"

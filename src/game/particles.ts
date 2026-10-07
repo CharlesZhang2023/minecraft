@@ -1,5 +1,5 @@
 import type { World } from '../world/world';
-import type { DynMesh } from '../render/gl';
+import type { DynMesh } from '../render/dynmesh';
 import { BLOCKS, OPAQUE, SOLID, tex } from '../world/blocks';
 import { Random } from '../noise';
 import type { FireworkExplosion } from './items';

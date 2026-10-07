@@ -1,7 +1,7 @@
 # Minecraft Web
 
 A from-scratch recreation of Minecraft (Java Edition, roughly 1.8-era mechanics) that runs in the browser.
-It uses raw WebGL2 and TypeScript, has no runtime dependencies, and ships no asset files. Textures, item sprites,
+It draws with WebGPU (falling back to WebGL 2 where there's none) from TypeScript, and ships no asset files. Textures, item sprites,
 mob skins, the font, sounds and music are all generated procedurally at startup.
 
 > Fan-made, non-commercial recreation. Not an official Minecraft product; not affiliated with Mojang or Microsoft.
@@ -10,7 +10,7 @@ mob skins, the font, sounds and music are all generated procedurally at startup.
 
 **[Play Minecraft Web](https://mc.iloveust.com/)**
 
-Open the link in a desktop browser with WebGL2 support. Worlds are saved locally in your browser.
+Open the link in a browser with WebGPU or WebGL 2 (any current one). Worlds are saved locally in your browser.
 
 ## Running
 
@@ -115,7 +115,7 @@ agents work in that world. With no game open, `mc launch` starts a headless brow
 **Interface**
 - The title screen shows a live rotating panorama world, a stone logo and splash text. World select and create
   screens with seeds, game modes and hardcore. Options for FOV, render distance, brightness, sensitivity, GUI
-  scale, clouds, particles and volume.
+  scale, clouds, particles and volume, and (under More...) the graphics API: WebGPU or WebGL 2.
 - Survival inventory with 2×2 crafting and a live player preview, a crafting table, a furnace, chests, and a
   tabbed, searchable creative inventory.
 - Vanilla slot semantics: split stacks, place one item, drag-distribute, shift-click, double-click collect,
@@ -124,6 +124,17 @@ agents work in that world. With no game open, `mc launch` starts a headless brow
   F2 screenshots and F1 to hide the HUD.
 - Synthesized sound effects: per-material digging and footsteps, mob voices, explosions, fizzes and portals.
   Generative ambient piano music.
+
+**Packs**
+- **Resource packs** in the Java Edition format (Options > Resource Packs...): block, item and particle textures at
+  any resolution, animated with `.mcmeta`, the sun and moon; several stack. Pastoral is offered in the pack repository.
+- **Shader packs** for the WebGPU renderer (Options > Shaders...): WGSL programs that light the world (sun shadows,
+  swaying plants, water reflections and refraction, the sky and fog) and finish the picture in full-screen passes.
+  Two come with the game: **Vibrant** (warm light, god rays and bloom, after Sildur's Vibrant Shaders) and
+  **Iteration** (a physical sky, volumetric clouds and light shafts, soft shadows, ambient occlusion, rain puddles
+  and TAA, after iterationT). Each has its own settings page.
+- Both are downloaded from the site's pack repository (static files, hash-checked) like mods, and kept in the
+  browser; or added from a file. See [`packs/README.md`](packs/README.md).
 
 **Mods**
 - A Fabric-style mod system: mods add blocks, items, mobs, commands, screens, settings, renderers and world
@@ -180,14 +191,17 @@ agents work in that world. With no game open, `mc launch` starts a headless brow
 
 ```
 src/world    blocks registry, worldgen (overworld, nether, the End, villages, strongholds), mesher + lighting (worker), chunk streaming
-src/render   WebGL2 renderer, shaders, texture array, procedural textures & sprites, entity models & renderer
+src/render   renderer (shared culling, sorting, sky, clouds) with WebGPU and WebGL 2 backends, WGSL and GLSL shaders,
+             texture array, procedural textures & sprites, entity models & renderer
 src/game     game loop (20 TPS), player, interaction, block ticks, items, recipes, audio synth, storage, portals
 src/entity   entity physics (vanilla collision), living entities, mobs & AI, pathfinding, spawning, boats
 src/sublevel sub-levels: shipyard plots, poses, Rapier physics, collision and riding in each one's frame, /sublevel
 src/ui       bitmap font, GUI primitives, isometric item icons, HUD, menus, containers, trading
 src/mod      mod loader, registries and per-world id binding, events, mixins, mod API, repository client
 src/agent    the agent API inside the game tab (development only): blocks, blueprints, pictures, events, code
+src/packs    resource and shader packs: zip reading, the pack repository, texture names, applying them
 mods/        the mod repository (example mods + SDK types), built by tools/vite-mods.ts
+packs/       the pack repository (shader packs, resource packs), built by tools/vite-packs.ts
 tools/       headless Playwright scenario runner; tools/agent: the agent bridge, `mc` CLI and MCP server
 ```
 

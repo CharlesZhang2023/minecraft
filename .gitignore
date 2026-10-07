@@ -12,3 +12,7 @@ work/
 !.env.example
 *.pem
 *.key
+
+# resource packs made by other people: their files stay out of git (see packs/README.md)
+packs/*/*.zip
+packs/pastoral/icon.png

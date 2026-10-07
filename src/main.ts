@@ -9,6 +9,9 @@ import { regionVillage } from './world/village';
 import { regionFortress } from './world/fortress';
 import { strongholdSites, layoutStronghold, nearestSite } from './world/stronghold';
 import { mods } from './mod/loader';
+import { createRenderer } from './render/backend';
+import { packs } from './packs/packs';
+import { loadOptions } from './game/options';
 import { readPairing, startAgent } from './agent/pairing';
 
 const gl = document.getElementById('gl') as HTMLCanvasElement;
@@ -19,14 +22,20 @@ function fail(msg: string) {
 }
 
 async function start() {
-  // mods first: their blocks, items and textures must exist before the client builds its atlas
-  try {
-    await mods.boot();
-  } catch (e) {
-    console.error('mod loader', e);
-  }
+  // mods first: their blocks, items and textures must exist before the client builds its atlas (the GPU is asked
+  // for meanwhile: WebGPU, or WebGL 2 where there's none)
+  // (and the resource packs in use are read, so their textures are in the atlas from the start)
+  const options = loadOptions();
+  const [, renderer] = await Promise.all([
+    mods.boot().catch((e) => console.error('mod loader', e)),
+    createRenderer(gl, options.gfx),
+    packs.boot(options).catch((e) => console.error('packs', e)),
+  ]);
   (window as unknown as { mods: unknown }).mods = mods;
-  const game = new Client(gl, ui);
+  (window as unknown as { packs: unknown }).packs = packs;
+  const game = new Client(renderer, ui);
+  // the shader pack in use (its programs compile in the background; the world shows without it meanwhile)
+  void packs.attach(game);
   // tests and the console: `game` is what you see; `game.server` is the simulation (single-player / hosting)
   (window as unknown as { game: Client }).game = game;
   (window as unknown as { __mc: unknown }).__mc = { BLOCKS, ITEMS, WorldGen, BIOMES, regionVillage, regionFortress, strongholdSites, layoutStronghold, nearestSite };

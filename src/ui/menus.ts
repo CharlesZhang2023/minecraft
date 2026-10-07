@@ -10,10 +10,11 @@ import { getTexture } from '../render/textures';
 import { MultiplayerScreen, HostScreen } from './multiplayer';
 import { GENERATOR_VERSION } from '../world/worldgen';
 import { SkinScreen } from './skinscreen';
+import { PackScreen } from './packs';
 import { AgentScreen } from './agentscreen';
 
 const SPLASHES = [
-  'Now in JavaScript!', 'Also try Terraria!', '100% procedural!', 'Punching trees!', 'Blocky!', 'Made with WebGL 2!', 'Now with caves!',
+  'Now in JavaScript!', 'Also try Terraria!', '100% procedural!', 'Punching trees!', 'Blocky!', 'Now with WebGPU!', 'Now with caves!',
   'Creepers, aw man!', 'Diamonds are rare!', 'No textures were harmed!', 'Pixel perfect!', 'Synthesized sounds!', 'Works offline!',
   '20 ticks per second!', 'Infinite worlds!', 'Watch out for skeletons!', 'Sheep go baa!', 'Zombies burn at dawn!', 'Look behind you!',
   'Contains 0 bytes of original assets!', 'Fancy leaves!', 'Smooth lighting!', 'Also try the Nether... someday!', 'Kind of like the real thing!',
@@ -434,10 +435,12 @@ export class OptionsScreen extends Screen {
     const o = this.game.options;
     const save = () => this.game.saveOptions();
     const x0 = W / 2 - 155, x1 = W / 2 + 5;
-    let y = H / 6 - 12;
-    const row = () => { const r = y; y += 24; return r; };
+    // eight rows over the bottom one, closer together on short screens
+    const step = H < 256 ? 23 : 24;
+    let y = Math.min(H / 6 - 12, H - 52 - step * 7);
+    const row = () => { const r = y; y += step; return r; };
     const onoff = (b: boolean) => (b ? 'ON' : 'OFF');
-    const r1 = row(), r2 = row(), r3 = row(), r4 = row(), r5 = row(), r6 = row(), r7 = row();
+    const r1 = row(), r2 = row(), r3 = row(), r4 = row(), r5 = row(), r6 = row(), r7 = row(), r8 = row();
     this.widgets = [
       new Slider(this.ui, x0, r1, 150, 20, (o.fov - 30) / 80, (v) => `FOV: ${Math.round(30 + v * 80) === 70 ? 'Normal' : Math.round(30 + v * 80) === 110 ? 'Quake Pro' : Math.round(30 + v * 80)}`, (v) => { o.fov = Math.round(30 + v * 80); save(); }),
       new Button(this.ui, x1, r1, 150, 20, () => `Difficulty: ${['Peaceful', 'Easy', 'Normal', 'Hard'][o.difficulty]}`, () => { if (this.game.meta?.hardcore) return; o.difficulty = (o.difficulty + 1) % 4; save(); }),
@@ -454,6 +457,8 @@ export class OptionsScreen extends Screen {
       new Button(this.ui, x0, r7, 150, 20, () => `Show FPS: ${onoff(o.showFps)}`, () => { o.showFps = !o.showFps; save(); }),
       // the rest (game rules, music, the agent) is one screen further
       new Button(this.ui, x1, r7, 150, 20, 'More...', () => this.ui.open(new MoreOptionsScreen(this.ui, this))),
+      new Button(this.ui, x0, r8, 150, 20, 'Resource Packs...', () => this.ui.open(new PackScreen(this.ui, this, 'resource'))),
+      new Button(this.ui, x1, r8, 150, 20, () => `Shaders: ${this.game.renderer.shaderPackName() || 'OFF'}...`, () => this.ui.open(new PackScreen(this.ui, this, 'shader'))),
       new Button(this.ui, x0, H - 28, 98, 20, 'Skin...', () => this.ui.open(new SkinScreen(this.ui, this))),
       new Button(this.ui, W / 2 - 51, H - 28, 102, 20, 'Distant Terrain...', () => this.ui.open(new DistantTerrainScreen(this.ui, this))),
       new Button(this.ui, W / 2 + 57, H - 28, 98, 20, 'Done', () => this.ui.open(this.parent)),
@@ -471,13 +476,16 @@ export class OptionsScreen extends Screen {
   }
 }
 
-/** More options: the keepInventory rule (your own world), music on demand, and the agent connection. */
+const GFX_NAMES: Record<string, string> = { auto: 'Auto', webgpu: 'WebGPU', webgl2: 'WebGL 2' };
+
+/** More options: the keepInventory rule (your own world), music on demand, the agent connection and the graphics API. */
 export class MoreOptionsScreen extends Screen {
   constructor(ui: UI, public parent: Screen) { super(ui); }
   override pausesGame = true;
   override init() {
     const W = this.gui.w, H = this.gui.h, x = W / 2 - 100;
     const host = this.game.world && !this.game.panorama && !this.game.remote ? this.game.server : null;
+    const o = this.game.options;
     let y = Math.max(40, H / 4);
     const row = () => { const r = y; y += 24; return r; };
     this.widgets = [
@@ -485,13 +493,22 @@ export class MoreOptionsScreen extends Screen {
       Object.assign(new Button(this.ui, x, row(), 200, 20, () => (host ? `Keep Inventory: ${host.keepInventory ? 'ON' : 'OFF'}` : 'Keep Inventory: in your own world'), () => { if (host) host.keepInventory = !host.keepInventory; }), { enabled: !!host }),
       new Button(this.ui, x, row(), 200, 20, 'Play Music Now', () => { this.game.audio.init(); this.game.audio.playPiece(); }),
       new Button(this.ui, x, row(), 200, 20, 'Agent...', () => this.ui.open(new AgentScreen(this.ui, this))),
+      // what draws the world: made once at start-up, so a change shows after a reload
+      new Button(this.ui, x, row(), 200, 20, () => `Graphics: ${GFX_NAMES[o.gfx] ?? 'Auto'}${o.gfx === 'auto' ? ` (${this.game.renderer.backend === 'webgpu' ? 'WebGPU' : 'WebGL 2'})` : ''}`, () => {
+        o.gfx = o.gfx === 'auto' ? 'webgpu' : o.gfx === 'webgpu' ? 'webgl2' : 'auto';
+        this.game.saveOptions();
+        const now = this.game.renderer.backend, want = o.gfx === 'auto' ? (navigator.gpu ? 'webgpu' : 'webgl2') : o.gfx;
+        this.note = want === now ? '' : 'Reload the page to switch';
+      }),
       new Button(this.ui, x, H - 28, 200, 20, 'Done', () => this.ui.open(this.parent)),
     ];
   }
+  private note = '';
   override render(ctx: Ctx, mx: number, my: number) {
     if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
     else this.gui.dirtBackground(ctx);
     this.gui.textCenter(ctx, 'More Options', this.gui.w / 2, 15, '#FFFFFF');
+    if (this.note) this.gui.textCenter(ctx, this.note, this.gui.w / 2, Math.max(40, this.gui.h / 4) + 24 * 4 + 4, '#FFFF80');
     super.render(ctx, mx, my);
   }
   override key(e: KeyboardEvent) {
@@ -783,7 +800,7 @@ const CREDITS: string[] = [
   '',
   '',
   '=Made with',
-  'TypeScript, WebGL 2 and WebAudio',
+  'TypeScript, WebGPU and WebAudio',
   'Every texture, model, sound and song',
   'generated by code, at runtime',
   '',
