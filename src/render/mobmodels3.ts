@@ -177,9 +177,11 @@ MODELS.wither = build([
 ]);
 /** Sign text: a sheet in front of the board (14 x 8 sixteenths), its texture is the text (front half only). */
 const signText = (): ModelDef => ({ texW: 28, texH: 8, parts: [{ name: 'text', px: 0, py: 0, pz: 0, boxes: [{ x: -7, y: 0, z: 0, w: 14, h: 8, d: 0, u: 0, v: 0 }] }] });
+/** A map in an item frame: a sheet 16 x 16 (its texture: the map, then the paper's back). */
+const mapSheet = (): ModelDef => ({ texW: 32, texH: 16, parts: [{ name: 'sheet', px: 0, py: 0, pz: 0, boxes: [{ x: -8, y: -8, z: 0, w: 16, h: 16, d: 0, u: 0, v: 0 }] }] });
 /** A banner (in vanilla's units, y down from the top of the bar): the cloth (20 x 40, a sheet), the crossbar, and the pole of a standing one. */
 const banner = (): ModelDef => ({ texW: 64, texH: 64, parts: [{ name: 'cloth', px: 0, py: 0, pz: 0, boxes: [{ x: -10, y: 2, z: -2, w: 20, h: 40, d: 0, u: 0, v: 0 }] }, { name: 'bar', px: 0, py: 0, pz: 0, boxes: [{ x: -10, y: 0, z: -1, w: 20, h: 2, d: 2, u: 0, v: 42 }] }, { name: 'pole', px: 0, py: 0, pz: 0, boxes: [{ x: -1, y: 0, z: -1, w: 2, h: 42, d: 2, u: 44, v: 0 }] }] });
-export const MOB_MODELS3: Record<string, () => ModelDef> = { ...Object.fromEntries(Object.entries(MODELS).map(([k, b]) => [k, () => b.def])), signText, banner };
+export const MOB_MODELS3: Record<string, () => ModelDef> = { ...Object.fromEntries(Object.entries(MODELS).map(([k, b]) => [k, () => b.def])), signText, banner, mapSheet };
 
 // ------------------------------------------------------------------ skins
 const EYE = hx('#1a1a1a');

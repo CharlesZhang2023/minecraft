@@ -1,6 +1,7 @@
 // The client: what a player sees, hears and touches. It draws the world it's been sent, moves its own player
 // (so walking feels instant), and tells the server what the player does each tick. Single-player starts a server
 // in this page and talks to it over a loopback connection; joining someone else's game uses WebRTC instead.
+import { decodeColors, type MapData } from '../game/maps';
 import { Renderer, Camera } from '../render/renderer';
 import { LodManager } from '../world/lod';
 import { LOD_TEXTURES, type LodPalette } from '../world/lodgen';
@@ -120,6 +121,8 @@ export class Client {
   gatewayBeam: { x: number; y: number; z: number; until: number } | null = null;
   /** Ticks left of the totem of undying's flash. */
   totemFlash = 0;
+  /** Maps the server has sent (by id), for drawing them in hand and in frames. */
+  maps = new Map<number, MapData>();
   pistons = { list: [] as number[][], renderList: (t: number) => pistonDrawList(this.pistons.list, t) };
   target: BlockHit | null = null;
   targetEntity: Entity | null = null;
@@ -1029,6 +1032,7 @@ export class Client {
       // a riptide trident flings its thrower (whose own client moves them)
       case 'riptide': p.vx += e[1] as number; p.vy += e[2] as number; p.vz += e[3] as number; p.riptideTicks = 20; break;
       case 'totem': this.totemFlash = 40; this.audio.play('totem.use', null, 1, 1); break;
+      case 'map': this.maps.set(e[1] as number, { id: e[1] as number, x: e[2] as number, z: e[3] as number, scale: e[4] as number, dim: e[5] as string, locked: !!e[6], colors: decodeColors(e[7] as string), ver: (this.maps.get(e[1] as number)?.ver ?? 0) + 1, marks: (e[8] as MapData['marks']) ?? undefined }); break;
     }
   }
 

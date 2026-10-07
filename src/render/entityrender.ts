@@ -25,6 +25,7 @@ import { getItem, I, I6, I7 } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
 import { BLOCKS, TEXTURES, Render, B, B2, WOOD, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX, Shape, metaOf, idOf, OPAQUE, isBanner, bannerColor } from '../world/blocks';
 import { bannerPixels } from '../game/banners';
+import { mapIdOf, mapRGB, MAP_SIZE, drawMapMarks } from '../game/maps';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
 import { poseMat4 } from '../sublevel/pose';
@@ -264,7 +265,7 @@ export class EntityRenderer {
       else if (e instanceof EyeOfEnder) this.billboard(dyn, x, y + 0.12, z, 0.4, TEXTURES.indexOf('item/ender_eye'), 0xffffff, 15, 15);
       else if (e instanceof WitherSkull) this.blockModel(dyn, pack(B2.WITHER_SKELETON_SKULL, 0), x - 0.5, y - 0.1, z - 0.5, 15, 15);
       else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, e.small ? 0.35 : 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
-      else if (e instanceof Hanging) this.drawHanging(dyn, e, x, y, z, sky, blk);
+      else if (e instanceof Hanging) { this.drawHanging(dyn, e, x, y, z, sky, blk); if (e instanceof ItemFrame && mapIdOf(e.item) !== null) this.drawFramedMap(game, e, x, y, z, sky, blk); }
       else if (e instanceof EvokerFangs) this.drawFangs(e, x, y, z, t, sky, blk);
       else if (e instanceof ArmorStand) {
         const base = this.entityBase(this.tmp2, x, y, z, e.yaw, 0, 1);
@@ -1191,6 +1192,8 @@ export class EntityRenderer {
   /** Item frames (a wooden square with the item turned inside it) and paintings (their cells' pictures). */
   private drawHanging(mesh: DynMesh, e: Hanging, x: number, y: number, z: number, sky: number, blk: number) {
     const [dx, dz] = HORIZ[e.facing];
+    // the entity sits against its wall; what's drawn below is laid out from the middle of its cell
+    x -= dx * 0.46; z -= dz * 0.46;
     const along = dx === 0; // the wall runs along x
     const m = mat4();
     identity(m);
@@ -1198,7 +1201,7 @@ export class EntityRenderer {
       const t = 1 / 16, hw = 0.375;
       const bx = along ? [x - hw, y, z + dz * 0.5 - (dz > 0 ? t : 0), x + hw, y + 0.75, z + dz * 0.5 + (dz < 0 ? t : 0)] : [x + dx * 0.5 - (dx > 0 ? t : 0), y, z - hw, x + dx * 0.5 + (dx < 0 ? t : 0), y + 0.75, z + hw];
       this.woodBox(mesh, m, bx, T2.itemFrame, sky, blk);
-      if (e.item) {
+      if (e.item && mapIdOf(e.item) === null) {
         const im = mat4();
         identity(im);
         translate(im, im, x - dx * 0.02 + dx * 0.43, y + 0.375, z - dz * 0.02 + dz * 0.43);
@@ -1423,6 +1426,45 @@ export class EntityRenderer {
     }
   }
   private bannerKeys: string[] = [];
+
+  /** A map in an item frame fills the frame, turned in quarter turns. */
+  private drawFramedMap(game: Game, e: ItemFrame, x: number, y: number, z: number, sky: number, blk: number) {
+    const id = mapIdOf(e.item)!, d = game.maps.get(id);
+    const key = 'map:' + id;
+    const tex = this.mapTextures.get(id);
+    if (!tex || tex.ver !== (d?.ver ?? 0)) {
+      const cv = document.createElement('canvas');
+      cv.width = 256; cv.height = 128;
+      const ctx = cv.getContext('2d')!;
+      ctx.fillStyle = '#d8c8a0';
+      ctx.fillRect(0, 0, 256, 128);
+      if (d) {
+        const img = ctx.getImageData(0, 0, MAP_SIZE, MAP_SIZE);
+        for (let i = 0; i < d.colors.length; i++) {
+          const rgb = mapRGB(d.colors[i]);
+          if (rgb < 0) continue;
+          img.data[i * 4] = rgb >> 16; img.data[i * 4 + 1] = (rgb >> 8) & 255; img.data[i * 4 + 2] = rgb & 255;
+        }
+        ctx.putImageData(img, 0, 0);
+        drawMapMarks(ctx, d, 0, 0, 1);
+        // the side facing the room is the sheet's back, which shows its picture the other way round
+        ctx.save(); ctx.translate(256, 0); ctx.scale(-1, 1); ctx.drawImage(cv, 0, 0, 128, 128, 0, 0, 128, 128); ctx.restore();
+      }
+      if (tex) this.r.gl.deleteTexture(tex.t);
+      const t = this.r.makeTexture(cv, 256);
+      this.mapTextures.set(id, { ver: d?.ver ?? 0, t });
+      this.skins.set(key, t);
+    }
+    const [dx, dz] = HORIZ[e.facing];
+    const m = mat4();
+    identity(m);
+    translate(m, m, x - dx * 0.035, y + 0.375, z - dz * 0.035);
+    rotateY(m, m, [Math.PI, Math.PI / 2, 0, -Math.PI / 2][e.facing]);
+    rotateZ(m, m, (-(e.rotation >> 1) * Math.PI) / 2);
+    scale(m, m, -0.75, -0.75, 0.75);
+    this.drawModel('mapSheet', key, m, {}, [sky, blk], [0, 0, 0, 0]);
+  }
+  private mapTextures = new Map<number, { ver: number; t: WebGLTexture }>();
 
   /** Evoker fangs: the jaws rise out of the ground, snap shut and sink back. */
   private drawFangs(e: EvokerFangs, x: number, y: number, z: number, t: number, sky: number, blk: number) {

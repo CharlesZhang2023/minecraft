@@ -7,7 +7,7 @@ import { ItemStack, itemByName, getItem, stack, POTION_ITEMS, DISCS } from './it
 import { blockByName } from '../world/blocks';
 import { ENCHANTS, rollEnchants } from './enchant';
 
-type Fn = { enchant?: true; levels?: [number, number]; damage?: [number, number]; book?: string; potion?: string };
+type Fn = { enchant?: true; levels?: [number, number]; damage?: [number, number]; book?: string; potion?: string; explore?: string };
 interface Entry { item: string | null; w: number; n?: [number, number] | number; fn?: Fn }
 interface Pool { rolls: [number, number] | number; entries: Entry[] }
 export type LootTable = Pool[];
@@ -79,16 +79,16 @@ export const LOOT: Record<string, LootTable> = {
     { rolls: [2, 5], entries: [E('iron_nugget', 50, [1, 10]), E('gold_nugget', 10, [1, 10]), E('lapis_lazuli', 20, [1, 10])] },
   ],
   shipwreck_map: [
-    { rolls: 1, entries: [E('map', 1)] },
+    { rolls: 1, entries: [E('map', 1, 1, { explore: 'buried_treasure' })] },
     { rolls: 3, entries: [E('compass', 1), E('map', 1), E('clock', 1), E('paper', 20, [1, 10]), E('feather', 10, [1, 5]), E('book', 5, [1, 5])] },
   ],
   underwater_ruin_small: [
     { rolls: [2, 8], entries: [E('coal', 10, [1, 4]), E('stone_axe', 2), E('rotten_flesh', 5), E('emerald', 1), E('wheat', 10, [2, 3])] },
-    { rolls: 1, entries: [E('leather_chestplate', 1), E('golden_helmet', 1), E('fishing_rod', 5, 1, ench), E('map', 5)] },
+    { rolls: 1, entries: [E('leather_chestplate', 1), E('golden_helmet', 1), E('fishing_rod', 5, 1, ench), E('map', 5, 1, { explore: 'buried_treasure' })] },
   ],
   underwater_ruin_big: [
     { rolls: [2, 8], entries: [E('coal', 10, [1, 4]), E('gold_nugget', 10, [1, 3]), E('emerald', 1), E('wheat', 10, [2, 3])] },
-    { rolls: 1, entries: [E('golden_apple', 1), E('enchanted_book', 5, 1, ench), E('leather_chestplate', 1), E('golden_helmet', 1), E('fishing_rod', 5, 1, ench), E('map', 10)] },
+    { rolls: 1, entries: [E('golden_apple', 1), E('enchanted_book', 5, 1, ench), E('leather_chestplate', 1), E('golden_helmet', 1), E('fishing_rod', 5, 1, ench), E('map', 10, 1, { explore: 'buried_treasure' })] },
   ],
   ruined_portal: [
     { rolls: [4, 8], entries: [E('obsidian', 40, [1, 2]), E('flint', 40, [1, 4]), E('iron_nugget', 40, [9, 18]), E('flint_and_steel', 40), E('fire_charge', 40), E('golden_apple', 15), E('gold_nugget', 15, [4, 24]),
@@ -170,6 +170,8 @@ export function rollLoot(name: string, r: Random): ItemStack[] {
 function applyFn(s: ItemStack, fn: Fn | undefined, r: Random) {
   if (!fn) return;
   const d = getItem(s.id);
+  // an explorer map: filled in (around its structure) by the server the first time someone holds it
+  if (fn.explore) { s.id = idOfName('filled_map'); s.tag = { explore: fn.explore }; return; }
   if (fn.book) {
     if (d.name === 'enchanted_book') s.ench = { [fn.book]: 1 + r.int(3) };
     else s.ench = { ...(s.ench ?? {}), [fn.book]: 1 + r.int(3) };

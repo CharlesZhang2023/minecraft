@@ -1,4 +1,5 @@
 // Container screens with Minecraft's slot-click semantics.
+import { mapIdOf, type MapData } from '../game/maps';
 import { bound } from '../game/combat';
 import { isShulkerBox } from '../game/stations';
 import { Screen, TextField } from './screen';
@@ -406,6 +407,11 @@ export function tooltipLines(s: ItemStack): string[] {
   if (s.ench) for (const [k, v] of Object.entries(s.ench)) lines.push('§7' + enchName(k, v));
   for (const l of s.banner ?? []) lines.push(`§7${DYE_COLORS[l.c].split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')} ${PATTERNS[l.p]?.[0] ?? l.p}`);
   if (s.id === I9.OMINOUS_BANNER) lines[0] = '§6§o' + (s.name ?? 'Ominous Banner');
+  if (mapIdOf(s) !== null) {
+    const d = (globalThis as { game?: { maps?: Map<number, MapData> } }).game?.maps?.get(mapIdOf(s)!);
+    lines.push(`§7Id #${mapIdOf(s)}`);
+    if (d) lines.push(`§7Scaling at 1:${1 << d.scale}`, ...(d.locked ? ['§7Locked'] : []));
+  }
   if (s.box) {
     const inside = s.box.filter((x): x is ItemStack => !!x);
     for (const it of inside.slice(0, 5)) lines.push(`§7${getItem(it.id).display} x${it.count}`);

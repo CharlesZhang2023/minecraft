@@ -5,6 +5,7 @@
 // Gameplay code reaches for `game.player`, `game.world`, `game.input`, `game.ui`... as if there were one player.
 // Those follow the current context: the dimension being simulated and, while a player's own action runs (mining,
 // using an item, a click in their chest), that player.
+import { tickMaps } from './maps';
 import { World, Dimension, Chunk } from '../world/world';
 import { Player, GameMode } from './player';
 import { findPortal, buildPortal } from './portal';
@@ -703,6 +704,7 @@ export class Game {
     this.sublevels.tick(dim);
     if (w.dimension === 'end' && this.meta?.dragonKilled && this.ticks % 20 === 0) buildExitPortal(this);
     if (w.dimension === 'end') { buildPending(this); tickDragonRespawn(this); }
+    tickMaps(this, w, here, this.ticks % 20 === 0 ? (dim.entities.filter((e) => (e as { typeName?: string }).typeName === 'Item Frame') as unknown as { item: null; x: number; z: number }[]) : undefined);
     const list = dim.entities;
     for (let i = list.length - 1; i >= 0; i--) {
       const e = list[i];

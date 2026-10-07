@@ -5,8 +5,10 @@ import { ContainerScreen, Slot, arrow } from './containers';
 import { Screen } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { ItemStack, getItem, stack, I, I3, DYES, itemId } from '../game/items';
+import { ItemStack, getItem, stack, I, I3, I7, DYES, itemId } from '../game/items';
 import { BANNERS } from '../world/blocks';
+import { createMap, lockMap, mapIdOf, mapStore } from '../game/maps';
+import type { WorldMeta } from '../game/storage';
 import { PATTERNS, PATTERN_ITEMS, PLAIN_PATTERNS, bannerPixels, BANNER_W, BANNER_H } from '../game/banners';
 import { BLOCKS } from '../world/blocks';
 import { SMITHING, STONECUTTING } from '../game/recipes';
@@ -368,6 +370,78 @@ export class LoomScreen extends ContainerScreen {
   }
 }
 void PATTERNS;
+
+/**
+ * The cartography table (1.14): a filled map and paper zooms it out a step (a new map, twice the area), an empty map
+ * copies it (the copies share the map), a glass pane locks it (a new map that no longer changes).
+ */
+export class CartographyScreen extends ContainerScreen {
+  title = 'Cartography Table';
+  items: Items = [null, null];
+  /** The map made for the current inputs (on the server, which keeps the maps). */
+  private made: { key: string; id: number } | null = null;
+  constructor(ui: UI, public x: number, public y: number, public z: number) { super(ui); }
+  private meta(): WorldMeta | null { const g = this.game as unknown as { meta?: WorldMeta | null; spawnXpAt?: unknown }; return g.spawnXpAt && g.meta ? g.meta : null; }
+  kind(): 'zoom' | 'copy' | 'lock' | null {
+    const [a, b] = this.items;
+    const id = mapIdOf(a);
+    if (id === null || !b) return null;
+    const d = this.meta() ? mapStore(this.meta()!).get(id) : (this.game as unknown as { maps?: Map<number, { scale: number; locked?: boolean }> }).maps?.get(id);
+    if (b.id === I.PAPER) return d && d.scale < 4 && !d.locked ? 'zoom' : null;
+    if (b.id === I7.MAP) return 'copy';
+    if (b.id === itemId('glass_pane')) return d && !d.locked ? 'lock' : null;
+    return null;
+  }
+  result(): ItemStack | null {
+    const k = this.kind(), a = this.items[0];
+    if (!k || !a) return null;
+    const id = mapIdOf(a)!;
+    if (k === 'copy') return { ...a, count: 2, tag: { ...a.tag } };
+    const meta = this.meta();
+    if (!meta) return { ...a, count: 1, tag: { ...a.tag } };
+    const key = `${id}:${k}`;
+    if (this.made?.key !== key) {
+      const d = mapStore(meta).get(id)!;
+      const n = k === 'zoom' ? createMap(meta, d.x, d.z, d.scale + 1, d.dim, d) : lockMap(meta, d);
+      this.made = { key, id: n.id };
+    }
+    return { ...a, count: 1, tag: { ...a.tag, map: this.made.id } };
+  }
+  override buildSlots() {
+    const it = this.items;
+    this.slots.push({ x: 15, y: 15, get: () => it[0], set: (s) => (it[0] = s), group: 'map', canPlace: (s) => mapIdOf(s) !== null });
+    this.slots.push({ x: 15, y: 52, get: () => it[1], set: (s) => (it[1] = s), group: 'extra', canPlace: (s) => s.id === I.PAPER || s.id === I7.MAP || s.id === itemId('glass_pane') });
+    this.slots.push({
+      x: 145, y: 39, group: 'out', output: true,
+      get: () => this.result(), set: () => {},
+      onTake: () => { take(it, 0); take(it, 1); this.made = null; this.game.audio.play('dig.cloth', { x: this.x + 0.5, y: this.y + 0.5, z: this.z + 0.5 }, 0.5, 1.8); },
+    });
+    this.addPlayerSlots();
+  }
+  override quickTargets(s: Slot, st: ItemStack): string[] {
+    if (s.group === 'main' || s.group === 'hotbar') return mapIdOf(st) !== null ? ['map'] : ['extra'];
+    return super.quickTargets(s, st);
+  }
+  override drawBackground(ctx: Ctx) {
+    const L = this.left, T = this.top;
+    ctx.fillStyle = '#d8c8a0';
+    ctx.fillRect(L + 66, T + 14, 64, 58);
+    const k = this.kind();
+    ctx.fillStyle = '#6a5a3a';
+    if (k === 'zoom') { ctx.fillRect(L + 82, T + 27, 32, 32); ctx.fillStyle = '#d8c8a0'; ctx.fillRect(L + 90, T + 35, 16, 16); }
+    else if (k === 'copy') { ctx.fillRect(L + 74, T + 22, 26, 26); ctx.fillRect(L + 96, T + 38, 26, 26); }
+    else if (k === 'lock') { ctx.fillRect(L + 84, T + 24, 28, 28); ctx.fillStyle = '#a0a0a0'; ctx.fillRect(L + 104, T + 46, 12, 10); ctx.fillRect(L + 106, T + 41, 2, 5); ctx.fillRect(L + 112, T + 41, 2, 5); ctx.fillRect(L + 106, T + 41, 8, 2); }
+    arrow(ctx, L + 134, T + 40, 0, 8);
+  }
+  override drawForeground(ctx: Ctx) {
+    this.label(ctx, 'Cartography Table', 8, 4);
+    this.label(ctx, 'Inventory', 8, 72);
+  }
+  override onClose() {
+    this.giveBack(this.items);
+    super.onClose();
+  }
+}
 
 /** A chest minecart's 27 slots, or a hopper minecart's 5. */
 export class CartScreen extends ContainerScreen {

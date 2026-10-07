@@ -33,6 +33,8 @@ const T = (cost: [number, number], result: [number, number], max: number, xp: nu
 const buy = (name: string, n: number, max = 16, xp = 2): Make => () => T([id(name), n], [E(), 1], max, xp);
 /** The villager sells `n` of something for `price` emeralds (optionally plus another item). */
 const sell = (price: number, name: string, n = 1, max = 12, xp = 1, extra?: [string, number]): Make => () => T([E(), price], [id(name), n], max, xp, extra ? [id(extra[0]), extra[1]] : undefined);
+/** An explorer map (filled in around the nearest ocean monument or woodland mansion when first held). */
+const explorer = (price: number, kind: string, xp: number): Make => () => ({ ...T([E(), price], [id('filled_map'), 1], 1, xp, [id('compass'), 1]), tag: { explore: kind } });
 /** An enchanted tool or armour piece (vanilla: enchantment level 5-19, price grows with it). */
 const enchanted = (base: number, name: string, max = 3, xp = 15): Make => (r) => {
   const lv = 5 + r.int(15);
@@ -70,8 +72,8 @@ export const TRADES: Record<string, Make[][]> = {
   ],
   cartographer: [
     [buy('paper', 24), sell(7, 'map')],
-    [buy('glass_pane', 11, 16, 10), sell(13, 'map', 1, 12, 5, ['compass', 1])],
-    [buy('compass', 1, 12, 20), sell(14, 'map', 1, 12, 10, ['compass', 1])],
+    [buy('glass_pane', 11, 16, 10), explorer(13, 'monument', 5)],
+    [buy('compass', 1, 12, 20), explorer(14, 'mansion', 10)],
     [sell(7, 'item_frame', 1, 12, 15)],
     [sell(8, 'painting', 3, 12, 30)],
   ],

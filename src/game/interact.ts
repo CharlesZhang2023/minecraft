@@ -1,4 +1,5 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
+import { createMap } from './maps';
 import { buildGolem } from '../entity/overworldmobs';
 import { BOATS } from './items';
 import { buildWither } from '../entity/wither';
@@ -752,6 +753,16 @@ export class Interaction {
       g.addEntity(r);
       g.playerOf(p)?.event(['boost', r.lifetime]);
       this.consume(1);
+      p.swing();
+      return;
+    }
+    if (held.id === I7.MAP && g.meta && 'spawnXpAt' in g) {
+      // an empty map fills in around whoever opens it (scale 0, this dimension)
+      const d = createMap(g.meta, Math.floor(p.x), Math.floor(p.z), 0, w.dimension);
+      const filled: ItemStack = { id: I7.FILLED_MAP, count: 1, tag: { map: d.id } };
+      if (held.count <= 1 && !p.creative) p.inventory.main[p.inventory.selected] = filled;
+      else { if (!p.creative) this.consume(1); if (p.inventory.add(filled) > 0) g.dropItem(p.x, p.y + 1, p.z, filled); }
+      g.audio.play('dig.cloth', { x: p.x, y: p.y, z: p.z }, 0.5, 1.8);
       p.swing();
       return;
     }

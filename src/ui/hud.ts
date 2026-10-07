@@ -5,6 +5,7 @@ import { drawEffectsHud } from './effects';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { getItem, ItemStack } from '../game/items';
+import { mapIdOf, mapRGB, MAP_SIZE, drawMapMarks } from '../game/maps';
 import { B } from '../world/blocks';
 import { EnderDragon } from '../entity/dragon';
 import { LivingEntity } from '../entity/living';
@@ -51,6 +52,57 @@ export class Hud {
     for (const [k, v] of this.pickupPop) { if (v <= 1) this.pickupPop.delete(k); else this.pickupPop.set(k, v - 1); }
   }
 
+  private mapCanvases = new Map<number, { ver: number; cv: HTMLCanvasElement }>();
+  private heldMaps(ctx: Ctx, W: number, H: number) {
+    const g = this.ui.game, p = g.player!;
+    const hands: [ItemStack | null, boolean][] = [[p.inventory.held(), true], [p.inventory.offhand, false]];
+    for (const [s, main] of hands) {
+      const id = mapIdOf(s);
+      if (id === null) continue;
+      const size = Math.min(112, Math.floor(H * 0.42)), x = main ? W - size - 10 : 10, y = H - size - 44;
+      // the paper
+      ctx.fillStyle = '#d8c8a0';
+      ctx.fillRect(x - 4, y - 4, size + 8, size + 8);
+      ctx.fillStyle = '#b8a47a';
+      ctx.fillRect(x - 4, y + size + 3, size + 8, 1); ctx.fillRect(x + size + 3, y - 4, 1, size + 8);
+      const d = g.maps.get(id);
+      if (!d) continue;
+      let c = this.mapCanvases.get(id);
+      if (!c || c.ver !== d.ver) {
+        const cv = c?.cv ?? document.createElement('canvas');
+        cv.width = cv.height = MAP_SIZE;
+        const img = new ImageData(MAP_SIZE, MAP_SIZE);
+        for (let i = 0; i < d.colors.length; i++) {
+          const rgb = mapRGB(d.colors[i]);
+          if (rgb < 0) continue;
+          img.data[i * 4] = rgb >> 16; img.data[i * 4 + 1] = (rgb >> 8) & 255; img.data[i * 4 + 2] = rgb & 255; img.data[i * 4 + 3] = 255;
+        }
+        cv.getContext('2d')!.putImageData(img, 0, 0);
+        c = { ver: d.ver, cv };
+        this.mapCanvases.set(id, c);
+      }
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(c.cv, x, y, size, size);
+      drawMapMarks(ctx as never, d, x, y, size / MAP_SIZE);
+      // the player's marker: a white pointer (on the edge, smaller, when they're off the map)
+      if (d.dim === (g.world?.dimension ?? '')) {
+        const k = size / MAP_SIZE, sc = 1 << d.scale;
+        let mx = (p.x - d.x) / sc + 64, mz = (p.z - d.z) / sc + 64;
+        const off = mx < 0 || mz < 0 || mx > MAP_SIZE || mz > MAP_SIZE;
+        mx = Math.max(0, Math.min(MAP_SIZE, mx)); mz = Math.max(0, Math.min(MAP_SIZE, mz));
+        ctx.translate(x + mx * k, y + mz * k);
+        if (!off) ctx.rotate((p.yaw * Math.PI) / 180 + Math.PI);
+        ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#000000'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (off) ctx.arc(0, 0, 2, 0, Math.PI * 2);
+        else { ctx.moveTo(0, -5); ctx.lineTo(3.5, 4); ctx.lineTo(0, 2); ctx.lineTo(-3.5, 4); ctx.closePath(); }
+        ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
   actionBar(text: string) {
     this.actionText = text;
     this.actionTimer = 60;
@@ -87,6 +139,8 @@ export class Hud {
       this.modsAndChat(ctx);
       return;
     }
+    // a map in hand: drawn in the corner of its hand, with where you are on it
+    if (!view?.freePointer) this.heldMaps(ctx, W, H);
     // hotbar; on touch screens the Pocket Edition one: only the slots that fit, then "..." for the inventory
     const touch = device.touch;
     const tb = touch ? touchHotbar(W, H) : null;

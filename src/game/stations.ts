@@ -101,6 +101,7 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
     case B2.BEACON: if (!w.getTile(x, y, z)) w.setTile(x, y, z, { type: 'beacon', levels: 0, primary: '', secondary: '', beam: 0 } as never); ui.openBeacon?.(x, y, z); return true;
     case B2.GRINDSTONE: ui.openGrindstone?.(x, y, z); return true;
     case B2.LOOM: ui.openLoom?.(x, y, z); return true;
+    case B2.CARTOGRAPHY_TABLE: ui.openCartography?.(x, y, z); return true;
     case B2.COMPOSTER: {
       if (m >= 8) {
         // ready: out comes bone meal

@@ -1178,7 +1178,7 @@ function bookTrade(r: Random): { ench: Record<string, number>; cost2: [number, n
   const lvl = 1 + r.int(e.max);
   return { ench: { [e.id]: lvl }, cost2: [I.EMERALD, Math.min(64, 2 + r.int(5 + lvl * 10) + 3 * lvl)] };
 }
-export interface Trade { cost: [number, number]; cost2?: [number, number]; result: [number, number]; ench?: Record<string, number>; uses: number; max: number; /** Villager experience for making it. */ xp?: number }
+export interface Trade { cost: [number, number]; cost2?: [number, number]; result: [number, number]; ench?: Record<string, number>; /** Extra data on the result (explorer maps). */ tag?: Record<string, unknown>; uses: number; max: number; /** Villager experience for making it. */ xp?: number }
 
 export class Villager extends Mob {
   typeName = 'Villager';
