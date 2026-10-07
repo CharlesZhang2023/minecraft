@@ -178,10 +178,24 @@ export class Redstone {
     if (idOf(v) === B.COMPARATOR && p < 15) {
       // comparators read containers directly behind them, or behind a conductor
       let lvl = containerLevel(this.w, bx, y, bz);
-      if (lvl < 0 && isConductor(idOf(bv))) lvl = containerLevel(this.w, bx - dx, y, bz - dz);
+      if (lvl < 0 && isConductor(idOf(bv))) lvl = Math.max(containerLevel(this.w, bx - dx, y, bz - dz), this.frameLevel(bx - dx, y, bz - dz, f));
       if (lvl >= 0) p = Math.max(p, lvl);
     }
     return p;
+  }
+  /**
+   * An item frame hanging in cell (x, y, z) on the wall toward the comparator (facing f): its item's rotation plus
+   * one (1-8), or 0 if empty; -1 if there's no such frame.
+   */
+  private frameLevel(x: number, y: number, z: number, f: number): number {
+    let lvl = -1;
+    for (const e of this.game.entities) {
+      if (e.removed || (e as { typeName?: string }).typeName !== 'Item Frame') continue;
+      const fr = e as unknown as { bx: number; by: number; bz: number; facing: number; item: unknown; rotation: number };
+      if (fr.bx !== x || fr.by !== y || fr.bz !== z || fr.facing !== f) continue;
+      lvl = Math.max(lvl, fr.item ? (fr.rotation & 7) + 1 : 0);
+    }
+    return lvl;
   }
   private diodeSide(x: number, y: number, z: number, v: number): number {
     const f = metaOf(v) & 3;

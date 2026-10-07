@@ -30,6 +30,8 @@ export interface ItemDef {
   lingering?: boolean;
   /** A music disc: the tune's name. */
   disc?: string;
+  /** Always drawn with the enchantment shimmer (the debug stick). */
+  foil?: boolean;
   /** Mods: the namespaced key ('mod:name'), the owning mod, its hooks and creative tab. */
   key?: string;
   mod?: string;
@@ -505,6 +507,10 @@ for (const p of POTIONS2) {
   LINGERING_ITEMS[p.key] = item(`lingering_potion_${p.key}`, 'Lingering ' + p.name, { maxStack: 1, potion: p.key, lingering: true, sprite: `lingering_potion_${p.sprite}` });
   TIPPED_ARROWS[p.key] = item(`tipped_arrow_${p.key}`, 'Arrow of ' + p.name.replace(/^Potion of (the )?/, ''), { potion: p.key, sprite: `tipped_arrow_${p.sprite}` });
 }
+/** Creative tools (1.13): the debug stick picks a block's property (attack) and steps it (use). */
+export const I12 = {
+  DEBUG_STICK: item('debug_stick', 'Debug Stick', { maxStack: 1, sprite: 'stick', foil: true }),
+};
 
 // block items of the new blocks: sizes and fuel that differ from the defaults
 for (const id of [...BEDS]) { const d = ITEMS.get(id); if (d) d.maxStack = 1; }

@@ -224,6 +224,39 @@ export function paintMore(p: Painters) {
       gens[`${n}_front`] = () => { const img = shell(newImg()); for (let y = 4; y < 12; y++) for (let x = 4; x < 12; x++) set(img, x, y, (x + y) % 2 ? hex('#202020') : hex('#2a2a2a')); set(img, 6, 6, hex('#e0e0e0')); set(img, 7, 7, hex('#e0e0e0')); set(img, 6, 8, hex('#e0e0e0')); for (let x = 8; x < 10; x++) set(img, x, 9, hex('#e0e0e0')); return img; };
       gens[`${n}_back`] = () => { const img = shell(newImg()); for (let y = 5; y < 11; y++) for (let x = 5; x < 11; x++) set(img, x, y, dark); return img; };
     }
+    if (i === 0) {
+      // structure blocks: a dark panel with a frame and the mode's letter; jigsaws: a grey shell, a connector
+      // knob on the front pointing to its top, arrows on the sides toward the front
+      const panel = G('#3b3442'), frame = G('#6c6378'), dim = G('#2a2530'), ink = G('#e8e4ee');
+      const letters: Record<string, string[]> = {
+        save: [' ### ', '#    ', '#    ', ' ### ', '    #', '    #', ' ### '],
+        load: ['#    ', '#    ', '#    ', '#    ', '#    ', '#    ', '#####'],
+        corner: [' ####', '#    ', '#    ', '#    ', '#    ', '#    ', ' ####'],
+        data: ['#### ', '#   #', '#   #', '#   #', '#   #', '#   #', '#### '],
+      };
+      for (const [mode, rows] of Object.entries(letters)) gens[`structure_block_${mode}`] = () => {
+        const img = newImg();
+        for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) set(img, x, y, x === 0 || y === 0 || x === 15 || y === 15 ? frame : x === 1 || y === 1 || x === 14 || y === 14 ? dim : (x * 7 + y * 3) % 11 === 0 ? tone(panel, 1.1) : panel);
+        rows.forEach((row, ry) => [...row].forEach((ch, rx) => { if (ch === '#') set(img, 5 + rx, 4 + ry, ink); }));
+        return img;
+      };
+      const shell = (img: Img) => { const base = G('#5d5a63'), lite = G('#7d7a84'), dark = G('#424048'); for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) set(img, x, y, x === 0 || y === 0 ? lite : x === 15 || y === 15 ? dark : (x + 2 * y) % 9 === 0 ? tone(base, 0.92) : base); return img; };
+      const arrow = G('#b26ad8');
+      gens['jigsaw_side'] = () => { const img = shell(newImg()); for (let y = 4; y < 13; y++) set(img, 7, y, arrow), set(img, 8, y, arrow); for (let k = 0; k < 3; k++) { set(img, 6 - k, 5 + k, arrow); set(img, 9 + k, 5 + k, arrow); } return img; };
+      gens['jigsaw_bottom'] = () => { const img = shell(newImg()); for (let y = 6; y < 10; y++) for (let x = 6; x < 10; x++) set(img, x, y, G('#424048')); return img; };
+      gens['jigsaw_top'] = () => {
+        // a puzzle knob: a block with a tab sticking up (toward the top), a light outline
+        const img = shell(newImg()), tab = G('#d8d0e0'), fillc = G('#9a8cb0');
+        for (let y = 7; y < 13; y++) for (let x = 3; x < 13; x++) set(img, x, y, y === 7 || y === 12 || x === 3 || x === 12 ? tab : fillc);
+        for (let y = 3; y < 8; y++) for (let x = 6; x < 10; x++) set(img, x, y, y === 3 || x === 6 || x === 9 ? tab : fillc);
+        return img;
+      };
+      gens['structure_void'] = () => {
+        const img = newImg(), c = G('#d6c2ec'), e = G('#8e6cb4');
+        for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) set(img, x, y, x === 5 || x === 10 || y === 5 || y === 10 ? e : c, 200);
+        return img;
+      };
+    }
     if (i === 0) gens['lectern_book'] = () => {
       // an open book seen from above: two pages and the spine
       const img = newImg(), page = G('#f0e8d0'), line = G('#b8ac90'), cover = G('#6a3a22');

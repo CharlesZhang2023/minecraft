@@ -59,6 +59,8 @@ import { bind } from '../mod/registry';
 import { modState, guard } from '../mod/state';
 import { CONFIGS } from '../mod/config';
 import { ConfirmScreen } from '../ui/menus';
+import { structureBox, type StructureTile } from '../game/structureblocks';
+import { STRUCTURE_BLOCK } from '../world/blocks';
 
 export const TICK_MS = 50;
 
@@ -1360,6 +1362,7 @@ export class Client {
     r.drawChunks(w.chunks.values(), 'opaque', ships);
     this.entityRenderer.render(this, t);
     this.drawSelection();
+    this.drawStructureBoxes();
     for (const f of this.overlays) f(r, cam);
     const pm = r.dyn;
     pm.reset();
@@ -1415,6 +1418,39 @@ export class Client {
       out.push({ rot: qmat3(pose.q), tx: pose.tx, ty: pose.ty, tz: pose.tz, lx: pose.lx, ly: pose.ly, lz: pose.lz, chunks });
     }
     return out;
+  }
+
+  /** Structure blocks showing their box (save and load modes), found every half second within 96 blocks. */
+  private structureBoxes: [number, number, number, number, number, number][] = [];
+  private structureScan = 0;
+  private drawStructureBoxes() {
+    const w = this.world!, cam = this.cam, p = this.player!;
+    if (--this.structureScan <= 0) {
+      this.structureScan = 30;
+      this.structureBoxes = [];
+      for (const c of w.chunks.values()) {
+        if (!c.ready || !c.tiles.size || Math.abs(c.cx * 16 + 8 - p.x) > 104 || Math.abs(c.cz * 16 + 8 - p.z) > 104) continue;
+        for (const [i, t] of c.tiles) {
+          const st = t as unknown as StructureTile;
+          if (st.type !== 'structure' || !st.showBox) continue;
+          const x = c.cx * 16 + (i & 15), z = c.cz * 16 + ((i >> 4) & 15), y = i >> 8, v = w.get(x, y, z);
+          if ((v & 0xfff) !== STRUCTURE_BLOCK) continue;
+          const b = structureBox(st, x, y, z, v >>> 12 & 3);
+          if (b) this.structureBoxes.push([b.x0, b.y0, b.z0, b.x1 + 1, b.y1 + 1, b.z1 + 1]);
+        }
+      }
+    }
+    if (!this.structureBoxes.length) return;
+    const L: number[] = [];
+    for (const [a, b, c, d, e, f] of this.structureBoxes) {
+      const X0 = a - cam.x, Y0 = b - cam.y, Z0 = c - cam.z, X1 = d - cam.x, Y1 = e - cam.y, Z1 = f - cam.z;
+      L.push(
+        X0, Y0, Z0, X1, Y0, Z0, X1, Y0, Z0, X1, Y0, Z1, X1, Y0, Z1, X0, Y0, Z1, X0, Y0, Z1, X0, Y0, Z0,
+        X0, Y1, Z0, X1, Y1, Z0, X1, Y1, Z0, X1, Y1, Z1, X1, Y1, Z1, X0, Y1, Z1, X0, Y1, Z1, X0, Y1, Z0,
+        X0, Y0, Z0, X0, Y1, Z0, X1, Y0, Z0, X1, Y1, Z0, X1, Y0, Z1, X1, Y1, Z1, X0, Y0, Z1, X0, Y1, Z1,
+      );
+    }
+    this.renderer.drawLines(new Float32Array(L), [1, 1, 1, 0.85]);
   }
 
   private drawSelection() {
