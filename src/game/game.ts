@@ -337,6 +337,7 @@ export class Game {
         meta.gameMode = sp.entity.gameMode;
         meta.dimension = sp.dim;
         meta.achievements = sp.achievements.toJSON();
+        (meta as { stats?: Record<string, number> }).stats = sp.achievements.stats;
       } else players[sp.name] = sp.save();
     }
     for (const dim of this.dims.values()) this.storeEntities(dim);
@@ -377,6 +378,7 @@ export class Game {
       dimName = (owner ? meta.dimension : (saved as { dim?: Dimension }).dim) ?? 'overworld';
       sp.achievements.load(owner ? meta.achievements : (saved as { achievements?: string[] }).achievements);
       sp.send({ t: 'achs', ids: sp.achievements.toJSON() });
+      sp.achievements.stats = { ...((owner ? (meta as { stats?: Record<string, number> }).stats : (saved as { stats?: Record<string, number> }).stats) ?? {}) };
     } else {
       p.setGameMode(meta.gameMode);
       const sp0 = meta.spawn;
@@ -432,7 +434,7 @@ export class Game {
     });
     if (Events.playerLeave.any) this.asActor(sp, () => Events.playerLeave.fire(this, sp.entity));
     if (!sp.owner && this.meta) (this.meta.players ??= {})[sp.name] = sp.save();
-    else if (sp.owner && this.meta) { this.meta.player = sp.entity.toJSON(); this.meta.dimension = sp.dim; this.meta.achievements = sp.achievements.toJSON(); }
+    else if (sp.owner && this.meta) { this.meta.player = sp.entity.toJSON(); this.meta.dimension = sp.dim; this.meta.achievements = sp.achievements.toJSON(); (this.meta as { stats?: Record<string, number> }).stats = sp.achievements.stats; }
     this.players.splice(i, 1);
     const dim = this.dims.get(sp.dim);
     if (dim) { const k = dim.entities.indexOf(sp.entity); if (k >= 0) dim.entities.splice(k, 1); }
@@ -706,7 +708,7 @@ export class Game {
     this.sublevels.tick(dim);
     if (w.dimension === 'end' && this.meta?.dragonKilled && this.ticks % 20 === 0) buildExitPortal(this);
     if (w.dimension === 'end') { buildPending(this); tickDragonRespawn(this); }
-    here.forEach((sp, i) => { if ((this.ticks + i * 7) % 20 === 0) scanAdvancements(this, sp); });
+    here.forEach((sp, i) => { sp.achievements.moveTick(sp.entity as never); if ((this.ticks + i * 7) % 20 === 0) scanAdvancements(this, sp); });
     tickMaps(this, w, here, this.ticks % 20 === 0 ? (dim.entities.filter((e) => (e as { typeName?: string }).typeName === 'Item Frame') as unknown as { item: null; x: number; z: number }[]) : undefined);
     const list = dim.entities;
     for (let i = list.length - 1; i >= 0; i--) {

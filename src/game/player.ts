@@ -404,6 +404,7 @@ export class Player extends LivingEntity {
     if (live.game && playerHooks.shieldBlocks(live.game, this, amount, source, attacker ?? null)) return false;
     const before = this.health;
     const r = super.damage(amount, source, attacker);
+    if (r) live.game?.playerOf(this)?.achievements.stat('damage_taken', Math.round(Math.min(amount, before) * 10));
     if (r && attacker && (source === 'mob' || source === 'player')) {
       // Thorns: 15% chance per level to hurt the attacker for 1-4
       const th = this.inventory.armor.reduce((m, a) => Math.max(m, a?.ench?.thorns ?? 0), 0);
@@ -424,6 +425,7 @@ export class Player extends LivingEntity {
     if (live.game && playerHooks.useTotem(live.game, this, source)) return;
     playerHooks.vanishOnDeath(this);
     super.die(source, attacker);
+    live.game?.playerOf(this)?.achievements.died(attacker ? (attacker as unknown as { typeName?: string }).typeName ?? '' : '');
     const who = attacker ? (attacker as unknown as { typeName?: string }).typeName ?? 'something' : '';
     const msgs: Record<string, string> = {
       fall: 'Player hit the ground too hard',

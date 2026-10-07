@@ -195,6 +195,7 @@ export class Interaction {
     // mods may keep the block
     if (Events.breakBlock.any && Events.breakBlock.fire({ game: g, player: p, x, y, z, v }) === 'fail') return;
     const tile = w.getTile(x, y, z);
+    g.achievements.stat('mined:' + BLOCKS[id].name);
     if (id === B2.BEE_NEST && level(p.inventory.held(), 'silk_touch') > 0 && ((tile as { bees?: unknown[] } | undefined)?.bees?.length ?? 0) >= 3) g.achievements.event('silk_nest');
     if (id === B2.BEE_NEST || id === B2.BEEHIVE) hiveBroken(g, x, y, z, p);
     const held = p.inventory.held();
@@ -1156,6 +1157,7 @@ export class Interaction {
   private setPlaced(x: number, y: number, z: number, v: number, soundBlock: number): boolean {
     const g = this.game, w = this.world;
     if (!w.set(x, y, z, v)) return false;
+    g.achievements.stat('used:' + (BLOCKS[soundBlock]?.name ?? ''));
     this.initTile(x, y, z, v);
     const def = BLOCKS[idOf(v)];
     if (def.mod && def.behavior?.onPlaced) callBlock(idOf(v), 'onPlaced', () => def.behavior!.onPlaced!({ ...blockCtx(g, x, y, z, v), player: this.player }), undefined);
@@ -1241,6 +1243,7 @@ export class Interaction {
     }
     const hit = e.damage(dmg, 'player', p);
     if (hit) {
+      g.achievements.stat('damage_dealt', Math.round(dmg * 10));
       if (crit) g.particles!.crit(e.x, e.y + e.height * 0.6, e.z);
       if (sw.sweep) sweep(g, p, e, dmg);
       g.audio.play(crit ? 'attack.crit' : sw.sweep ? 'attack.sweep' : sw.strength > 0.9 ? 'attack.strong' : 'attack.weak', p, 1, 1);
@@ -1451,6 +1454,7 @@ export class Interaction {
   }
 
   throwStack(s: ItemStack) {
+    this.game.achievements.stat('dropped:' + getItem(s.id).name, s.count);
     const g = this.game, p = this.player;
     const eye = g.eyePos(1);
     const e = g.dropItem(p.x, eye.y - 0.3, p.z, s, false, 40);

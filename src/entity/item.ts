@@ -81,7 +81,7 @@ export class ItemEntity extends Entity {
       const before = this.item.count;
       const left = p.inventory.add(this.item);
       if (left < before) {
-        this.game.playerOf(p)?.achievements.onPickup(this.item.id);
+        this.game.playerOf(p)?.achievements.onPickup(this.item.id, this.item.count);
         this.game.audio.play('pop', this, 0.2, ((Math.random() - Math.random()) * 0.7 + 1) * 2);
         this.game.pickedUp(this, p, this.item.id);
       }

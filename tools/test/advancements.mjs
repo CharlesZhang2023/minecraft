@@ -63,6 +63,26 @@ await t.page.evaluate(() => { window.game.ui.screen.tab = 'adventure'; });
 await wait(300);
 await t.shot('advancements-adventure');
 
+// statistics: what the server counted, and the screen that shows them
+await t.page.keyboard.press('Escape');
+const stats = await t.page.evaluate(async () => {
+  const { B } = await import('/src/world/blocks.ts');
+  await window.sim((g, p) => {
+    const x = Math.floor(p.x) + 2, y = Math.floor(p.y), z = Math.floor(p.z);
+    g.world.set(x, y + 3, z, B.STONE);
+    g.interact.breakBlock(x, y + 3, z);
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  const s = await window.sim((g) => ({ ...g.players[0].achievements.stats }));
+  const { StatsScreen } = await import('/src/ui/stats.ts');
+  window.game.ui.open(new StatsScreen(window.game.ui, null));
+  await new Promise((r) => setTimeout(r, 500));
+  return { mined: s['mined:stone'], kills: s.mob_kills, zombie: s['killed:Zombie'], played: s.play_time, client: !!window.game.statsData };
+});
+ok(stats.mined === 1 && stats.kills >= 1 && stats.zombie === 1 && stats.played > 20, `statistics count blocks mined, kills and time played (${JSON.stringify(stats)})`);
+ok(stats.client, 'the statistics screen gets them from the server');
+await t.shot('statistics');
+
 ok(t.errors.length === 0, 'no page errors ' + t.errors.slice(0, 3).join(' | '));
 await t.close();
 console.log(fails.length ? `${fails.length} failed` : 'all passed');

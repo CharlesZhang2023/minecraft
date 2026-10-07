@@ -231,6 +231,7 @@ export class ServerPlayer {
       case 'close': g.asActor(this, () => { this.ui.fromClient = true; this.ui.open(null); this.ui.fromClient = false; }); break;
       case 'respawn': g.respawn(this); break;
       case 'wake': this.wake(); break;
+      case 'stats': this.send({ t: 'stats', s: { ...this.achievements.stats } }); break;
       case 'need': {
         // the client's own generation didn't match: send the real chunk
         const k = chunkKey(Number(m.cx), Number(m.cz));
@@ -640,7 +641,7 @@ export class ServerPlayer {
 
   /** What's saved for this player between sessions. */
   save() {
-    return { ...this.entity.toJSON(), dim: this.dim, achievements: this.achievements.toJSON() };
+    return { ...this.entity.toJSON(), dim: this.dim, achievements: this.achievements.toJSON(), stats: this.achievements.stats };
   }
 }
 

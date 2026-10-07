@@ -37,6 +37,36 @@ export class Achievements {
   onUnlock: ((id: string, name: string, kind: string) => void) | null = null;
   /** Where levitation began (for "Great View From Up Here"). */
   levitateFrom: number | null = null;
+  /** Statistics (vanilla's): general counters, and per block, item and mob ("mined:stone", "killed:Zombie"...). */
+  stats: Record<string, number> = {};
+  private last: { x: number; y: number; z: number; ground: boolean } | null = null;
+  stat(key: string, n = 1) {
+    if (this.passive || !n) return;
+    this.stats[key] = (this.stats[key] ?? 0) + n;
+  }
+  /** Each server tick: time played and how far the player went, by how they moved. */
+  moveTick(p: { x: number; y: number; z: number; vy: number; onGround: boolean; inWater: boolean; sprinting: boolean; sneaking: boolean; flying: boolean; gliding?: boolean; riding: unknown; dead: boolean; onLadder?: boolean }) {
+    if (this.passive) return;
+    this.stat('play_time');
+    if (!p.dead) this.stat('time_since_death');
+    const l = this.last;
+    this.last = { x: p.x, y: p.y, z: p.z, ground: p.onGround };
+    if (!l || p.dead) return;
+    const dx = p.x - l.x, dy = p.y - l.y, dz = p.z - l.z;
+    const h = Math.hypot(dx, dz), cm = Math.round(h * 100);
+    if (h > 10 || Math.abs(dy) > 10) return; // a teleport
+    const ride = (p.riding as { typeName?: string } | null)?.typeName;
+    if (ride) this.stat(({ Horse: 'horse_one_cm', Donkey: 'horse_one_cm', Mule: 'horse_one_cm', Pig: 'pig_one_cm', Boat: 'boat_one_cm', Minecart: 'minecart_one_cm', Strider: 'strider_one_cm' } as Record<string, string>)[ride] ?? 'ride_one_cm', cm);
+    else if (p.gliding) this.stat('aviate_one_cm', Math.round(Math.hypot(h, dy) * 100));
+    else if (p.inWater) this.stat('swim_one_cm', Math.round(Math.hypot(h, dy) * 100));
+    else if (p.flying) this.stat('fly_one_cm', cm);
+    else if (p.onGround) this.stat(p.sprinting ? 'sprint_one_cm' : p.sneaking ? 'crouch_one_cm' : 'walk_one_cm', cm);
+    if (!ride && dy < 0 && !p.onGround && !p.inWater) this.stat('fall_one_cm', Math.round(-dy * 100));
+    if (!ride && dy > 0 && p.onLadder) this.stat('climb_one_cm', Math.round(dy * 100));
+    if (l.ground && !p.onGround && p.vy > 0.3 && !p.inWater && !ride) this.stat('jump');
+  }
+  /** The player died (to `by`, a mob's name, or the world). */
+  died(by: string) { this.stat('deaths'); if (by) this.stat('killed_by:' + by); this.stats.time_since_death = 0; }
   /** Client side: only the server awards achievements; the client just shows them. */
   passive = false;
   constructor(private game: Game) {
@@ -96,6 +126,9 @@ export class Achievements {
   /** Something happened that advancements listen for. */
   event(ev: string, arg: Record<string, unknown> = {}) {
     if (this.passive) return;
+    const st = STAT_EVENTS[ev];
+    if (st) this.stat(st);
+    if (ev === 'eat' && arg.ate === 'cake') this.stat('eat_cake_slice');
     for (const a of ADVANCEMENTS) {
       if (a.on === ev && (!a.when || a.when(arg))) this.unlock('adv:' + a.id);
       if (a.every && a.key && !(a.scan)) this.progress(a, a.key(arg));
@@ -126,12 +159,14 @@ export class Achievements {
   }
 
   // ------------------------------------------------------------------ triggers
-  onPickup(id: number) {
+  onPickup(id: number, count = 1) {
+    this.stat('picked_up:' + getItem(id).name, count);
     if (isLog(id)) this.unlock('mineWood');
     if (id === I.DIAMOND) this.unlock('diamonds');
     if (id === I.LEATHER) this.unlock('killCow');
   }
-  onCraft(id: number) {
+  onCraft(id: number, count = 1) {
+    this.stat('crafted:' + getItem(id).name, count);
     if (id === B.CRAFTING_TABLE) this.unlock('buildWorkBench');
     if (id === B.FURNACE) this.unlock('buildFurnace');
     if (id === B.BOOKSHELF) this.unlock('bookcase');
@@ -141,10 +176,13 @@ export class Achievements {
     if (id === TOOLS.wooden_sword) this.unlock('buildSword');
     if (id === TOOLS.stone_pickaxe || id === TOOLS.iron_pickaxe || id === TOOLS.diamond_pickaxe) this.unlock('buildBetterPickaxe');
   }
-  onSmelt(id: number) {
+  onSmelt(id: number, count = 1) {
+    this.stat('crafted:' + getItem(id).name, count);
     if (id === I.IRON_INGOT) this.unlock('acquireIron');
   }
   onKill(type: string, byArrowFrom?: number, byFireball = false, extra: Record<string, unknown> = {}) {
+    this.stat('killed:' + type);
+    this.stat(type === 'Player' ? 'player_kills' : 'mob_kills');
     this.event('kill', { type, kill: type, distance: byArrowFrom ?? 0, source: byFireball ? 'explosion' : byArrowFrom !== undefined ? 'arrow' : 'melee', ...extra });
     if (['Zombie', 'Skeleton', 'Creeper', 'Spider', 'Ghast', 'Zombified Piglin', 'Piglin', 'Piglin Brute', 'Hoglin', 'Zoglin', 'Wither Skeleton', 'Magma Cube', 'Blaze', 'Shulker', 'Enderman', 'Slime', 'Husk', 'Drowned', 'Stray', 'Zombie Villager', 'Cave Spider', 'Witch', 'Pillager', 'Vindicator', 'Evoker', 'Vex', 'Ravager', 'Guardian', 'Elder Guardian', 'Phantom', 'Endermite', 'Wither'].includes(type)) this.unlock('killEnemy');
     if (type === 'Skeleton' && byArrowFrom !== undefined && byArrowFrom > 50) this.unlock('snipeSkeleton');
@@ -183,3 +221,5 @@ export class Achievements {
   }
 }
 void getItem;
+/** Events that count towards a general statistic. */
+const STAT_EVENTS: Record<string, string> = { trade: 'traded_with_villager', breed: 'animals_bred', fish: 'fish_caught', enchant: 'enchant_item', brew: 'brew_potion', bucket_fish: 'fish_bucketed', tame: 'animals_tamed', golem: 'golems_summoned', totem: 'totems_used', deflect: 'shield_blocks', honey: 'honey_harvested', plant: 'seeds_planted' };
