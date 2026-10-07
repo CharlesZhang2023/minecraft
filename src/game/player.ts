@@ -34,6 +34,9 @@ export class Player extends LivingEntity {
   spawnX = 0; spawnY = 80; spawnZ = 0;
   difficulty = 2; // 0 peaceful .. 3 hard
   sleeping = false;
+  /** Parrots riding on the shoulders (variant, health and owner, to put back into the world). */
+  shoulderLeft: { variant: number; health: number; ownerName: string } | null = null;
+  shoulderRight: { variant: number; health: number; ownerName: string } | null = null;
   /** Ticks since the player last slept (phantoms come after three days). */
   restTicks = 0;
   sleepTimer = 0;

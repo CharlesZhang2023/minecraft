@@ -725,6 +725,8 @@ export const T2 = {
   respawnAnchorTop: tex('respawn_anchor_top'),
   respawnAnchorSide: [0, 1, 2, 3, 4].map((c) => tex('respawn_anchor_side' + c)),
   smokerOn: tex('smoker_front_on'),
+  nestHoney: tex('bee_nest_front_honey'),
+  hiveHoney: tex('beehive_front_honey'),
   blastOn: tex('blast_furnace_front_on'),
   cauldronInner: tex('cauldron_inner'),
   water: tex('water_still'),

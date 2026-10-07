@@ -8,6 +8,7 @@ import { skyDarken } from '../game/env';
 import { BIOME, isOceanBiome } from '../world/biomes';
 import { MOB_TYPES } from './registry';
 import { spawnPhantoms } from './overworldmobs';
+import { pickVariant, releaseShoulders, spawnWanderingTrader } from './animals';
 
 export class Spawner {
   private rng = new Random(Date.now() & 0xffff);
@@ -45,8 +46,13 @@ export class Spawner {
     if (g.ticks % 20 === 0 && animals < 40 * Math.min(players, 4) && w.dimension === 'overworld') this.populateChunks();
     for (const p of g.playerEntities()) this.spawnerBlocks(p);
     // insomnia: phantoms find players who haven't slept in three days
-    for (const p of g.playerEntities()) p.restTicks = p.sleeping ? 0 : p.restTicks + 1;
+    for (const p of g.playerEntities()) {
+      p.restTicks = p.sleeping ? 0 : p.restTicks + 1;
+      // shoulder parrots hop off when their perch falls, gets hurt, swims, flies or sleeps
+      if ((p.shoulderLeft || p.shoulderRight) && (p.fallDistance > 0.5 || p.hurtTime > 0 || p.inWater || p.flying || p.sleeping || p.dead)) releaseShoulders(g, p);
+    }
     if (w.dimension === 'overworld' && g.ticks % 1200 === 0) spawnPhantoms(g, this.rng);
+    if (w.dimension === 'overworld' && g.ticks % 24000 === 12000) spawnWanderingTrader(g, this.rng);
     if (w.dimension === 'overworld' && g.ticks % 40 === 0) this.ambient(mobs);
   }
 
@@ -55,6 +61,7 @@ export class Spawner {
     const g = this.game, p = this.pick(), w = g.world!;
     const squid = mobs.filter((m) => m.typeName === 'Squid').length;
     const bats = mobs.filter((m) => m.typeName === 'Bat').length;
+    const fish = mobs.filter((m) => ['Cod', 'Salmon', 'Pufferfish', 'Tropical Fish', 'Dolphin'].includes(m.typeName)).length;
     for (let i = 0; i < 4; i++) {
       const a = this.rng.next() * Math.PI * 2, d = 20 + this.rng.next() * 40;
       const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
@@ -62,6 +69,20 @@ export class Spawner {
       if (squid < 8 && this.rng.int(2) === 0) {
         const y = 45 + this.rng.int(17);
         if (w.getId(x, y, z) === B.WATER && w.getId(x, y + 1, z) === B.WATER && w.getId(x, y - 1, z) === B.WATER) g.interact!.spawnMob('squid', x + 0.5, y, z + 0.5);
+      } else if (this.rng.int(2) === 0 && fish < 16) {
+        // fish and dolphins by the ocean's temperature (vanilla 1.16 water creature spawns)
+        const biome = g.biomeAt(x, z).id;
+        const river = biome === BIOME.RIVER || biome === BIOME.FROZEN_RIVER;
+        if (!river && !isOceanBiome(biome)) continue;
+        const y = 50 + this.rng.int(12);
+        if (w.getId(x, y, z) !== B.WATER || w.getId(x, y + 1, z) !== B.WATER || this.nearest(x, y, z) < 12) continue;
+        const warm = biome === BIOME.WARM_OCEAN, luke = biome === BIOME.LUKEWARM_OCEAN || biome === BIOME.DEEP_LUKEWARM_OCEAN;
+        const cold = biome === BIOME.COLD_OCEAN || biome === BIOME.DEEP_COLD_OCEAN || biome === BIOME.FROZEN_OCEAN || biome === BIOME.DEEP_FROZEN_OCEAN;
+        const table: [string, number][] = river ? [['salmon', 5]] : warm ? [['pufferfish', 15], ['tropical_fish', 25], ['dolphin', 2]] : luke ? [['cod', 15], ['pufferfish', 5], ['tropical_fish', 25], ['dolphin', 2]] : cold ? [['cod', 15], ['salmon', 15]] : [['cod', 10], ['dolphin', 1]];
+        const type = this.weighted(table);
+        if (type === 'dolphin' && mobs.some((m) => m.typeName === 'Dolphin' && m.distanceTo({ x, y, z } as Mob) < 64)) continue;
+        const n = type === 'dolphin' ? 1 + this.rng.int(2) : type === 'pufferfish' ? 1 + this.rng.int(3) : 3 + this.rng.int(4);
+        for (let i = 0; i < n; i++) { const xx = x + this.rng.int(5) - 2, zz = z + this.rng.int(5) - 2; if (w.getId(xx, y, zz) === B.WATER) g.interact!.spawnMob(type, xx + 0.5, y, zz + 0.5); }
       } else if (g.options.difficulty > 0 && this.rng.int(3) === 0) {
         // drowned in dark oceans and rivers (more of them in rivers, vanilla)
         const biome = g.biomeAt(x, z).id;
@@ -215,6 +236,12 @@ export class Spawner {
       if (this.rng.int(10) >= 1) continue; // ~10% of new chunks get an animal group
       const x0 = cx * 16 + this.rng.int(16), z0 = cz * 16 + this.rng.int(16);
       const biome = g.biomeAt(x0, z0);
+      if (biome.id === BIOME.BEACH && this.rng.int(3) === 0) {
+        // turtles come ashore on warm beaches
+        const y = w.topSolidY(x0, z0) + 1;
+        if (w.getId(x0, y - 1, z0) === B.SAND) for (let i = 0; i < 2 + this.rng.int(4); i++) g.interact!.spawnMob('turtle', x0 + this.rng.int(5) - 2 + 0.5, y, z0 + this.rng.int(5) - 2 + 0.5);
+        continue;
+      }
       if (biome.dry && biome.id !== BIOME.SAVANNA && biome.id !== BIOME.SAVANNA_PLATEAU || isOceanBiome(biome.id) || biome.id === BIOME.BEACH || biome.id === BIOME.SNOWY_BEACH || biome.id === BIOME.RIVER || biome.id === BIOME.FROZEN_RIVER || biome.id === BIOME.STONE_SHORE) continue;
       const wolfy = biome.id === BIOME.TAIGA || biome.id === BIOME.SNOWY_TAIGA || biome.id === BIOME.FOREST || biome.id === BIOME.GIANT_TREE_TAIGA;
       const types = biome.id === BIOME.MUSHROOM_FIELDS ? ['mooshroom'] : wolfy && this.rng.int(3) === 0 ? ['wolf'] : biome.cold ? ['sheep', 'sheep', 'pig', 'chicken'] : ['pig', 'cow', 'sheep', 'sheep', 'chicken', 'cow'];
@@ -234,6 +261,7 @@ export class Spawner {
         if (!this.spawnable(x, y, z, 2)) continue;
         if (this.nearest(x, y, z) < 16) continue;
         const m = g.interact!.spawnMob(herd >= 0 && this.rng.int(10) === 0 ? 'donkey' : type, x + 0.5, y, z + 0.5);
+        if (m) pickVariant(m as Mob);
         if (m && herd >= 0 && (m as unknown as { kind: string }).kind === 'horse') (m as unknown as { color: number }).color = herd;
       }
     }

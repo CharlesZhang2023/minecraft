@@ -1,5 +1,7 @@
 // Player interaction with blocks & entities: mining, placing, using items, combat, explosions.
 import { buildGolem } from '../entity/overworldmobs';
+import { hiveBroken } from '../entity/bees';
+import { FISH_BUCKETS, releaseFish } from '../entity/animals';
 import type { Game } from './game';
 import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor } from '../world/blocks';
 import { familyPlacement, doubleSlab, partners, toggled } from './families';
@@ -180,6 +182,7 @@ export class Interaction {
     // mods may keep the block
     if (Events.breakBlock.any && Events.breakBlock.fire({ game: g, player: p, x, y, z, v }) === 'fail') return;
     const tile = w.getTile(x, y, z);
+    if (id === B2.BEE_NEST || id === B2.BEEHIVE) hiveBroken(g, x, y, z, p);
     const held = p.inventory.held();
     const tool = held ? getItem(held.id) : undefined;
     g.particles!.blockBreak(x, y, z, id, this.tintAt(x, y, z, id));
@@ -267,6 +270,7 @@ export class Interaction {
     const id = idOf(v);
     if (id === 0) return;
     const tile = w.getTile(x, y, z);
+    if (id === B2.BEE_NEST || id === B2.BEEHIVE) hiveBroken(this.game, x, y, z, null);
     this.removeBlockAndPartner(x, y, z, v);
     if (drops) { this.dropBlockItems(x, y, z, v); this.dropTileContents(x, y, z, v, tile); }
     this.broken(x, y, z, v, null);
@@ -604,9 +608,10 @@ export class Interaction {
           return true;
         }
         return false;
+      case I7.COD_BUCKET: case I7.SALMON_BUCKET: case I7.PUFFERFISH_BUCKET: case I7.TROPICAL_FISH_BUCKET:
       case I.WATER_BUCKET:
       case I.LAVA_BUCKET: {
-        const fluid = held.id === I.WATER_BUCKET ? B.WATER : B.LAVA;
+        const fluid = held.id === I.LAVA_BUCKET ? B.LAVA : B.WATER;
         let px = ax, py = ay, pz = az;
         if (BLOCKS[id].replaceable && !BLOCKS[id].fluid) { px = t.x; py = t.y; pz = t.z; }
         const cur = w.getId(px, py, pz);
@@ -622,6 +627,7 @@ export class Interaction {
         w.set(px, py, pz, fluid);
         g.ticker!.schedule(px, py, pz, fluid === B.WATER ? 5 : 30);
         g.audio.play(fluid === B.WATER ? 'splash' : 'fizz', { x: px + 0.5, y: py + 0.5, z: pz + 0.5 }, 0.5, 1);
+        if (FISH_BUCKETS[held.id]) releaseFish(g, held, px, py, pz);
         if (!p.creative) p.inventory.setHeld(stack(I.BUCKET));
         return true;
       }

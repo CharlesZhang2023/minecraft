@@ -4,6 +4,8 @@ import { B, B2, STONE2, WOOD, CORAL, TERRACOTTA_COLORS, CHUNK_H, SEA_LEVEL, pack
 import { BIOME, BIOMES, isOceanBiome } from './biomes';
 import { jungleTree, megaJungleTree, jungleBush, acaciaTree, darkOakTree, megaSpruceTree, hugeMushroom } from './features';
 import { chunkCtx, startsNear, buildStarts, type GenAccess } from './structure';
+/** A world-generated bee nest's tile: three bees inside. (Kept here so the generator worker needn't load the bee code.) */
+const nestTile = () => ({ type: 'beehive', bees: [0, 1, 2].map(() => ({ nectar: false, ticksIn: 600, minTicks: 600, health: 10 })), honey: 0 });
 import { OVERWORLD_STRUCTURES } from './structures/overworld';
 import { smoothstep, lerp } from '../math';
 import { villagesNear, placeVillage, Spawn } from './village';
@@ -417,10 +419,12 @@ export class WorldGen implements GenAccess {
       const cur = blocks[i] & 0xfff;
       if (force || cur === B.AIR || BLOCKS[cur].replaceable && cur !== B.WATER && cur !== B.LAVA || (isLeaves(cur) && !isLeaves(v & 0xfff))) blocks[i] = v;
     };
+    const spawns: Spawn[] = [];
+    this.nestSink = (x, y, z) => { if (x >> 4 === cx && z >> 4 === cz && y > 0 && y < CHUNK_H) spawns.push({ type: 'tile', x, y, z, data: { tile: nestTile() } }); };
     for (let dz = -1; dz <= 1; dz++)
       for (let dx = -1; dx <= 1; dx++) this.placeTrees(cx + dx, cz + dz, set);
+    this.nestSink = null;
     this.plants(cx, cz, blocks, biomes, heights);
-    const spawns: Spawn[] = [];
     for (const v of villagesNear(this, cx, cz)) placeVillage(this, v, cx, cz, blocks, spawns);
     buildStarts(startsNear(OVERWORLD_STRUCTURES, this, cx, cz), chunkCtx(blocks, cx, cz, spawns));
     this.snowAndIce(blocks, biomes);
@@ -655,6 +659,8 @@ export class WorldGen implements GenAccess {
 
   // ------------------------------------------------------------------ trees
   /** Deterministic list of trees for a chunk; each tree writes via `set`, which clips to the target chunk. */
+  /** Where generate() collects the bee nests trees put in the chunk (their bees are tile hints). */
+  private nestSink: ((x: number, y: number, z: number) => void) | null = null;
   /** Whether a surface structure claims this column (trees don't grow there: vanilla places structures first). */
   private onStructure(x: number, z: number) {
     for (const st of startsNear(SURFACE_STRUCTURES, this, x >> 4, z >> 4))
@@ -739,6 +745,12 @@ export class WorldGen implements GenAccess {
           if (biome === BIOME.FOREST && tr.int(5) === 0) WorldGen.oakTree(tr, x, y, z, set, B.BIRCH_LOG, B.BIRCH_LEAVES, 5);
           else if (tr.int(10) === 0) WorldGen.bigOak(tr, x, y, z, set);
           else WorldGen.oakTree(tr, x, y, z, set, B.OAK_LOG, B.OAK_LEAVES, 4);
+      }
+      // bee nests hang off the trunks of plains and flower-forest trees (1.15: 5% and 2%; rare in forests)
+      const nestOdds = biome === BIOME.PLAINS || biome === BIOME.SUNFLOWER_PLAINS ? 0.05 : biome === BIOME.FLOWER_FOREST ? 0.02 : biome === BIOME.FOREST || biome === BIOME.BIRCH_FOREST ? 0.002 : 0;
+      if (nestOdds && tr.next() < nestOdds) {
+        set(x, y + 1, z + 1, pack(B2.BEE_NEST, 0), true);
+        this.nestSink?.(x, y + 1, z + 1);
       }
     }
   }

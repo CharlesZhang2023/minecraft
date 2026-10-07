@@ -450,6 +450,28 @@ export const EXTRA_EGGS4: { mob: string; display: string; c1: number; c2: number
   { mob: 'phantom', display: 'Phantom', c1: 0x43518a, c2: 0x88ff00 },
 ];
 for (const e of EXTRA_EGGS4) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
+/** Spawn eggs of the animals of 1.4-1.16 (appended). */
+export const EXTRA_EGGS5: { mob: string; display: string; c1: number; c2: number }[] = [
+  { mob: 'mooshroom', display: 'Mooshroom', c1: 0xa00f10, c2: 0xb7b7b7 },
+  { mob: 'rabbit', display: 'Rabbit', c1: 0x995f40, c2: 0x734831 },
+  { mob: 'fox', display: 'Fox', c1: 0xd5b69f, c2: 0xcc6920 },
+  { mob: 'cat', display: 'Cat', c1: 0xefc88e, c2: 0x957256 },
+  { mob: 'ocelot', display: 'Ocelot', c1: 0xefde7d, c2: 0x564434 },
+  { mob: 'parrot', display: 'Parrot', c1: 0x0da70b, c2: 0xff0000 },
+  { mob: 'polar_bear', display: 'Polar Bear', c1: 0xf2f2f2, c2: 0x959590 },
+  { mob: 'panda', display: 'Panda', c1: 0xe7e7e7, c2: 0x1b1b22 },
+  { mob: 'llama', display: 'Llama', c1: 0xc09e7d, c2: 0x995f40 },
+  { mob: 'trader_llama', display: 'Trader Llama', c1: 0xeaa430, c2: 0x456296 },
+  { mob: 'turtle', display: 'Turtle', c1: 0xe7e7e7, c2: 0x00afaf },
+  { mob: 'dolphin', display: 'Dolphin', c1: 0x223b4d, c2: 0xf9f9f9 },
+  { mob: 'cod', display: 'Cod', c1: 0xc1a76a, c2: 0xe5c48b },
+  { mob: 'salmon', display: 'Salmon', c1: 0xa00f10, c2: 0x0e8474 },
+  { mob: 'pufferfish', display: 'Pufferfish', c1: 0xf6b201, c2: 0x37c3f2 },
+  { mob: 'tropical_fish', display: 'Tropical Fish', c1: 0xef6915, c2: 0xfff9ef },
+  { mob: 'bee', display: 'Bee', c1: 0xedc343, c2: 0x43241b },
+  { mob: 'wandering_trader', display: 'Wandering Trader', c1: 0x456296, c2: 0xeaa430 },
+];
+for (const e of EXTRA_EGGS5) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
 
 // block items of the new blocks: sizes and fuel that differ from the defaults
 for (const id of [...BEDS]) { const d = ITEMS.get(id); if (d) d.maxStack = 1; }

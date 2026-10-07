@@ -458,6 +458,14 @@ export class Creeper extends Monster {
     else { this.forward = 0; this.attackCooldown = 20; }
   }
   override ai() {
+    // cats and ocelots scare creepers off (vanilla: within 6 blocks)
+    const cat = this.game.entities.find((e) => ((e as Mob).typeName === 'Cat' || (e as Mob).typeName === 'Ocelot') && e.distanceTo(this) < 6);
+    if (cat) {
+      this.swellDir = -1;
+      this.swell = Math.max(0, this.swell - 1);
+      if (!this.path || rng.int(10) === 0) { const dx = this.x - cat.x, dz = this.z - cat.z, l = Math.hypot(dx, dz) || 1; this.setPathTo(this.x + (dx / l) * 8, this.y, this.z + (dz / l) * 8, this.chaseSpeed * 1.2); }
+      return;
+    }
     super.ai();
     if (!this.target) this.swellDir = -1;
     if (this.swellDir > 0 && this.swell === 0) this.game.audio.play('fuse', this, 1, 0.5);

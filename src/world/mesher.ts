@@ -408,6 +408,7 @@ function cubeStateFaces(id: number, meta: number) {
     for (const f of [0, 1, 4, 5]) faceTex[f] = T2.respawnAnchorSide[c];
     if (c) faceTex[3] = T2.respawnAnchorTop;
   } else if (id === B2.FROSTED_ICE) for (let f = 0; f < 6; f++) faceTex[f] = T2.frostedIce[Math.min(3, meta)];
+  else if ((id === B2.BEE_NEST || id === B2.BEEHIVE) && meta & 8) faceTex[HORIZ_TO_FACE[meta & 3]] = id === B2.BEE_NEST ? T2.nestHoney : T2.hiveHoney;
 }
 
 const ls = [0, 0, 0, 0], lb = [0, 0, 0, 0], la = [0, 0, 0, 0];

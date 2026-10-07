@@ -158,6 +158,9 @@ export function placeVillage(gen: WorldGen, v: Village, cx: number, cz: number, 
       const prof = p.kind === 'smithy' ? 'smith' : p.kind === 'library' ? 'librarian' : p.kind === 'farm' ? 'farmer' : ['farmer', 'priest', 'butcher', 'librarian'][r.int(4)];
       const [sx, sz] = rotate(p, Math.floor(p.w / 2), Math.floor(p.d / 2));
       spawns.push({ type: 'villager', x: sx + 0.5, y: y + 1, z: sz + 0.5, data: { profession: prof } });
+      // stray cats live in villages (1.14), and every village has its iron golem
+      if (r.int(4) === 0) spawns.push({ type: 'cat', x: sx + 0.5, y: y + 1, z: sz + 0.5 });
+      if (p.kind === 'smithy') spawns.push({ type: 'iron_golem', x: sx + 0.5, y: y + 1, z: sz + 2.5 });
     }
   }
 }

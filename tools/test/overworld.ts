@@ -42,6 +42,16 @@ for (let x = -4000; x < 4000 && swamps < 12; x += 64) for (let z = -4000; z < 40
   for (const v of g.generate(x >> 4, z >> 4).blocks) if (BLOCKS[v & 0xfff].name === 'lily_pad') pads++;
 }
 check(pads > 0, `lily pads on swamp water (${pads} in ${swamps} chunks)`);
+// plains: bee nests on some trees, each with its bees as a tile hint
+let nests = 0, nestTiles = 0, plains = 0;
+for (let x = -6000; x < 6000 && plains < 200; x += 40) for (let z = -6000; z < 6000 && plains < 200; z += 40) {
+  if (g.biome(x, z) !== BIOME.PLAINS) continue;
+  plains++;
+  const c = g.generate(x >> 4, z >> 4);
+  for (const v of c.blocks) if (BLOCKS[v & 0xfff].name === 'bee_nest') nests++;
+  nestTiles += (c.spawns ?? []).filter((sp) => sp.type === 'tile' && (sp.data?.tile as { type?: string })?.type === 'beehive').length;
+}
+check(nests > 0 && nests === nestTiles, `bee nests in the plains, each with bees (${nests} nests, ${nestTiles} hives in ${plains} chunks)`);
 check(ms < 60, `overworld chunks generate fast enough (${ms.toFixed(1)} ms)`);
 
 // every structure: the nearest start, built chunk by chunk, writes blocks and leaves hints

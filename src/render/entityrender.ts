@@ -8,7 +8,9 @@ import type { Client as Game } from '../client/client';
 import { Mat4, mat4, identity, translate, rotateX, rotateY, rotateZ, scale, multiply } from '../math';
 import * as M from './models';
 import { MOB_MODELS, MOB_SKINS } from './mobmodels';
-import { MOB_MODELS2, MOB_SKINS2, MOB_POSES } from './mobmodels2';
+import { MOB_MODELS2, MOB_SKINS2, MOB_POSES as MOB_POSES2 } from './mobmodels2';
+import { MOB_MODELS3, MOB_SKINS3, MOB_POSES3, lazySkin } from './mobmodels3';
+const MOB_POSES = { ...MOB_POSES2, ...MOB_POSES3 };
 import { EvokerFangs, Guardian } from '../entity/overworldmobs';
 import { Hanging, ItemFrame, Painting } from '../entity/hanging';
 import { ShulkerBullet } from '../entity/endmobs';
@@ -66,7 +68,7 @@ export class EntityRenderer {
       horse: M.horseModel(false), donkey: M.horseModel(true), horseArmor: M.horseModel(false, 0.35),
       player: M.playerModel(false), playerSlim: M.playerModel(true), elytra: M.elytraModel(),
     };
-    for (const [k, make] of Object.entries({ ...MOB_MODELS, ...MOB_MODELS2 })) defs[k] = make();
+    for (const [k, make] of Object.entries({ ...MOB_MODELS, ...MOB_MODELS2, ...MOB_MODELS3 })) defs[k] = make();
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
@@ -74,7 +76,7 @@ export class EntityRenderer {
       ghast: M.ghastSkin(false), blaze: M.blazeSkin(), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(), wolf: M.wolfSkin('wild'), wolfTame: M.wolfSkin('tame'), wolfAngry: M.wolfSkin('angry'),
       silverfish: M.silverfishSkin(), crystal: M.crystalSkin(), dragon: dragonSkin(), elytra: M.elytraSkin(),
     };
-    for (const [k, make] of Object.entries({ ...MOB_SKINS, ...MOB_SKINS2 })) skins[k] = make();
+    for (const [k, make] of Object.entries({ ...MOB_SKINS, ...MOB_SKINS2, ...MOB_SKINS3 })) skins[k] = make();
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     for (const k of ['iron', 'gold', 'diamond']) { const sk = M.horseArmorSkin(k); this.skins.set('horseArmor_' + k, r.makeTexture(sk.data, sk.w)); }
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
@@ -540,7 +542,12 @@ export class EntityRenderer {
     const gp = MOB_POSES[model];
     if (gp) {
       const o = gp({ e: anyE, hp, netHead, ls, lsa, age, t });
-      this.drawModel(model, o.skin ?? skin, base, o.pose, o.fullBright ? [15, 15] : light, overlay, o.skip, 1, o.offs);
+      const sk = o.skin ?? skin;
+      if (!this.skins.has(sk)) { const made = lazySkin(sk); this.skins.set(sk, made ? this.r.makeTexture(made.data, made.w) : this.skins.get('steve')!); }
+      this.drawModel(model, sk, base, o.pose, o.fullBright ? [15, 15] : light, overlay, o.skip, 1, o.offs);
+      // what's held in the mouth (foxes) or paws (pandas)
+      const held = anyE.heldItem as number | undefined;
+      if (held && (model === 'fox' || model === 'panda')) this.drawHeldThirdPerson(held, base, [model === 'fox' ? -Math.PI / 2 : -1.2, 0, 0], light, model === 'fox' ? [5, -6, -11] : [5, -8, -16]);
       return;
     }
     switch (model) {
@@ -612,6 +619,14 @@ export class EntityRenderer {
         if (held) this.drawHeldThirdPerson(held, base, pose.rightArm, light, offs?.rightArm);
         if (Array.isArray(anyE.armorItems)) this.drawArmor(anyE.armorItems as ({ id: number } | null)[], base, pose, light, overlay, offs);
         if (e instanceof Player) {
+          // parrots riding on the shoulders
+          for (const [side, sx] of [['shoulderLeft', 6], ['shoulderRight', -6]] as const) {
+            const sp = e[side];
+            if (!sp) continue;
+            const po: Record<string, [number, number, number]> = {};
+            for (const k of ['head', 'crest', 'body', 'wingL', 'wingR', 'tail', 'legL', 'legR']) po[k] = [sx, -24 + (sneak ? 3 : 0), 0];
+            this.drawModel('parrot', 'parrot_' + ['red', 'blue', 'green', 'cyan', 'grey'][sp.variant % 5], base, { head: [hp * 0.5, netHead * 0.5, 0], crest: [hp * 0.5 - 0.21, netHead * 0.5, 0] }, light, overlay, undefined, 1, po);
+          }
           this.drawArmor(e.inventory.armor, base, pose, light, overlay, offs);
           if (e.inventory.armor[1]?.id === I6.ELYTRA) this.drawElytra(e, base, light, overlay);
           const it = e.inventory.held();

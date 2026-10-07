@@ -10,6 +10,7 @@ import { I, I3, I7, ItemStack, ItemDef, getItem, stack, POTION_ITEMS, DISCS } fr
 import { SMELTING } from './recipes';
 import { POT_PLANTS } from '../world/models';
 import { Random } from '../noise';
+import { tickHive, harvestHive, type HiveTile } from '../entity/bees';
 
 /** The interaction (one player's hands) as stations see it. */
 export interface Hands {
@@ -47,6 +48,8 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
   const ui = g.ui as unknown as Record<string, ((...a: unknown[]) => void) | undefined>;
   switch (id) {
     case B2.SMOKER: case B2.BLAST_FURNACE: g.ui.openFurnace(x, y, z); return true;
+    case B2.BEE_NEST: case B2.BEEHIVE:
+      return harvestHive(g, p, x, y, z, held, (n) => h.consume(n), (s) => { if (p.inventory.add(s) > 0) g.dropItem(p.x, p.y + 1, p.z, s); });
     case B2.BARREL: g.ui.openChest(x, y, z); g.audio.play('chestOpen', at(x, y, z), 0.5, 1.1); return true;
     case B2.TRAPPED_CHEST:
       if (OPAQUE[w.getId(x, y + 1, z)]) return true;
@@ -282,6 +285,7 @@ export function tickStations(g: Game) {
     if (!c.ready || !c.tiles.size) continue;
     for (const [i, tile] of c.tiles) {
       if (tile.type === 'daylight' || tile.type === 'target') { sensorTick(g, w, c.cx * 16 + (i & 15), i >> 8, c.cz * 16 + ((i >> 4) & 15), tile as unknown as Sensor); continue; }
+      if (tile.type === 'beehive') { tickHive(g, c.cx * 16 + (i & 15), i >> 8, c.cz * 16 + ((i >> 4) & 15), tile as unknown as HiveTile); continue; }
       if (tile.type !== 'campfire') continue;
       const t = tile as unknown as CampfireTile;
       const x = c.cx * 16 + (i & 15), z = c.cz * 16 + ((i >> 4) & 15), y = i >> 8;

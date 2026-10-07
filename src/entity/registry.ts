@@ -13,6 +13,8 @@ import { isActive } from '../mod/state';
 import { Piglin, PiglinBrute, Hoglin, Zoglin, Strider, MagmaCube, WitherSkeleton } from './nethermobs';
 import { ItemFrame, Painting } from './hanging';
 import { Shulker, ShulkerBullet, Endermite } from './endmobs';
+import { Mooshroom, Rabbit, Fox, Cat, Ocelot, Parrot, PolarBear, Panda, Llama, TraderLlama, Turtle, Dolphin, Cod, Salmon, Pufferfish, TropicalFish, WanderingTrader } from './animals';
+import { Bee } from './bees';
 import { Husk, Drowned, Stray, ZombieVillager, CaveSpider, Witch, Pillager, Vindicator, Evoker, EvokerFangs, Vex, Ravager, Guardian, ElderGuardian, Phantom, IronGolem, SnowGolem } from './overworldmobs';
 
 type Ctor = new (w: World, g: Game) => Entity;
@@ -30,6 +32,10 @@ export const MOB_TYPES: Record<string, Ctor> = {
   witch: Witch, pillager: Pillager, vindicator: Vindicator, evoker: Evoker, evoker_fangs: EvokerFangs as unknown as Ctor, vex: Vex, ravager: Ravager,
   guardian: Guardian, elder_guardian: ElderGuardian, 'elder guardian': ElderGuardian, phantom: Phantom,
   iron_golem: IronGolem, snow_golem: SnowGolem,
+  // animals (aliases: Mob-based ones save under their lower-cased display name)
+  mooshroom: Mooshroom, rabbit: Rabbit, fox: Fox, cat: Cat, ocelot: Ocelot, parrot: Parrot, polar_bear: PolarBear, panda: Panda,
+  llama: Llama, trader_llama: TraderLlama, turtle: Turtle, dolphin: Dolphin, cod: Cod, salmon: Salmon, pufferfish: Pufferfish,
+  tropical_fish: TropicalFish, 'tropical fish': TropicalFish, bee: Bee, wandering_trader: WanderingTrader, 'wandering trader': WanderingTrader,
 };
 
 export function createEntity(type: string, world: World, game: Game): Entity | null {

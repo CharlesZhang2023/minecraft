@@ -220,7 +220,8 @@ export class Entity {
   /** Update inWater/inLava flags; returns true if touching water. */
   updateFluidState() {
     const b = this.box;
-    const bx = { x0: b.x0 + 0.001, y0: b.y0 + 0.001, z0: b.z0 + 0.001, x1: b.x1 - 0.001, y1: b.y1 - 0.4, z1: b.z1 - 0.001 };
+    // (the top comes down 0.4, but never below the bottom: very short mobs, like fish, keep a sliver)
+    const bx = { x0: b.x0 + 0.001, y0: b.y0 + 0.001, z0: b.z0 + 0.001, x1: b.x1 - 0.001, y1: Math.max(b.y0 + 0.002, b.y1 - 0.4), z1: b.z1 - 0.001 };
     this.inWater = this.fluidIn(bx, B.WATER, true);
     this.inLava = this.fluidIn({ ...bx, y1: b.y1 - 0.4 }, B.LAVA, false);
     // cobwebs
@@ -240,7 +241,8 @@ export class Entity {
           if (idOf(v) !== fluid) continue;
           let lvl = metaOf(v);
           if (lvl >= 8) lvl = 0;
-          const top = y + 1 - (lvl + 1) / 9;
+          // under more of the same fluid it fills its block (vanilla's fluid height is 1 there)
+          const top = idOf(this.world.get(x, y + 1, z)) === fluid ? y + 1 : y + 1 - (lvl + 1) / 9;
           // the box dips below the surface (small mobs can sit wholly inside one water block, under its surface)
           if (b.y1 >= top || b.y0 <= top) {
             found = true;
