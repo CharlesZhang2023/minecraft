@@ -1,7 +1,7 @@
 // 16x16 item sprites as hand-authored pixel art. Outlines are added automatically.
 import { Img, RGB, newImg, hex, set, get, art, shade, S } from './pixels';
 import { POTION_SPRITES } from '../game/potiondata';
-import { SPAWN_EGGS, EXTRA_EGGS, EXTRA_EGGS2 } from '../game/items';
+import { SPAWN_EGGS, EXTRA_EGGS, EXTRA_EGGS2, EXTRA_EGGS3 } from '../game/items';
 import { paintItems2 } from './itemsprites2';
 
 type Pal = Record<string, RGB | [number, number, number, number]>;
@@ -871,7 +871,7 @@ sprite('glass_bottle', [
   '....g......g....',
   '.....gggggg.....',
 ], { c: hex('#8a6035'), g: GLASS, w: hex('#ffffff') }, '#4a5a6a');
-for (const e of [...SPAWN_EGGS, ...EXTRA_EGGS, ...EXTRA_EGGS2]) {
+for (const e of [...SPAWN_EGGS, ...EXTRA_EGGS, ...EXTRA_EGGS2, ...EXTRA_EGGS3]) {
   const E = rgb(e.c1), sp = rgb(e.c2);
   sprite(`${e.mob}_spawn_egg`, [
     '',

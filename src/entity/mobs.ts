@@ -20,6 +20,10 @@ export abstract class Mob extends LivingEntity {
   skin = 'steve';
   hostile = false;
   persist = true;
+  /** Hostile mobs peaceful difficulty doesn't remove (structure guards placed by the world). */
+  persistentHostile = false;
+  /** Drawn bigger or smaller than the model (wither skeletons). */
+  renderScale = 1;
   /** Stands still and does nothing of its own (tools placing mobs as scenery or test targets); physics still apply. */
   noAi = false;
   target: LivingEntity | null = null;
@@ -1200,7 +1204,7 @@ export class Villager extends Mob {
 
 // ------------------------------------------------------------------ nether
 export class ZombiePigman extends Monster {
-  typeName = 'Zombie Pigman';
+  typeName = 'Zombified Piglin';
   override skin = 'pigman';
   override sayName = 'pigman.say';
   override hurtName = 'pigman.hurt';

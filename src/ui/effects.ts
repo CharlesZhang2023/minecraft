@@ -22,6 +22,21 @@ const GLYPHS: Record<string, string[]> = {
   weakness: ['.......oo', '......oxo', '.....oxo.', '....oxo..', '.........', '..oxo....', '.oxo.....', 'oo.o.....', '.........'],
   poison: ['....o....', '....o....', '...oxo...', '...oxo...', '..oxhxo..', '.oxhxxxo.', '.oxxxxxo.', '..oxxxo..', '...ooo...'],
   absorption: ['.oo...oo.', 'oxxo.oxxo', 'oxhxoxxxo', 'oxxxxxxxo', 'oxxxxxxxo', '.oxxxxxo.', '..oxxxo..', '...oxo...', '....o....'],
+  mining_fatigue: ['.ooooooo.', 'oxxxxxxxo', '.oo.o.oo.', '....o....', '....o....', '..o.o.o..', '...ooo...', '....o....', '.........'],
+  nausea: ['..ooooo..', '.oxxxxxo.', 'oxxhhxxxo', 'oxhxxhxxo', 'oxhxhxxxo', 'oxxhhxxxo', 'oxxxxxxxo', '.oxxxxxo.', '..ooooo..'],
+  blindness: ['.........', '..ooooo..', '.oxxxxxo.', 'oxxkkkxxo', 'oxkkkkkxo', 'oxxkkkxxo', '.oxxxxxo.', '..ooooo..', '.........'],
+  wither: ['..ooooo..', '.oxxxxxo.', 'oxkxxxkxo', 'oxkkxkkxo', 'oxxxxxxxo', '.oxkkkxo.', '.oxxxxxo.', '..oxoxo..', '.........'],
+  health_boost: ['.oo...oo.', 'oxxo.oxxo', 'oxhxoxxxo', 'oxxxwxxxo', 'oxxwwwxxo', '.oxxwxxo.', '..oxxxo..', '...oxo...', '....o....'],
+  saturation: ['....oo...', '...oxxo..', '..oxhxo..', '.oxxxxo..', '.oxxxxxo.', 'oxxxxxo..', 'oxxxxo...', '.oxxo....', '..oo.....'],
+  glowing: ['....o....', '.o..x..o.', '..o.x.o..', '...xhx...', 'ooxhwhxoo', '...xhx...', '..o.x.o..', '.o..x..o.', '....o....'],
+  levitation: ['....o....', '...oxo...', '..oxhxo..', '.oxxxxxo.', '...oxo...', '...oxo...', '...ooo...', '..o...o..', '.o.....o.'],
+  luck: ['.oo...oo.', 'oxxo.oxxo', 'oxhxoxhxo', '.oxxxxxo.', '..oxwxo..', '.oxxxxxo.', 'oxhxoxhxo', 'oxxo.oxxo', '.oo...oo.'],
+  unluck: ['.oo...oo.', 'oxxo.oxxo', 'oxkxoxkxo', '.oxxxxxo.', '..oxkxo..', '.oxxxxxo.', 'oxkxoxkxo', 'oxxo.oxxo', '.oo...oo.'],
+  slow_falling: ['..ooooo..', '.owwwwwo.', 'owwwwwwwo', 'o.o.o.o.o', '...o.o...', '...o.o...', '...oxo...', '...oxo...', '...ooo...'],
+  conduit_power: ['..ooooo..', '.oxxxxxo.', 'oxxwwwxxo', 'oxwxxxwxo', 'oxwxkxwxo', 'oxwxxxwxo', 'oxxwwwxxo', '.oxxxxxo.', '..ooooo..'],
+  dolphins_grace: ['.........', '...ooo...', '..oxxxo..', '.oxhxxxo.', 'oxxxxxxxo', 'o.oxxxo.o', '...oxo...', '..ooxoo..', '.........'],
+  bad_omen: ['..ooooo..', '.oxxxxxo.', 'oxkxxxkxo', 'oxxxxxxxo', 'oxxkkkxxo', 'oxkxxxkxo', 'oxxxxxxxo', '.oxxxxxo.', '..ooooo..'],
+  hero_of_the_village: ['...ooo...', '..oxhxo..', '.oxxhxxo.', 'oxxwwwxxo', 'oxxwxwxxo', 'oxxwwwxxo', '.oxxxxxo.', '..oxxxo..', '...ooo...'],
 };
 
 const cache = new Map<string, HTMLCanvasElement>();

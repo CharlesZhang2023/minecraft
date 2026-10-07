@@ -262,16 +262,17 @@ export class Game {
     world.onChunkLoaded = (c, spawns) => this.inDim(dim, () => {
       // structure hints first: chests get their loot table, spawners their mob
       if (spawns) for (const sp of spawns) {
-        if (sp.type !== 'loot' && sp.type !== 'spawner') continue;
-        const i = (sp.x & 15) | ((sp.z & 15) << 4) | (sp.y << 8);
+        if (sp.type !== 'loot' && sp.type !== 'spawner' && sp.type !== 'tile') continue;
+        const i = (Math.floor(sp.x) & 15) | ((Math.floor(sp.z) & 15) << 4) | (Math.floor(sp.y) << 8);
         if (c.tiles.has(i)) continue;
         if (sp.type === 'loot') c.tiles.set(i, { type: 'chest', items: chestLoot(String(sp.data?.table), this.lootRng) });
+        else if (sp.type === 'tile') c.tiles.set(i, structuredClone(sp.data?.tile) as never);
         else c.tiles.set(i, { type: 'spawner', mob: String(sp.data?.mob ?? 'zombie'), delay: 200 });
       }
       dim.ticker.onChunkLoaded(c);
       dim.pistons.scanChunk(c.cx, c.cz);
       if (spawns) for (const sp of spawns) {
-        if (sp.type === 'loot' || sp.type === 'spawner') continue;
+        if (sp.type === 'loot' || sp.type === 'spawner' || sp.type === 'tile') continue;
         const e = createEntity(sp.type, world, this);
         if (!e) continue;
         e.setPos(sp.x, sp.y, sp.z);

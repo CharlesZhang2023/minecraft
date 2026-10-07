@@ -7,6 +7,7 @@ import type { Renderer } from './renderer';
 import type { Client as Game } from '../client/client';
 import { Mat4, mat4, identity, translate, rotateX, rotateY, rotateZ, scale, multiply } from '../math';
 import * as M from './models';
+import { MOB_MODELS, MOB_SKINS } from './mobmodels';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball } from '../entity/item';
@@ -61,6 +62,7 @@ export class EntityRenderer {
       horse: M.horseModel(false), donkey: M.horseModel(true), horseArmor: M.horseModel(false, 0.35),
       player: M.playerModel(false), playerSlim: M.playerModel(true), elytra: M.elytraModel(),
     };
+    for (const [k, make] of Object.entries(MOB_MODELS)) defs[k] = make();
     for (const [k, d] of Object.entries(defs)) this.models.set(k, this.build(d));
     const skins: Record<string, M.Skin> = {
       steve: M.steveSkin(), zombie: M.zombieSkin(), skeleton: M.skeletonSkin(), creeper: M.creeperSkin(), pig: M.pigSkin(),
@@ -68,6 +70,7 @@ export class EntityRenderer {
       ghast: M.ghastSkin(false), blaze: M.blazeSkin(), ghastShoot: M.ghastSkin(true), pigman: M.pigmanSkin(), enderman: M.endermanSkin(), slime: M.slimeSkin(), squid: M.squidSkin(), bat: M.batSkin(), wolf: M.wolfSkin('wild'), wolfTame: M.wolfSkin('tame'), wolfAngry: M.wolfSkin('angry'),
       silverfish: M.silverfishSkin(), crystal: M.crystalSkin(), dragon: dragonSkin(), elytra: M.elytraSkin(),
     };
+    for (const [k, make] of Object.entries(MOB_SKINS)) skins[k] = make();
     for (const [k, s] of Object.entries(skins)) this.skins.set(k, r.makeTexture(s.data, s.w));
     for (const k of ['iron', 'gold', 'diamond']) { const sk = M.horseArmorSkin(k); this.skins.set('horseArmor_' + k, r.makeTexture(sk.data, sk.w)); }
     for (const pr of M.PROFESSIONS) { const sk = M.villagerSkin(pr); this.skins.set('villager_' + pr, r.makeTexture(sk.data, sk.w)); }
@@ -491,7 +494,7 @@ export class EntityRenderer {
     }
     const overlay: [number, number, number, number] = e.hurtTime > 0 || e.deathTime > 0 ? [1, 0, 0, 0.3] : [0, 0, 0, 0];
     const baby = !!anyE.baby;
-    let sc = baby ? 0.5 : 1;
+    let sc = (baby ? 0.5 : 1) * ((anyE.renderScale as number) ?? 1);
     // creeper swell
     const swell = (anyE.swell as number) ?? 0;
     if (swell > 0) {
@@ -532,7 +535,8 @@ export class EntityRenderer {
         break;
       }
       case 'biped':
-      case 'bipedThin': {
+      case 'bipedThin':
+      case 'piglin': {
         const sneak = e.sneaking;
         pose.head = [hp, netHead, 0];
         // gliding: head up to look ahead, limbs nearly still once going fast
@@ -600,7 +604,7 @@ export class EntityRenderer {
         this.drawModel('creeper', 'creeper', base, pose, light, overlay);
         break;
       }
-      case 'pig': case 'cow': case 'sheep': {
+      case 'pig': case 'cow': case 'sheep': case 'hoglin': {
         const eat = (anyE.eatTimer as number) ?? 0;
         pose.head = [hp, netHead, 0];
         const offs: Record<string, [number, number, number]> = {};
@@ -693,11 +697,25 @@ export class EntityRenderer {
         scale(sb, sb, size * f, size / f, size * f);
         scale(sb, sb, -1, -1, 1);
         translate(sb, sb, 0, -1.501, 0);
-        this.drawModel('slimeInner', 'slime', sb, pose, light, overlay);
+        this.drawModel('slimeInner', skin, sb, pose, light, overlay);
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-        this.drawModel('slimeOuter', 'slime', sb, pose, light, overlay, undefined, 1);
+        this.drawModel('slimeOuter', skin, sb, pose, light, overlay, undefined, 1);
         gl.disable(gl.BLEND);
+        break;
+      }
+      case 'strider': {
+        // legs stride in turn, the body bobs with them; cold striders shiver
+        const cold = !!anyE.cold;
+        const sw = c(ls * 1.5) * 2 * lsa;
+        pose.rightLeg = [sw * 0.5, 0, 0.1];
+        pose.leftLeg = [-sw * 0.5, 0, -0.1];
+        const offs: Record<string, [number, number, number]> = { body: [cold ? Math.sin(age * 2) * 0.2 : 0, -Math.abs(c(ls * 1.5)) * 2 * lsa, 0] };
+        offs.bristle1 = offs.bristle2 = offs.bristle3 = offs.body;
+        pose.bristle1 = [0, 0, 0.9 + Math.sin(age * 0.1) * 0.1];
+        pose.bristle2 = [0, 0, -0.9 - Math.sin(age * 0.1) * 0.1];
+        this.drawModel('strider', cold ? 'strider_cold' : 'strider', base, pose, light, overlay, undefined, 1, offs);
+        if (anyE.saddled) { /* the saddle shows as a darker band on top of the body */ }
         break;
       }
       case 'blaze': {

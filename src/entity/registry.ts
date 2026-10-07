@@ -10,12 +10,16 @@ import { EnderDragon, EndCrystal } from './dragon';
 import { ENTITIES } from '../mod/hooks';
 import { SubLevel } from '../sublevel/ship';
 import { isActive } from '../mod/state';
+import { Piglin, PiglinBrute, Hoglin, Zoglin, Strider, MagmaCube, WitherSkeleton } from './nethermobs';
 
 type Ctor = new (w: World, g: Game) => Entity;
 export const MOB_TYPES: Record<string, Ctor> = {
   zombie: Zombie, skeleton: Skeleton, creeper: Creeper, spider: Spider, pig: Pig, cow: Cow, sheep: Sheep, chicken: Chicken,
   zombie_pigman: ZombiePigman, 'zombie pigman': ZombiePigman, ghast: Ghast, villager: Villager, enderman: Enderman, slime: Slime, squid: Squid, bat: Bat, wolf: Wolf, blaze: Blaze,
   silverfish: Silverfish, ender_dragon: EnderDragon, end_crystal: EndCrystal, horse: Horse, donkey: Donkey, mule: Mule,
+  // 1.16 (zombified piglins are the old zombie pigmen, under both names)
+  zombified_piglin: ZombiePigman, 'zombified piglin': ZombiePigman, piglin: Piglin, piglin_brute: PiglinBrute, hoglin: Hoglin, zoglin: Zoglin, strider: Strider,
+  magma_cube: MagmaCube, 'magma cube': MagmaCube, wither_skeleton: WitherSkeleton,
 };
 
 export function createEntity(type: string, world: World, game: Game): Entity | null {

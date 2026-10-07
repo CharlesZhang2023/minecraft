@@ -7,7 +7,7 @@ import { live } from '../mod/hooks';
 
 export interface ActiveEffect { id: string; amp: number; dur: number }
 
-export type DamageSource = 'generic' | 'fall' | 'drown' | 'lava' | 'fire' | 'mob' | 'player' | 'explosion' | 'starve' | 'void' | 'cactus' | 'arrow' | 'suffocate' | 'kill' | 'magic' | 'thorns' | 'anvil' | 'wall' | 'firework';
+export type DamageSource = 'generic' | 'fall' | 'drown' | 'lava' | 'fire' | 'mob' | 'player' | 'explosion' | 'starve' | 'void' | 'cactus' | 'arrow' | 'suffocate' | 'kill' | 'magic' | 'thorns' | 'anvil' | 'wall' | 'firework' | 'wither' | 'sweet_berry_bush' | 'hot_floor' | 'trident' | 'sting' | 'dragon_breath' | 'freeze' | 'lightning' | 'soul_fire';
 
 export class LivingEntity extends Entity {
   health = 20;
@@ -144,6 +144,7 @@ export class LivingEntity extends Entity {
     const def = EFFECTS[id];
     if (!def) return;
     if (def.instant) {
+      if (id === 'saturation') { this.exhaustEffect(-(amp + 1)); return; }
       const heal = (id === 'instant_health') !== this.undead;
       if (heal) this.heal(Math.floor(scale * (4 << amp) + 0.5));
       else this.damage(Math.floor(scale * (6 << amp) + 0.5), 'magic');
@@ -153,11 +154,15 @@ export class LivingEntity extends Entity {
     if (cur && (cur.amp > amp || (cur.amp === amp && cur.dur >= dur))) return;
     this.effects.set(id, { id, amp, dur });
     if (id === 'absorption') this.absorption = Math.max(this.absorption, 4 * (amp + 1));
+    if (id === 'health_boost') this.maxHealth = this.baseMaxHealth() + 4 * (amp + 1);
     this.effectsChanged();
   }
+  /** Max health without Health Boost. */
+  baseMaxHealth() { return (this as unknown as { baseHealth?: number }).baseHealth ?? 20; }
   removeEffect(id: string) {
     if (!this.effects.delete(id)) return;
     if (id === 'absorption') this.absorption = 0;
+    if (id === 'health_boost') { this.maxHealth = this.baseMaxHealth(); this.health = Math.min(this.health, this.maxHealth); }
     this.effectsChanged();
   }
   clearEffects() {
@@ -177,6 +182,11 @@ export class LivingEntity extends Entity {
         case 'regeneration': { const k = 50 >> e.amp; if (k <= 0 || this.age % k === 0) this.heal(1); break; }
         case 'poison': { const k = 25 >> e.amp; if ((k <= 0 || this.age % k === 0) && this.health > 1 && !this.undead) this.damage(1, 'magic'); break; }
         case 'hunger': this.exhaustEffect(0.025 * (e.amp + 1)); break;
+        // wither: like poison, but it can kill
+        case 'wither': { const k = 40 >> e.amp; if (k <= 0 || this.age % k === 0) this.damage(1, 'wither'); break; }
+        // levitation: drift upward (vanilla: vy += (0.05 * (amp + 1) - vy) * 0.2)
+        case 'levitation': this.vy += (0.05 * (e.amp + 1) - this.vy) * 0.2; this.fallDistance = 0; break;
+        case 'slow_falling': if (this.vy < -0.01 * 2) this.vy = Math.max(this.vy, -0.06); this.fallDistance = 0; break;
       }
       if (--e.dur <= 0) this.removeEffect(e.id);
     }

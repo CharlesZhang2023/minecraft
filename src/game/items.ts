@@ -413,6 +413,18 @@ ARMOR_SLOTS.forEach((sl, i) => {
   const name = `chainmail_${sl.name}`;
   ARMOR[name] = item(name, `Chainmail ${sl.display}`, { maxStack: 1, durability: sl.mul * 15, armor: { slot: i as 0 | 1 | 2 | 3, points: [2, 5, 4, 1][i] }, rarity: 'uncommon' });
 });
+/** Spawn eggs of the 1.16 mobs (appended; vanilla egg colours). */
+export const EXTRA_EGGS3: { mob: string; display: string; c1: number; c2: number }[] = [
+  { mob: 'piglin', display: 'Piglin', c1: 0x995f40, c2: 0xf9f3a4 },
+  { mob: 'piglin_brute', display: 'Piglin Brute', c1: 0x592a10, c2: 0xf9f3a4 },
+  { mob: 'hoglin', display: 'Hoglin', c1: 0xc66e55, c2: 0x5f6464 },
+  { mob: 'zoglin', display: 'Zoglin', c1: 0xc66e55, c2: 0xe6e6e6 },
+  { mob: 'strider', display: 'Strider', c1: 0x9c3436, c2: 0x4d494d },
+  { mob: 'magma_cube', display: 'Magma Cube', c1: 0x340000, c2: 0xfcfc00 },
+  { mob: 'wither_skeleton', display: 'Wither Skeleton', c1: 0x141414, c2: 0x474d4d },
+];
+for (const e of EXTRA_EGGS3) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
+getItem(EGG_ITEMS.zombie_pigman).display = 'Spawn Zombified Piglin';
 export const I8 = {
   NETHER_STAR: item('nether_star', 'Nether Star', { rarity: 'uncommon', fireproof: true }),
   /** Bottled dragon's breath makes lingering potions; this is the explorer map pointing to a structure. */

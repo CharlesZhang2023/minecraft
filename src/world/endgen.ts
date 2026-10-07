@@ -1,10 +1,12 @@
 // The End: a floating main island of end stone with ten obsidian pillars (crystals on top), the bedrock exit
 // fountain in the middle, and far-flung outer islands. Pure function of (seed, chunk); runs in workers.
-import { Octaves, Random } from '../noise';
-import { B, CHUNK_H, pack } from './blocks';
+import { Octaves, Random, hash2 } from '../noise';
+import { B, B2, CHUNK_H, pack } from './blocks';
 import { BIOME } from './biomes';
 import type { ChunkGenResult } from './worldgen';
 import type { Spawn } from './village';
+import { chunkCtx, startsNear, buildStarts, type GenAccess } from './structure';
+import { END_STRUCTURES } from './structures/end';
 
 /**
  * Where players arrive (the middle of a 5x5 obsidian platform; it's built by the game, not the generator) and the
@@ -29,7 +31,7 @@ export function endPillars(seed: number): Pillar[] {
   });
 }
 
-export class EndGen {
+export class EndGen implements GenAccess {
   private n1: Octaves;
   private n2: Octaves;
   private island: Octaves;
@@ -38,6 +40,21 @@ export class EndGen {
     this.n1 = new Octaves(r.nextU32(), 3);
     this.n2 = new Octaves(r.nextU32(), 3);
     this.island = new Octaves(r.nextU32(), 3);
+  }
+
+  /** The End's biomes: the main island, then (past 1024 blocks) highlands, midlands and barrens by how high the
+   * islands rise, and small end islands over the void. */
+  biome(x: number, z: number): number {
+    const d = Math.hypot(x, z);
+    if (d < MAIN_R + 30) return BIOME.THE_END;
+    if (d <= 1024) return BIOME.SMALL_END_ISLANDS;
+    const gate = Math.min(1, (d - 1024) / 200);
+    const v = this.island.sample2(x / 95, z / 95) * 0.9 + 0.12 * gate - 0.12;
+    return v > 0.33 ? BIOME.END_HIGHLANDS : v > 0.285 ? BIOME.END_MIDLANDS : v > 0.255 ? BIOME.END_BARRENS : BIOME.SMALL_END_ISLANDS;
+  }
+  height(x: number, z: number): number {
+    const c = this.column(x, z);
+    return c ? c[1] : 0;
   }
 
   /** Solid range [bottom, top] of end stone in a column, or null over the void. */
@@ -62,6 +79,31 @@ export class EndGen {
     return null;
   }
 
+  /** Islands and chorus plants that start in chunk (cx, cz), written through `set` (clipped to the target chunk). */
+  private decorate(cx: number, cz: number, set: (x: number, y: number, z: number, v: number) => void) {
+    const X0 = cx * 16, Z0 = cz * 16;
+    const r = new Random(hash2(this.seed ^ 0xe7d1, cx, cz));
+    const mid = this.biome(X0 + 8, Z0 + 8);
+    if (mid === BIOME.SMALL_END_ISLANDS && Math.hypot(X0, Z0) > MAIN_R + 60 && r.int(14) === 0) {
+      // a little inverted cone of end stone (vanilla EndIslandFeature)
+      const ix = X0 + r.int(16), iy = 55 + r.int(16), iz = Z0 + r.int(16);
+      let rad = 4 + r.int(3);
+      for (let y = 0; rad > 0.5; y--) {
+        for (let dx = -Math.ceil(rad); dx <= Math.ceil(rad); dx++) for (let dz = -Math.ceil(rad); dz <= Math.ceil(rad); dz++) if (dx * dx + dz * dz <= (rad + 1) * (rad + 1)) set(ix + dx, iy + y, iz + dz, B.END_STONE);
+        rad -= 1 + r.next() * 0.5;
+      }
+    }
+    if (mid === BIOME.END_HIGHLANDS || (mid === BIOME.END_MIDLANDS && r.int(4) === 0)) {
+      for (let k = 0; k < (mid === BIOME.END_HIGHLANDS ? 4 : 1); k++) {
+        const lx = r.int(16), lz = r.int(16);
+        const c = this.column(X0 + lx, Z0 + lz);
+        const seed = r.nextU32();
+        if (!c || r.int(3)) continue;
+        growChorus(new Random(seed), X0 + lx, c[1] + 1, Z0 + lz, set, 8);
+      }
+    }
+  }
+
   generate(cx: number, cz: number): ChunkGenResult {
     const blocks = new Uint16Array(16 * 16 * CHUNK_H);
     const biomes = new Uint8Array(256).fill(BIOME.THE_END);
@@ -69,6 +111,7 @@ export class EndGen {
     const X0 = cx * 16, Z0 = cz * 16;
     for (let lz = 0; lz < 16; lz++)
       for (let lx = 0; lx < 16; lx++) {
+        biomes[lz * 16 + lx] = this.biome(X0 + lx, Z0 + lz);
         const c = this.column(X0 + lx, Z0 + lz);
         if (!c) continue;
         for (let y = Math.max(1, c[0]); y <= c[1]; y++) blocks[idx(lx, y, lz)] = B.END_STONE;
@@ -112,6 +155,36 @@ export class EndGen {
       for (let h = 0; h <= 3; h++) set(0, F + h, 0, B.BEDROCK);
       set(1, F + 2, 0, pack(B.TORCH, 4)); set(-1, F + 2, 0, pack(B.TORCH, 2)); set(0, F + 2, 1, pack(B.TORCH, 1)); set(0, F + 2, -1, pack(B.TORCH, 3));
     }
+    // ---- the outer End: small floating islands and chorus forests (from this chunk and its neighbours: they
+    // reach over chunk borders), then End cities
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) this.decorate(cx + dx, cz + dz, set);
+    if (Math.hypot(X0, Z0) > 1000) buildStarts(startsNear(END_STRUCTURES, this, cx, cz), chunkCtx(blocks, cx, cz, spawns));
     return { blocks, biomes, spawns };
+  }
+}
+
+/** A chorus plant (vanilla ChorusFlowerBlock.generatePlant): a branching stalk with flowers at its tips. */
+export function growChorus(r: Random, x: number, y: number, z: number, set: (x: number, y: number, z: number, v: number) => void, maxSize: number) {
+  set(x, y, z, B2.CHORUS_PLANT);
+  grow(x, y, z, 0);
+  function grow(px: number, py: number, pz: number, depth: number) {
+    const h = r.int(4) + 1 + (depth === 0 ? 1 : 0);
+    for (let i = 0; i < h; i++) {
+      set(px, py + i + 1, pz, B2.CHORUS_PLANT);
+    }
+    const top = py + h;
+    let branched = false;
+    if (depth < 4) {
+      const n = r.int(4) + (depth === 0 ? 1 : 0);
+      for (let k = 0; k < n; k++) {
+        const [dx, dz] = [[1, 0], [-1, 0], [0, 1], [0, -1]][r.int(4)];
+        const nx = px + dx, nz = pz + dz;
+        if (Math.abs(nx - x) >= maxSize || Math.abs(nz - z) >= maxSize) continue;
+        set(nx, top, nz, B2.CHORUS_PLANT);
+        grow(nx, top, nz, depth + 1);
+        branched = true;
+      }
+    }
+    if (!branched) set(px, top + 1, pz, pack(B2.CHORUS_FLOWER, 5));
   }
 }

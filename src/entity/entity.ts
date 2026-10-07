@@ -70,6 +70,9 @@ export class Entity {
 
   tick() {}
 
+  /** A fluid this entity walks on top of (striders on lava): its blocks count as solid from above. */
+  standsOn = 0;
+
   /** All collision boxes intersecting `box`. */
   collisions(box: AABB): AABB[] {
     const out: AABB[] = [];
@@ -83,7 +86,14 @@ export class Entity {
           const v = w.getForPhysics(x, y, z);
           if (v === 0) continue;
           const def = BLOCKS[idOf(v)];
-          if (!def.solid) continue;
+          if (!def.solid) {
+            // a fluid it can walk on is a floor, as long as the entity is above it (it can still sink in from below)
+            if (this.standsOn && idOf(v) === this.standsOn && w.getId(x, y + 1, z) !== this.standsOn && this.y >= y + 1 - 0.01) {
+              const b = { x0: x, y0: y, z0: z, x1: x + 1, y1: y + 1, z1: z + 1 };
+              if (b.x1 > box.x0 && b.x0 < box.x1 && b.y1 > box.y0 && b.y0 < box.y1 && b.z1 > box.z0 && b.z0 < box.z1) out.push(b);
+            }
+            continue;
+          }
           const shapes = collisionShapes(v, (dx, dy, dz) => w.get(x + dx, y + dy, z + dz));
           for (const s of shapes) {
             const b = { x0: x + s.x0, y0: y + s.y0, z0: z + s.z0, x1: x + s.x1, y1: y + s.y1, z1: z + s.z1 };

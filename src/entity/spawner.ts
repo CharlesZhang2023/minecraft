@@ -33,7 +33,7 @@ export class Spawner {
     const hostiles = mobs.filter((m) => m.hostile).length;
     const animals = mobs.length - hostiles;
     const peaceful = g.options.difficulty === 0;
-    if (peaceful) for (const m of mobs) if (m.hostile && m.typeName !== 'Zombie Pigman') m.removed = true;
+    if (peaceful) for (const m of mobs) if (m.hostile && m.typeName !== 'Zombified Piglin' && !m.persistentHostile) m.removed = true;
     // hostile spawning every tick (cap ~ 70 in vanilla for 17x17 chunks; scaled to our view)
     const cap = Math.round(70 * Math.min(1, ((Math.min(8, w.renderDistance) * 2 + 1) ** 2) / 289) * Math.min(players, 4));
     if ((!peaceful || w.dimension === 'nether') && hostiles < cap && g.ticks % 2 === 0) {
@@ -69,7 +69,7 @@ export class Spawner {
   private spawnable(x: number, y: number, z: number, h: number): boolean {
     const w = this.game.world!;
     const below = w.getId(x, y - 1, z);
-    if (!OPAQUE[below] || below === B.BEDROCK || below === B.GLASS) return false;
+    if ((!OPAQUE[below] && below !== B.SOUL_SAND) || below === B.BEDROCK || below === B.GLASS) return false;
     for (let i = 0; i < h; i++) {
       const id = w.getId(x, y + i, z);
       if (BLOCKS[id].solid || BLOCKS[id].fluid) return false;
@@ -77,29 +77,54 @@ export class Spawner {
     return true;
   }
 
+  /** Nether spawning by biome (vanilla 1.16 weights), fortress floors, and striders on the lava sea. */
   private tryNether() {
     const g = this.game, p = this.pick(), w = g.world!;
     const a = this.rng.next() * Math.PI * 2, d = 24 + this.rng.next() * 50;
     const x = Math.floor(p.x + Math.cos(a) * d), z = Math.floor(p.z + Math.sin(a) * d);
     if (!w.chunkAt(x, z)) return;
+    const biome = g.biomeAt(x, z).id;
+    // striders walk the lava sea in all the Nether's biomes
+    if (this.rng.int(6) === 0) {
+      const sy = 31;
+      if (w.getId(x, sy, z) === B.LAVA && w.getId(x, sy + 1, z) === B.AIR && w.getId(x, sy + 2, z) === B.AIR) {
+        if (g.entities.filter((e) => (e as { typeName?: string }).typeName === 'Strider').length < 8) g.interact!.spawnMob('strider', x + 0.5, sy + 1, z + 0.5);
+      }
+      return;
+    }
     const y = 32 + this.rng.int(90);
-    if (this.rng.int(20) === 0) {
+    // fortress floors: blazes, wither skeletons and the rest of the fortress crowd
+    if (this.spawnable(x, y, z, 2) && w.getId(x, y - 1, z) === B.NETHER_BRICKS) {
+      const type = this.weighted([['blaze', 10], ['zombie_pigman', 5], ['wither_skeleton', 8], ['skeleton', 2], ['magma_cube', 3]]);
+      if (type !== 'wither_skeleton' || this.spawnable(x, y, z, 3)) g.interact!.spawnMob(type, x + 0.5, y, z + 0.5);
+      return;
+    }
+    const table: [string, number, number][] = biome === BIOME.CRIMSON_FOREST ? [['hoglin', 9, 4], ['zombie_pigman', 1, 4], ['piglin', 5, 4]]
+      : biome === BIOME.WARPED_FOREST ? [['enderman', 1, 4]]
+      : biome === BIOME.SOUL_SAND_VALLEY ? [['skeleton', 20, 5], ['ghast', 50, 1], ['enderman', 1, 4]]
+      : biome === BIOME.BASALT_DELTAS ? [['magma_cube', 100, 5], ['ghast', 40, 1]]
+      : [['zombie_pigman', 100, 4], ['ghast', 50, 1], ['magma_cube', 2, 4], ['enderman', 1, 4], ['piglin', 15, 4]];
+    const type = this.weighted(table.map(([t, wgt]) => [t, wgt]));
+    const max = table.find((t) => t[0] === type)![2];
+    if (type === 'ghast') {
       // ghasts need a big open space
       for (let dx = -2; dx <= 2; dx++) for (let dy = 0; dy <= 4; dy++) for (let dz = -2; dz <= 2; dz++) if (w.getId(x + dx, y + dy, z + dz) !== B.AIR) return;
       g.interact!.spawnMob('ghast', x + 0.5, y, z + 0.5);
       return;
     }
-    // fortress floors: blazes (vanilla spawns them anywhere inside fortress bounds)
-    if (this.spawnable(x, y, z, 2) && w.getId(x, y - 1, z) === B.NETHER_BRICKS) {
-      if (this.rng.int(3) === 0) g.interact!.spawnMob('blaze', x + 0.5, y, z + 0.5);
-      return;
-    }
-    if (!this.spawnable(x, y, z, 2) || w.getId(x, y - 1, z) !== B.NETHERRACK) return;
-    const n = 1 + this.rng.int(3);
+    if (!this.spawnable(x, y, z, type === 'enderman' ? 3 : 2)) return;
+    const n = 1 + this.rng.int(max);
     for (let i = 0; i < n; i++) {
       const xx = x + this.rng.int(5) - 2, zz = z + this.rng.int(5) - 2;
-      if (this.spawnable(xx, y, zz, 2)) g.interact!.spawnMob('zombie_pigman', xx + 0.5, y, zz + 0.5);
+      if (this.spawnable(xx, y, zz, type === 'enderman' ? 3 : 2)) g.interact!.spawnMob(type, xx + 0.5, y, zz + 0.5);
     }
+  }
+  private weighted(list: [string, number][]): string {
+    let total = 0;
+    for (const [, w] of list) total += w;
+    let k = this.rng.next() * total;
+    for (const [t, w] of list) { k -= w; if (k < 0) return t; }
+    return list[0][0];
   }
 
   /** The End: endermen wander the islands in small groups (and nothing else spawns). */

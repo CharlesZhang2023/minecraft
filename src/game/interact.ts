@@ -3,6 +3,8 @@ import type { Game } from './game';
 import { B, B2, BLOCKS, idOf, metaOf, pack, isLog, isStairs, isSlab, isLeaves, HORIZ, FACE_DIRS, isOriented, Render, TEXTURES, tex, OPAQUE, FACE_TO_FACING6, FACING6, isPiston, isRepeater, isRail, isHandOperated, isButton, isDoor, isPillar, isTrapdoor } from '../world/blocks';
 import { familyPlacement, doubleSlab, partners, toggled } from './families';
 import { stationUse, stationItemUse, stationTile } from './stations';
+import { blockIs } from './tags';
+import { angerPiglins } from '../entity/nethermobs';
 import { collisionShapes } from '../world/models';
 import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, stack, ItemDef, POTION_ITEMS } from './items';
 import { FireworkRocket } from '../entity/firework';
@@ -112,8 +114,13 @@ export class Interaction {
     }
     const eff = level(held, 'efficiency');
     if (eff > 0 && speed > 1) speed += eff * eff + 1;
+    // Haste (and Conduit Power) speed digging up; Mining Fatigue slows it right down (vanilla factors)
+    const haste = Math.max(p.effectAmp('haste'), p.effectAmp('conduit_power'));
+    if (haste >= 0) speed *= 1 + (haste + 1) * 0.2;
+    const fatigue = p.effectAmp('mining_fatigue');
+    if (fatigue >= 0) speed *= [0.3, 0.09, 0.0027, 0.00081][Math.min(3, fatigue)];
     const eyeId = this.world.getId(Math.floor(p.x), Math.floor(p.y + p.eyeHeight()), Math.floor(p.z));
-    if (eyeId === B.WATER && !level(p.inventory.armor[0], 'aqua_affinity')) speed /= 5;
+    if (eyeId === B.WATER && !level(p.inventory.armor[0], 'aqua_affinity') && !p.effects.has('conduit_power')) speed /= 5;
     if (!p.onGround && !p.flying) speed /= 5;
     return canHarvest ? speed / def.hardness / 30 : speed / def.hardness / 100;
   }
@@ -201,6 +208,7 @@ export class Interaction {
   /** Mods: a block is gone (broken by a player, or the world when `by` is null). */
   private broken(x: number, y: number, z: number, v: number, by: Player | null) {
     const g = this.game, id = idOf(v), beh = BLOCKS[id].behavior;
+    if (by && blockIs('guarded_by_piglins', id)) angerPiglins(g, by, x, y, z);
     if (beh?.onBreak) callBlock(id, 'onBreak', () => beh.onBreak!({ ...blockCtx(g, x, y, z, v), player: by }), undefined);
     if (by && Events.blockBroken.any) Events.blockBroken.fire({ game: g, player: by, x, y, z, v });
   }
@@ -400,6 +408,7 @@ export class Interaction {
       return true;
     }
     if (isButton(id)) { g.redstone.pressButton(t.x, t.y, t.z); return true; }
+    if (blockIs('guarded_by_piglins', id) && w.dimension === 'nether' && !OPAQUE[w.getId(t.x, t.y + 1, t.z)]) angerPiglins(g, this.player, t.x, t.y, t.z);
     if (id >= B2.CRIMSON_NYLIUM && stationUse(this.hands(), t.x, t.y, t.z, v, this.player.inventory.held())) return true;
     switch (id) {
       case B.CRAFTING_TABLE: g.ui.openCrafting(); return true;
