@@ -66,8 +66,20 @@ export function striderModel(): ModelDef {
   };
 }
 
+/** Shulkers: a box base, a lid that lifts, and a head peeking out between them (64x64). */
+export function shulkerModel(): ModelDef {
+  return {
+    texW: 64, texH: 64,
+    parts: [
+      part('base', 0, 24, 0, [box(-8, -8, -8, 16, 8, 16, 0, 28)]),
+      part('lid', 0, 24, 0, [box(-8, -16, -8, 16, 12, 16, 0, 0)]),
+      part('head', 0, 12, 0, [box(-3, 0, -3, 6, 6, 6, 0, 52)]),
+    ],
+  };
+}
+
 export const MOB_MODELS: Record<string, () => ModelDef> = {
-  piglin: piglinModel, hoglin: hoglinModel, strider: striderModel,
+  piglin: piglinModel, hoglin: hoglinModel, strider: striderModel, shulker: shulkerModel,
 };
 
 // ------------------------------------------------------------------ skins
@@ -152,4 +164,21 @@ export const MOB_SKINS: Record<string, () => Skin> = {
   hoglin: () => hoglinSkin(false), zoglin: () => hoglinSkin(true),
   strider: () => striderSkin(false), strider_cold: () => striderSkin(true),
   magma_cube: magmaCubeSkin, wither_skeleton: witherSkeletonSkin,
+  shulker: shulkerSkin, endermite: endermiteSkin,
 };
+function shulkerSkin(): Skin {
+  const s = new Skin(64, 64);
+  const r = new Random(101);
+  const shell = hx('#946794'), shellD = hx('#6e4a6e'), inner = hx('#4d3852'), head = hx('#f0e8a0');
+  s.paintBox(0, 0, 16, 12, 16, (f, x, y) => (f === 'bottom' ? inner : vary(y > 9 ? shellD : r.int(5) ? shell : shellD, r, 0.05)));
+  s.paintBox(0, 28, 16, 8, 16, (f, x, y) => (f === 'top' ? inner : vary(y < 1 ? shellD : r.int(5) ? shell : shellD, r, 0.05)));
+  s.paintBox(0, 52, 6, 6, 6, (f, x, y) => (f === 'front' && y === 2 && (x === 1 || x === 4) ? hx('#1a1a1a') : vary(head, r, 0.04)));
+  return s;
+}
+function endermiteSkin(): Skin {
+  // the silverfish layout (64x32) in the endermite's dark purple
+  const s = new Skin(64, 32);
+  const r = new Random(111);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 64; x++) s.set(x, y, vary(r.int(6) ? hx('#2a1a3a') : hx('#7a3aa0'), r, 0.1));
+  return s;
+}

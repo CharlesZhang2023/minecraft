@@ -310,6 +310,8 @@ export class Snowball extends Entity {
       if (this.kind === 'egg' && Math.random() < 0.125) this.game.interact!.spawnMob('chicken', this.x, this.y, this.z, true);
       if (this.kind === 'ender_pearl' && thrower && thrower.entity.world === this.world) {
         const p = thrower.entity;
+        // now and then an endermite comes through with you (vanilla: 5%)
+        if (Math.random() < 0.05) this.game.interact!.spawnMob('endermite', p.x, p.y, p.z);
         p.setPos(this.x, this.y, this.z);
         p.damage(5, 'fall');
       }

@@ -422,6 +422,8 @@ export const EXTRA_EGGS3: { mob: string; display: string; c1: number; c2: number
   { mob: 'strider', display: 'Strider', c1: 0x9c3436, c2: 0x4d494d },
   { mob: 'magma_cube', display: 'Magma Cube', c1: 0x340000, c2: 0xfcfc00 },
   { mob: 'wither_skeleton', display: 'Wither Skeleton', c1: 0x141414, c2: 0x474d4d },
+  { mob: 'shulker', display: 'Shulker', c1: 0x946794, c2: 0x4d3852 },
+  { mob: 'endermite', display: 'Endermite', c1: 0x161616, c2: 0x6e6e6e },
 ];
 for (const e of EXTRA_EGGS3) EGG_ITEMS[e.mob] = item(`${e.mob}_spawn_egg`, `Spawn ${e.display}`, { egg: e.mob });
 getItem(EGG_ITEMS.zombie_pigman).display = 'Spawn Zombified Piglin';

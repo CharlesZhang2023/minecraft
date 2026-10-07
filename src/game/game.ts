@@ -277,6 +277,8 @@ export class Game {
         if (!e) continue;
         e.setPos(sp.x, sp.y, sp.z);
         if (sp.data) Object.assign(e, sp.data);
+        // entities placed by structures may need to settle (item frames find their wall, items by name)
+        (e as unknown as { fromHint?: () => void }).fromHint?.();
         dim.entities.push(e);
       }
     });

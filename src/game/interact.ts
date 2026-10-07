@@ -5,8 +5,9 @@ import { familyPlacement, doubleSlab, partners, toggled } from './families';
 import { stationUse, stationItemUse, stationTile } from './stations';
 import { blockIs } from './tags';
 import { angerPiglins } from '../entity/nethermobs';
+import { ItemFrame, Painting } from '../entity/hanging';
 import { collisionShapes } from '../world/models';
-import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, stack, ItemDef, POTION_ITEMS } from './items';
+import { getItem, blockDrops, ItemStack, I, I2, I3, I4, I5, I6, I7, stack, ItemDef, POTION_ITEMS } from './items';
 import { FireworkRocket } from '../entity/firework';
 import { ThrownPotion } from '../entity/potion';
 import { POTION_BY_KEY } from './potiondata';
@@ -511,6 +512,18 @@ export class Interaction {
     const [nx, ny, nz] = FACE_DIRS[t.face];
     const ax = t.x + nx, ay = t.y + ny, az = t.z + nz;
     if (stationItemUse(this.hands(), t.x, t.y, t.z, t.face, held, item)) return true;
+    if ((held.id === I7.ITEM_FRAME || held.id === I7.PAINTING) && t.face !== 2 && t.face !== 3) {
+      // hung on the clicked wall, in the cell in front of it
+      const wallDir = ({ 0: 1, 1: 3, 4: 2, 5: 0 } as Record<number, number>)[t.face];
+      if (w.getId(ax, ay, az) !== B.AIR) return false;
+      const h = held.id === I7.ITEM_FRAME ? new ItemFrame(w, g) : new Painting(w, g);
+      if (h instanceof Painting) { if (!h.place(ax, ay, az, wallDir, () => this.rng.next())) return false; }
+      else h.hang(ax, ay, az, wallDir);
+      g.addEntity(h);
+      g.playBlockSound(B.OAK_PLANKS, ax, ay, az, 'place');
+      this.consume(1);
+      return true;
+    }
     if (item.tool?.type === 'hoe') {
       if ((id === B.GRASS || id === B.DIRT || id === B.COARSE_DIRT) && t.face !== 2 && w.getId(t.x, t.y + 1, t.z) === B.AIR) {
         w.set(t.x, t.y, t.z, id === B.COARSE_DIRT ? B.DIRT : B.FARMLAND);
@@ -1051,8 +1064,9 @@ export class Interaction {
       e.deflect(d.x, d.y, d.z);
       return;
     }
-    if (e instanceof Boat || e instanceof Minecart) {
-      e.attacked(p.creative);
+    // vehicles and hanging things take hits their own way
+    if (typeof (e as unknown as { attacked?: unknown }).attacked === 'function') {
+      (e as unknown as { attacked(creative: boolean): void }).attacked(p.creative);
       return;
     }
     if (p.spectator || !(e instanceof LivingEntity)) return;

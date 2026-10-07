@@ -36,6 +36,7 @@ import { getItemSprite, itemSpriteNames } from '../render/itemsprites';
 import { getTexture } from '../render/textures';
 import { Random } from '../noise';
 import { BIOMES, BIOME } from '../world/biomes';
+import { Hanging } from '../entity/hanging';
 import { Achievements } from '../game/achievements';
 import { LoadingScreen, CreditsScreen, DisconnectedScreen, SleepScreen, DeathScreen } from '../ui/menus';
 import { ContainerScreen } from '../ui/containers';
@@ -1150,7 +1151,7 @@ export class Client {
     let best: Entity | null = null, bestPart: string | null = null;
     let bestT = this.target ? this.target.t : Math.min(reach, 3.5);
     for (const e of this.entities) {
-      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat) && !(e instanceof Minecart)) continue; }
+      if (!(e instanceof LivingEntity) || e.dead) { if (!(e instanceof Fireball) && !(e instanceof Boat) && !(e instanceof Minecart) && !(e instanceof Hanging)) continue; }
       if (e === (p.riding as unknown as Entity)) continue;
       if (e instanceof Player && e.spectator) continue;
       for (const b of e.hitBoxes()) {

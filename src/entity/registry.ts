@@ -11,6 +11,8 @@ import { ENTITIES } from '../mod/hooks';
 import { SubLevel } from '../sublevel/ship';
 import { isActive } from '../mod/state';
 import { Piglin, PiglinBrute, Hoglin, Zoglin, Strider, MagmaCube, WitherSkeleton } from './nethermobs';
+import { ItemFrame, Painting } from './hanging';
+import { Shulker, ShulkerBullet, Endermite } from './endmobs';
 
 type Ctor = new (w: World, g: Game) => Entity;
 export const MOB_TYPES: Record<string, Ctor> = {
@@ -20,6 +22,8 @@ export const MOB_TYPES: Record<string, Ctor> = {
   // 1.16 (zombified piglins are the old zombie pigmen, under both names)
   zombified_piglin: ZombiePigman, 'zombified piglin': ZombiePigman, piglin: Piglin, piglin_brute: PiglinBrute, hoglin: Hoglin, zoglin: Zoglin, strider: Strider,
   magma_cube: MagmaCube, 'magma cube': MagmaCube, wither_skeleton: WitherSkeleton,
+  item_frame: ItemFrame, painting: Painting,
+  shulker: Shulker, shulker_bullet: ShulkerBullet as unknown as Ctor, endermite: Endermite,
 };
 
 export function createEntity(type: string, world: World, game: Game): Entity | null {

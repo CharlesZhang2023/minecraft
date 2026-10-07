@@ -8,13 +8,15 @@ import type { Client as Game } from '../client/client';
 import { Mat4, mat4, identity, translate, rotateX, rotateY, rotateZ, scale, multiply } from '../math';
 import * as M from './models';
 import { MOB_MODELS, MOB_SKINS } from './mobmodels';
+import { Hanging, ItemFrame, Painting } from '../entity/hanging';
+import { ShulkerBullet } from '../entity/endmobs';
 import { Entity } from '../entity/entity';
 import { LivingEntity } from '../entity/living';
 import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball } from '../entity/item';
 import { ThrownPotion } from '../entity/potion';
 import { getItem, I, I6 } from '../game/items';
 import { FireworkRocket } from '../entity/firework';
-import { BLOCKS, TEXTURES, Render, B, T, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE } from '../world/blocks';
+import { BLOCKS, TEXTURES, Render, B, T, T2, isLeaves, pack, isFacing6Cube, HORIZ_TO_FACE, HORIZ, PAINTING_TEX } from '../world/blocks';
 import { modelBoxes, facing6CubeFaces, Box } from '../world/models';
 import { DynMesh } from './gl';
 import { poseMat4 } from '../sublevel/pose';
@@ -250,6 +252,8 @@ export class EntityRenderer {
       else if (e instanceof Snowball) this.billboard(dyn, x, y + 0.125, z, 0.25, TEXTURES.indexOf('item/' + e.kind), 0xffffff, sky, blk);
       else if (e instanceof EyeOfEnder) this.billboard(dyn, x, y + 0.12, z, 0.4, TEXTURES.indexOf('item/ender_eye'), 0xffffff, 15, 15);
       else if (e instanceof Fireball) this.billboard(dyn, x, y + 0.5, z, e.small ? 0.35 : 1.0, TEXTURES.indexOf('item/fire_charge'), 0xffffff, 15, 15);
+      else if (e instanceof Hanging) this.drawHanging(dyn, e, x, y, z, sky, blk);
+      else if (e instanceof ShulkerBullet) this.billboard(dyn, x, y + 0.15, z, 0.35, TEXTURES.indexOf('item/nether_star'), 0xffffff, 15, 15);
       else if (e instanceof Boat) this.drawBoat(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof Minecart) this.drawMinecart(dyn, e, x, y, z, t, sky, blk);
       else if (e instanceof FishingHook) {
@@ -531,7 +535,7 @@ export class EntityRenderer {
         for (let i = 0; i < 7; i++) pose['s' + i] = [0, Math.cos(age * 0.9 + i * 0.35) * Math.PI * 0.05 * (1 + lsa * 3), 0];
         const offs: Record<string, [number, number, number]> = {};
         for (let i = 0; i < 7; i++) offs['s' + i] = [Math.cos(age * 0.9 + i * 0.35 + 1) * 0.5 * (0.5 + lsa * 2), 0, 0];
-        this.drawModel('silverfish', 'silverfish', base, pose, light, overlay, undefined, 1, offs);
+        this.drawModel('silverfish', skin, base, pose, light, overlay, undefined, 1, offs);
         break;
       }
       case 'biped':
@@ -702,6 +706,16 @@ export class EntityRenderer {
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         this.drawModel('slimeOuter', skin, sb, pose, light, overlay, undefined, 1);
         gl.disable(gl.BLEND);
+        break;
+      }
+      case 'shulker': {
+        // the lid rises and turns as it peeks; the head looks out from inside
+        const pk = ((anyE.pPeek as number) ?? 0) + (((anyE.peek as number) ?? 0) - ((anyE.pPeek as number) ?? 0)) * t;
+        pose.lid = [0, pk * Math.PI * 0.75, 0];
+        pose.head = [hp, netHead, 0];
+        const offs: Record<string, [number, number, number]> = { lid: [0, -pk * 8, 0], head: [0, -pk * 4, 0] };
+        const sb = this.entityBase(this.tmp2, x, y, z, 0, deathRoll, 1);
+        this.drawModel('shulker', skin, sb, pose, light, overlay, undefined, 1, offs);
         break;
       }
       case 'strider': {
@@ -1078,6 +1092,43 @@ export class EntityRenderer {
       const blade = dir > 0 ? [0.6, -0.015, -0.12, 1.05, 0.015, 0.12] : [-1.05, -0.015, -0.12, -0.6, 0.015, 0.12];
       this.woodBox(mesh, pm, shaft, layer, sky, blk);
       this.woodBox(mesh, pm, blade, layer, sky, blk);
+    }
+  }
+
+  /** Item frames (a wooden square with the item turned inside it) and paintings (their cells' pictures). */
+  private drawHanging(mesh: DynMesh, e: Hanging, x: number, y: number, z: number, sky: number, blk: number) {
+    const [dx, dz] = HORIZ[e.facing];
+    const along = dx === 0; // the wall runs along x
+    const m = mat4();
+    identity(m);
+    if (e instanceof ItemFrame) {
+      const t = 1 / 16, hw = 0.375;
+      const bx = along ? [x - hw, y, z + dz * 0.5 - (dz > 0 ? t : 0), x + hw, y + 0.75, z + dz * 0.5 + (dz < 0 ? t : 0)] : [x + dx * 0.5 - (dx > 0 ? t : 0), y, z - hw, x + dx * 0.5 + (dx < 0 ? t : 0), y + 0.75, z + hw];
+      this.woodBox(mesh, m, bx, T2.itemFrame, sky, blk);
+      if (e.item) {
+        const im = mat4();
+        identity(im);
+        translate(im, im, x - dx * 0.02 + dx * 0.43, y + 0.375, z - dz * 0.02 + dz * 0.43);
+        rotateY(im, im, [Math.PI, Math.PI / 2, 0, -Math.PI / 2][e.facing]);
+        rotateZ(im, im, (-e.rotation * Math.PI) / 4);
+        scale(im, im, 0.5, 0.5, 0.5);
+        this.appendItem(mesh, e.item.id, im, sky, blk);
+      }
+      return;
+    }
+    if (e instanceof Painting) {
+      const [w, h] = e.size;
+      const layers = PAINTING_TEX[e.motif];
+      const [rx, rz] = HORIZ[(e.facing + 1) & 3];
+      const t = 1 / 16;
+      for (let i = 0; i < w; i++)
+        for (let j = 0; j < h; j++) {
+          // cells from the left as seen from the room
+          const off = i - (w - 1) / 2;
+          const cx = x + rx * -off, cz = z + rz * -off, cy = y + (h - 1 - j);
+          const bx = along ? [cx - 0.5, cy, cz + dz * 0.5 - (dz > 0 ? t : 0), cx + 0.5, cy + 1, cz + dz * 0.5 + (dz < 0 ? t : 0)] : [cx + dx * 0.5 - (dx > 0 ? t : 0), cy, cz - 0.5, cx + dx * 0.5 + (dx < 0 ? t : 0), cy + 1, cz + 0.5];
+          this.woodBox(mesh, m, bx, layers[j * w + i] ?? T2.paintingBack, sky, blk);
+        }
     }
   }
 

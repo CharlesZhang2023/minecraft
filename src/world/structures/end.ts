@@ -159,7 +159,7 @@ function ship(x: number, y: number, z: number, dir: number): Piece {
       ctx.chest(cx2, y + 1, cz2, 'end_city_treasure', pack(B.CHEST, (dir + 3) & 3));
       const [bx, bz] = tr(4, -1);
       ctx.set(bx, y + 1, bz, pack(B.BREWING_STAND, 0b11));
-      ctx.spawn('tile', bx, y + 1, bz, { tile: { type: 'brewing', slots: [{ id: POTION_ITEMS.strong_healing, count: 1 }, { id: POTION_ITEMS.strong_healing, count: 1 }, null, null, null], fuel: 0, brew: 0 } });
+      ctx.spawn('tile', bx, y + 1, bz, { tile: { type: 'brewing', items: [{ id: POTION_ITEMS.strong_healing, count: 1 }, { id: POTION_ITEMS.strong_healing, count: 1 }, null, null, null], brewTime: 0, fuel: 0, ingredient: 0 } });
       // the elytra in an item frame on the cabin's back wall, facing the door
       const [fx, fz] = tr(2, 0);
       ctx.spawn('item_frame', fx + 0.5, y + 2, fz + 0.5, { item: { id: 'elytra', count: 1 }, facing: (dir + 0) & 3 });

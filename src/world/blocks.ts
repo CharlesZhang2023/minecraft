@@ -707,6 +707,18 @@ export const CORAL = CORAL_KINDS.map((k) => {
   };
 });
 
+/** Painting motifs and their sizes in blocks (vanilla's 26); each cell of each motif is a texture of its own. */
+export const PAINTINGS: [string, number, number][] = [
+  ['kebab', 1, 1], ['aztec', 1, 1], ['alban', 1, 1], ['aztec2', 1, 1], ['bomb', 1, 1], ['plant', 1, 1], ['wasteland', 1, 1],
+  ['pool', 2, 1], ['courbet', 2, 1], ['sea', 2, 1], ['sunset', 2, 1], ['creebet', 2, 1],
+  ['wanderer', 1, 2], ['graham', 1, 2],
+  ['match', 2, 2], ['bust', 2, 2], ['stage', 2, 2], ['void', 2, 2], ['skull_and_roses', 2, 2], ['wither', 2, 2],
+  ['fighters', 4, 2],
+  ['pointer', 4, 4], ['pigscene', 4, 4], ['burning_skull', 4, 4],
+  ['skeleton', 4, 3], ['donkey_kong', 4, 3],
+];
+export const PAINTING_TEX: number[][] = PAINTINGS.map(([n, w, h]) => Array.from({ length: w * h }, (_, k) => tex(`painting_${n}_${k % w}_${Math.floor(k / w)}`)));
+
 /** Textures models need beyond a block's own faces (registered here so every realm numbers them alike). */
 export const T2 = {
   headFace: Object.fromEntries(['skeleton', 'wither', 'zombie', 'player', 'creeper', 'dragon'].map((k) => [tex('skull_' + k), tex(`skull_${k}_face`)])) as Record<number, number>,
@@ -731,6 +743,8 @@ export const T2 = {
   campfireLog: tex('campfire_log'),
   lecternBase: tex('lectern_base'),
   stem: tex('pumpkin_stem'),
+  itemFrame: tex('item_frame'),
+  paintingBack: tex('painting_back'),
 };
 
 // the families the original blocks belong to

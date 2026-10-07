@@ -12,7 +12,7 @@ export async function openWorld({ port = process.env.MC_PORT ?? '5177', seed = 1
   const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal', '--enable-webgl', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage({ viewport: { width, height } });
   const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => errors.push(e.message + ' @ ' + (e.stack ?? '').split('\n').slice(1, 4).join(' <- ')));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(`http://127.0.0.1:${port}/?autoplay&seed=${seed}&mode=${mode}&time=${time}&id=t${Date.now()}${extra}`);
   await page.waitForFunction(() => window.game?.arrived && !window.game.ui.screen && window.game.loadProgress() > 0.99, null, { timeout: 60000 });
@@ -34,7 +34,7 @@ export async function openWorld({ port = process.env.MC_PORT ?? '5177', seed = 1
       g.hideHud = true;
     }, [x, y, z, yaw, pitch, fov]),
     /** Let the world settle (meshes, ticks). */
-    settle: async (ms = 1500) => { await wait(ms); await page.waitForFunction(() => window.game.loadProgress() > 0.99, null, { timeout: 30000 }); },
+    settle: async (ms = 1500, timeout = 30000) => { await wait(ms); await page.waitForFunction(() => window.game.loadProgress() > 0.99, null, { timeout }).catch(async () => console.log('(settle: still loading', await page.evaluate(() => window.game.loadProgress()), ')')); },
     close: () => browser.close(),
     /** Go to another dimension (and wait until it's loaded around the player). */
     travel: async (d, at) => {

@@ -3,7 +3,7 @@
 // `paintMore` with them once its own painters exist.
 import { Random } from '../noise';
 import { S, Img, RGB, newImg, hex, set, get, shade, mix, blobField, paletteNoise, art, copy, voronoi } from './pixels';
-import { DYE_COLORS, CORAL_KINDS } from '../world/blocks';
+import { DYE_COLORS, CORAL_KINDS, PAINTINGS } from '../world/blocks';
 
 type Gen = (r: Random) => Img;
 export interface Painters {
@@ -346,6 +346,71 @@ export function paintMore(p: Painters) {
 
   paintNether(p);
   paintMisc(p);
+  paintPaintings(gens);
+}
+
+// ================================================================ paintings and item frames
+/** Each motif is a little seeded picture (landscape, figure, still life or pattern), cut into 16x16 cells. */
+function paintPaintings(gens: Record<string, Gen>) {
+  gens.item_frame = (r) => {
+    const img = newImg();
+    const wood = P('#8a6a3a', '#a8844c', '#6a4e28');
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const edge = x < 2 || y < 2 || x > 13 || y > 13;
+      set(img, x, y, edge ? wood[(x + y + r.int(2)) % 3] : G('#c8a878'));
+    }
+    return img;
+  };
+  gens.painting_back = (r) => { const img = newImg(); paletteNoise(img, r, P('#7a5a3a', '#8a6a44', '#6a4a2c'), { jitter: 0.5 }); return img; };
+  for (const [name, w, h] of PAINTINGS) {
+    let big: Img | null = null;
+    const W = w * 16, Hh = h * 16;
+    const make = () => {
+      if (big) return big;
+      const r = new Random([...name].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 17));
+      const img = new Uint8ClampedArray(W * Hh * 4);
+      const put = (x: number, y: number, c: RGB) => { if (x < 0 || y < 0 || x >= W || y >= Hh) return; const i = (y * W + x) * 4; img[i] = c[0]; img[i + 1] = c[1]; img[i + 2] = c[2]; img[i + 3] = 255; };
+      const style = name.includes('skull') || name === 'wither' || name === 'skeleton' ? 'dark' : w > h ? 'land' : h > w ? 'figure' : r.int(3) ? 'still' : 'pattern';
+      const sky = [G('#5a8ac8'), G('#c86a3a'), G('#2a2a4a'), G('#8ac8d8')][r.int(4)], ground = [G('#4a7a2a'), G('#8a6a3a'), G('#2a4a6a')][r.int(3)];
+      for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
+        let c: RGB;
+        if (style === 'dark') c = mix(G('#1a1a1a'), G('#4a2a1a'), y / Hh);
+        else if (style === 'pattern') c = ((x >> 2) + (y >> 2)) % 2 ? sky : ground;
+        else c = y < Hh * 0.6 ? mix(tone(sky, 1.2), sky, y / Hh) : mix(ground, tone(ground, 0.7), (y - Hh * 0.6) / (Hh * 0.4));
+        put(x, y, shade(c, 0.94 + r.next() * 0.12));
+      }
+      if (style === 'land') {
+        const sx = r.int(W), sy = 2 + r.int(Math.max(1, Hh / 3));
+        for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) if (x * x + y * y < 10) put(sx + x, sy + y, G('#f8e080'));
+        for (let k = 0; k < 3 + r.int(4); k++) { const hx0 = r.int(W - 6), hy = Math.floor(Hh * 0.6) - 4; for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) put(hx0 + x, hy + y, y < 2 && Math.abs(x - 2) > y ? sky : x === 2 && y > 2 ? G('#3a2a1a') : G('#c8b890')); }
+      } else if (style === 'figure' || style === 'still') {
+        const cx = W >> 1, cy = Math.floor(Hh * 0.45), body = [G('#8a2a2a'), G('#2a4a8a'), G('#3a6a2a')][r.int(3)];
+        for (let y = -4; y <= 3; y++) for (let x = -3; x <= 3; x++) put(cx + x, cy + y - 5, G('#d8a888'));
+        for (let y = 0; y < Hh * 0.45; y++) for (let x = -5 + (y >> 3); x <= 5 - (y >> 3); x++) put(cx + x, cy + y, body);
+      } else if (style === 'dark') {
+        const cx = W >> 1, cy = Hh >> 1, rad = Math.min(W, Hh) * 0.3;
+        for (let y = -rad; y <= rad; y++) for (let x = -rad; x <= rad; x++) if (x * x + y * y * 1.2 < rad * rad) put(cx + x, cy + y, G('#e8e0d0'));
+        for (const ex of [-rad * 0.4, rad * 0.4]) for (let y = -2; y <= 1; y++) for (let x = -2; x <= 1; x++) put(Math.round(cx + ex + x), Math.round(cy - rad * 0.1 + y), G('#1a1a1a'));
+        if (name === 'burning_skull') for (let k = 0; k < 120; k++) put(r.int(W), r.int(Hh >> 1), G(r.bool() ? '#f8a020' : '#f8e040'));
+      }
+      // the wooden frame round the edge
+      for (let x = 0; x < W; x++) { put(x, 0, G('#6a4a2a')); put(x, Hh - 1, G('#4a3018')); }
+      for (let y = 0; y < Hh; y++) { put(0, y, G('#6a4a2a')); put(W - 1, y, G('#4a3018')); }
+      big = img;
+      return img;
+    };
+    for (let k = 0; k < w * h; k++) {
+      const cx = k % w, cy = Math.floor(k / w);
+      gens[`painting_${name}_${cx}_${cy}`] = () => {
+        const src = make(), out = newImg();
+        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+          const i = ((cy * 16 + y) * W + cx * 16 + x) * 4;
+          set(out, x, y, [src[i], src[i + 1], src[i + 2]]);
+        }
+        return out;
+      };
+    }
+  }
 }
 
 // ================================================================ the Nether update
