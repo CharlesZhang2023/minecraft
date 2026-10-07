@@ -44,9 +44,9 @@ sounds play.
 The big files named after their hash (sound effects, music, the pack repository's files) can also be served from
 a CDN: `npm run deploy:cdn` (after `npm run build`, with `wrangler` logged in) puts them on a Cloudflare Worker that
 serves only static files (`cdn/wrangler.jsonc`, address in `src/net/cdn.ts`). Each visit asks the CDN first; if it
-doesn't answer within 2.5 s (it can't be reached from mainland China), everything comes from the game's own server,
-and a file the CDN doesn't have is fetched from the server too, so the CDN can lag behind without breaking anything.
-Indexes and the game itself always come from the server.
+doesn't answer within 2.5 s and the server answers first (the CDN can't be reached from mainland China), they come
+from the game's own server. A file the CDN doesn't have is fetched from the server too, so the CDN can lag behind
+without breaking anything. Indexes and the game itself always come from the server.
 
 ## Agents (Claude Code, scripts)
 

@@ -1,11 +1,11 @@
 // Big downloads (the recorded sounds and music, the pack repository's files) come from a CDN when it answers
-// quickly, else from the game's own server. The CDN (a Cloudflare Worker serving only static files, deployed with
-// `npm run deploy:cdn`) is fast nearly everywhere but can't be reached from mainland China, where the server
-// serves them. Only files named after their content's hash come from the CDN (indexes always come from the
+// quickly (or sooner than the server), else from the game's own server. The CDN (a Cloudflare Worker serving only
+// static files, deployed with `npm run deploy:cdn`) is fast nearly everywhere but can't be reached from mainland
+// China, where the server serves them. Only files named after their content's hash come from the CDN (indexes always come from the
 // server), and one the CDN doesn't have or can't send is fetched from the server instead.
 const CDN = import.meta.env?.PROD ? 'https://mc-cdn.charles2023.workers.dev/' : '';
 const ORIGIN = typeof location === 'undefined' ? '/' : new URL(import.meta.env?.BASE_URL ?? '/', location.href).href;
-/** How long the CDN has to answer before this visit uses the server. */
+/** How long the CDN has to answer before the server may win instead. */
 const PROBE_MS = 2500;
 /** Where downloaded sounds and music are kept in this browser (the service worker leaves it alone). */
 const MEDIA = 'mcw-media';
@@ -17,18 +17,24 @@ export function assetBase(): Promise<string> {
   return (base ??= probe());
 }
 
+/**
+ * The CDN when it answers within PROBE_MS, or later but before the server does (a slow network: the CDN is still
+ * the quicker); the server when the CDN fails or the server answers first after that (the CDN blocked or far).
+ */
 async function probe(): Promise<string> {
   if (!CDN || typeof fetch !== 'function') return ORIGIN;
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), PROBE_MS);
-  try {
-    const r = await fetch(CDN + 'cdn.json', { cache: 'no-store', signal: ac.signal });
-    return r.ok ? CDN : ORIGIN;
-  } catch {
-    return ORIGIN;
-  } finally {
-    clearTimeout(t);
-  }
+  const ping = (b: string) => fetch(b + 'cdn.json', { cache: 'no-store' }).then((r) => r.ok, () => false);
+  const cdn = ping(CDN);
+  const first = await Promise.race([cdn, new Promise<null>((res) => setTimeout(() => res(null), PROBE_MS))]);
+  if (first !== null) return first ? CDN : ORIGIN;
+  const server = ping(ORIGIN).then((ok) => (ok ? ORIGIN : null));
+  // whichever answers first; the server when neither does (or not for a long while: kept files are used anyway)
+  const won = await Promise.race([
+    cdn.then((ok) => (ok ? CDN : server)),
+    server.then((b) => b ?? cdn.then((ok) => (ok ? CDN : ORIGIN))),
+    new Promise<string>((res) => setTimeout(() => res(ORIGIN), 15000)),
+  ]);
+  return won ?? ORIGIN;
 }
 
 /** A hashed file (a path from the game's folder, like 'sounds/music/calm1-c07f56b6d6.ogg'), from the CDN or the server. */
