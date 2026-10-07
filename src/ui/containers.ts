@@ -9,6 +9,7 @@ import { ItemStack, getItem, sameItem, cloneStack, ITEMS, ItemDef, I, I2, I3, I4
 import { craft, craftRemainder, SMELTING } from '../game/recipes';
 import { addToSlots } from '../game/inventory';
 import { PATTERNS } from '../game/banners';
+import { RecipeBook } from './recipebook';
 import { GENERATIONS } from './book';
 import { BLOCKS, Render, B, B2, STONE2, WOOD, isLeaves, isSapling, isStairs, isSlab, DYE_COLORS } from '../world/blocks';
 import { FurnaceTile, cooks, cookTime } from '../game/furnace';
@@ -512,10 +513,13 @@ export class InventoryScreen extends ContainerScreen {
     this.addPlayerSlots();
   }
   override changed() { this.grid.update(); }
+  book = new RecipeBook(this as never, [104, 61]);
   override init() {
     super.init();
     // 1.8: the inventory shifts right to make room for the effect list
     if (this.player.effects.size) this.left += 60;
+    this.widgets = this.widgets.filter((w) => w !== this.book);
+    this.widgets.push(this.book);
   }
   override quickTargets(s: Slot, st: ItemStack): string[] {
     if ((s.group === 'main' || s.group === 'hotbar') && getItem(st.id).armor) {
@@ -549,6 +553,12 @@ export class InventoryScreen extends ContainerScreen {
 export class CraftingScreen extends ContainerScreen {
   title = 'Crafting';
   grid = new CraftGrid(3);
+  book = new RecipeBook(this as never, [5, 34]);
+  override init() {
+    super.init();
+    this.widgets = this.widgets.filter((w) => w !== this.book);
+    this.widgets.push(this.book);
+  }
   override buildSlots() {
     addGridSlots(this, this.grid, 30, 17, 124, 35);
     this.addPlayerSlots();

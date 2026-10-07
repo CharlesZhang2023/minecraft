@@ -134,6 +134,26 @@ L([B.WOOL_BLUE, B.WOOL_GREEN], B.WOOL_CYAN, 2);
 L([B.WOOL_BLUE, B.WOOL_RED], B.WOOL_PURPLE, 2);
 void LOGS;
 
+/** A recipe laid out as the grid cells it needs (row-major, `w` wide): what the recipe book shows and fills. */
+export interface FlatRecipe { w: number; h: number; cells: (number | number[] | undefined)[]; out: ItemStack }
+let flat: FlatRecipe[] | null = null;
+export function recipeList(): FlatRecipe[] {
+  if (flat) return flat;
+  flat = [];
+  for (const r of shaped) {
+    const w = Math.max(...r.pattern.map((p) => p.length)), h = r.pattern.length;
+    const cells: FlatRecipe['cells'] = [];
+    for (const row of r.pattern) for (let x = 0; x < w; x++) { const ch = row[x] ?? ' '; cells.push(ch === ' ' ? undefined : r.key[ch]); }
+    flat.push({ w, h, cells, out: r.out });
+  }
+  for (const r of shapeless) {
+    const n = r.ingredients.length, w = n === 1 ? 1 : n <= 4 ? 2 : 3;
+    flat.push({ w, h: Math.ceil(n / w), cells: r.ingredients.slice(), out: r.out });
+  }
+  return flat;
+}
+export const ingredientMatches = (s: ItemStack, want: number | number[]) => matches(s, want);
+
 function matches(slot: ItemStack | null, want: number | number[] | undefined): boolean {
   if (want === undefined) return !slot;
   if (!slot) return false;
