@@ -27,7 +27,7 @@ const at = (x: number, y: number, z: number) => ({ x: x + 0.5, y: y + 0.5, z: z 
 
 /** Composter chances by item (vanilla 1.16). */
 const COMPOST: Map<number, number> = new Map();
-function compostChance(id: number): number {
+export function compostChance(id: number): number {
   if (!COMPOST.size) {
     const add = (p: number, ids: number[]) => { for (const i of ids) COMPOST.set(i, p); };
     const leaves = BLOCKS.filter((b) => b.shape === 14).map((b) => b.id);

@@ -8,6 +8,8 @@ import { Minecart, placeOnRail } from '../entity/minecart';
 import { FISH_BUCKETS } from '../entity/animals';
 import { buildGolem } from '../entity/overworldmobs';
 import { buildWither } from '../entity/wither';
+import { compostChance } from './stations';
+import { live } from '../mod/hooks';
 import { Arrow, Snowball, PrimedTnt, ItemEntity, Fireball } from '../entity/item';
 import { Boat } from '../entity/boat';
 import { ThrownPotion } from '../entity/potion';
@@ -32,6 +34,45 @@ export function containerAt(w: World, x: number, y: number, z: number): Containe
   const id = w.getId(x, y, z);
   const t = w.getTile(x, y, z) as { type: string; items?: Slots; slots?: Slots } | undefined;
   const mark = () => { const c = w.chunkAt(x, z); if (c) c.modified = true; };
+  // the newer containers: barrels, trapped chests and shulker boxes (which won't take another shulker box)
+  if (id === B2.BARREL || id === B2.TRAPPED_CHEST || id === B2.SHULKER_BOX || SHULKER_BOXES.includes(id)) {
+    let tile = t as { type: 'chest'; items: Slots } | undefined;
+    if (!tile?.items) { tile = { type: 'chest', items: new Array(27).fill(null) }; w.setTile(x, y, z, tile); }
+    const shulker = id === B2.SHULKER_BOX || SHULKER_BOXES.includes(id);
+    return { slots: tile.items, insertSlots: () => range(27), extractSlots: () => range(27), accepts: shulker ? (_i, s) => s.id !== B2.SHULKER_BOX && !SHULKER_BOXES.includes(s.id) : undefined, changed: mark };
+  }
+  if ((id === B2.SMOKER || id === B2.BLAST_FURNACE) && t?.slots) {
+    return {
+      slots: t.slots,
+      insertSlots: (face) => (face === 1 ? [0] : face === 0 ? [] : [1]),
+      extractSlots: (face) => (face === 0 ? [2] : face === 1 ? [] : [1]),
+      accepts: (slot, s) => slot !== 1 || !!getItem(s.id).fuel,
+      changed: mark,
+    };
+  }
+  // a composter takes compostables from above and gives its bone meal out of the bottom
+  if (id === B2.COMPOSTER) {
+    const level = metaOf(w.get(x, y, z));
+    const slots: Slots = [level >= 8 ? stack(I.BONE_MEAL) : null];
+    return {
+      slots,
+      insertSlots: (face) => (face === 1 && level < 7 ? [0] : []),
+      extractSlots: (face) => (face === 0 && level >= 8 ? [0] : []),
+      accepts: (_i, s) => compostChance(s.id) > 0,
+      changed: () => {
+        const cur = metaOf(w.get(x, y, z));
+        if (cur >= 8 && !slots[0]) { w.set(x, y, z, pack(B2.COMPOSTER, 0)); return; }
+        const s = slots[0];
+        if (!s || cur >= 7 || s.id === I.BONE_MEAL) return;
+        slots[0] = null;
+        if (Math.random() < compostChance(s.id)) {
+          w.set(x, y, z, pack(B2.COMPOSTER, cur + 1));
+          // full: it turns to bone meal a second later
+          if (cur + 1 === 7) live.game?.ticker?.schedule(x, y, z, 20);
+        }
+      },
+    };
+  }
   if (id === B.CHEST) {
     let tile = t as { type: 'chest'; items: Slots } | undefined;
     if (!tile) { tile = { type: 'chest', items: new Array(27).fill(null) }; w.setTile(x, y, z, tile); }
