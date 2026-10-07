@@ -1,5 +1,6 @@
 // Scheduled & random block updates: fluids, gravity, plants, leaf decay, fire...
 import { hardenConcrete, basaltForms, updateColumn } from './blockrules';
+import './growth';
 import type { Game } from './game';
 import type { World, Chunk } from '../world/world';
 import { B, B2, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston, isFire } from '../world/blocks';

@@ -129,6 +129,30 @@ const boat = await t.page.evaluate(async () => {
 });
 ok(boat, 'a spruce boat breaks into a spruce boat');
 
+// plants grow by random ticks; coral dies out of the water
+const grow = await t.page.evaluate(() => window.sim((g, p) => {
+  const blocks = window.__mc;
+  const id = (n) => blocks.BLOCKS.find((b) => b?.name === n).id;
+  const w = g.world, x = Math.floor(p.x) + 30, y = Math.floor(p.y) + 40, z = Math.floor(p.z) - 10;
+  for (let a = -2; a <= 6; a++) for (let c = -2; c <= 2; c++) { w.set(x + a, y - 1, z + c, id('dirt')); for (let b = 0; b < 8; b++) w.set(x + a, y + b, z + c, 0); }
+  // kelp in a water column
+  for (let b = 0; b < 6; b++) w.set(x, y + b, z, id('water'));
+  w.set(x, y, z, id('kelp'));
+  // a beetroot on farmland, a coral block in the air
+  w.set(x + 2, y - 1, z, (id('farmland') & 0xfff) | (1 << 12));
+  w.set(x + 2, y, z, id('beetroots'));
+  w.set(x + 4, y, z, id('tube_coral_block'));
+  const tick = (bx, by, bz) => blocks.BLOCKS[w.getId(bx, by, bz)].behavior?.randomTick?.({ game: g, world: w, x: bx, y: by, z: bz, v: w.get(bx, by, bz), id: w.getId(bx, by, bz), meta: w.get(bx, by, bz) >>> 12, setMeta: (m) => w.set(bx, by, bz, (w.get(bx, by, bz) & 0xfff) | (m << 12)), set: (v) => w.set(bx, by, bz, v) });
+  g.time = 6000;
+  for (let i = 0; i < 200; i++) { let ky = y; while (w.getId(x, ky, z) === id('kelp_plant')) ky++; tick(x, ky, z); tick(x + 2, y, z); }
+  tick(x + 4, y, z);
+  let h = 0; while ([id('kelp'), id('kelp_plant')].includes(w.getId(x, y + h, z))) h++;
+  return { kelp: h, beet: w.get(x + 2, y, z) >>> 12, coral: blocks.BLOCKS[w.getId(x + 4, y, z)].name };
+}));
+ok(grow.kelp > 2, `kelp grows up through the water (${grow.kelp} tall)`);
+ok(grow.beet === 3, `beetroots ripen (stage ${grow.beet})`);
+ok(grow.coral === 'dead_tube_coral_block', `coral out of the water dies (${grow.coral})`);
+
 ok(t.errors.length === 0, 'no page errors ' + t.errors.slice(0, 3).join(' | '));
 await t.close();
 console.log(fails.length ? `${fails.length} failed` : 'all passed');
