@@ -88,7 +88,16 @@ export const POTIONS: PotionType[] = [
   { key: 'long_leaping', name: 'Potion of Leaping', effects: [['jump_boost', 8 * M, 0]], sprite: 'leaping' },
   { key: 'strong_leaping', name: 'Potion of Leaping', effects: [['jump_boost', 90 * S, 1]], sprite: 'leaping' },
 ];
-export const POTION_BY_KEY = new Map(POTIONS.map((p) => [p.key, p]));
+/** Potions added in 1.9-1.13 (kept apart so the older potions' items keep their ids). */
+export const POTIONS2: PotionType[] = [
+  { key: 'turtle_master', name: 'Potion of the Turtle Master', effects: [['slowness', 20 * S, 3], ['resistance', 20 * S, 2]], sprite: 'turtle_master' },
+  { key: 'long_turtle_master', name: 'Potion of the Turtle Master', effects: [['slowness', 40 * S, 3], ['resistance', 40 * S, 2]], sprite: 'turtle_master' },
+  { key: 'strong_turtle_master', name: 'Potion of the Turtle Master', effects: [['slowness', 20 * S, 5], ['resistance', 20 * S, 3]], sprite: 'turtle_master' },
+  { key: 'slow_falling', name: 'Potion of Slow Falling', effects: [['slow_falling', 90 * S, 0]], sprite: 'slow_falling' },
+  { key: 'long_slow_falling', name: 'Potion of Slow Falling', effects: [['slow_falling', 4 * M, 0]], sprite: 'slow_falling' },
+  { key: 'luck', name: 'Potion of Luck', effects: [['luck', 5 * M, 0]], sprite: 'luck' },
+];
+export const POTION_BY_KEY = new Map([...POTIONS, ...POTIONS2].map((p) => [p.key, p]));
 
 /** Liquid colour: vanilla mixes effect colours weighted by amplifier + 1. */
 export function potionColor(effects: EffectSpec[]): number {
@@ -103,7 +112,7 @@ export function potionColor(effects: EffectSpec[]): number {
 
 /** Distinct bottle sprites (one per colour group). */
 export const POTION_SPRITES: Record<string, number> = {};
-for (const p of POTIONS) if (!(p.sprite in POTION_SPRITES)) POTION_SPRITES[p.sprite] = potionColor(p.effects);
+for (const p of [...POTIONS, ...POTIONS2]) if (!(p.sprite in POTION_SPRITES)) POTION_SPRITES[p.sprite] = potionColor(p.effects);
 
 export const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 export function formatDuration(ticks: number): string {

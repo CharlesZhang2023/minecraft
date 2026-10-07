@@ -4,6 +4,7 @@ import { craft, SMELTING, STONECUTTING, SMITHING } from '../../src/game/recipes'
 import { itemByName, getItem, ITEMS, ItemStack } from '../../src/game/items';
 import { blockByName } from '../../src/world/blocks';
 import { check, eq, done } from './check';
+import { brewResult } from '../../src/game/brewing';
 
 const id = (n: string) => itemByName(n)?.id ?? blockByName(n)?.id ?? -1;
 const g = (rows: string[], key: Record<string, string>): (ItemStack | null)[] => {
@@ -52,4 +53,15 @@ check(SMITHING.some((r) => r.base === id('diamond_sword') && r.out === id('nethe
 // every recipe output and smelting result is a real item
 for (const [k, r] of Object.entries(SMELTING)) check(ITEMS.has(r.out), `smelting ${k} -> unknown ${r.out}`);
 for (const r of STONECUTTING) check(ITEMS.has(r.out) && ITEMS.has(r.input), `stonecutting ${r.input} -> ${r.out}`);
+// brewing: the 1.9-1.13 ingredients and dragon's breath
+const brew = (potion: string, ing: string, splash = false, lingering = false) => brewResult(potion, splash, id(ing), lingering);
+eq(brew('awkward', 'turtle_helmet')?.key, 'turtle_master', 'turtle shell brews the turtle master');
+eq(brew('turtle_master', 'redstone')?.key, 'long_turtle_master', 'redstone lengthens it');
+eq(brew('turtle_master', 'glowstone_dust')?.key, 'strong_turtle_master', 'glowstone strengthens it');
+eq(brew('awkward', 'phantom_membrane')?.key, 'slow_falling', 'phantom membrane brews slow falling');
+eq(brew('awkward', 'rabbit_foot')?.key, 'leaping', "a rabbit's foot brews leaping");
+check(!!brew('swiftness', 'dragon_breath', true)?.lingering, "dragon's breath makes a splash potion lingering");
+check(!brew('swiftness', 'dragon_breath'), "but not a drinkable one");
+check(!!brew('swiftness', 'redstone', false, true)?.lingering, 'a lingering potion stays lingering');
+check(!!itemByName('tipped_arrow_slow_falling') && !!itemByName('lingering_potion_turtle_master'), 'the new potions come in every form');
 done();

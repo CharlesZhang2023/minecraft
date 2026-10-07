@@ -1,7 +1,7 @@
 // Brewing stands (1.9+ rules: blaze powder fuel, 400 tick brews) and potion recipes.
 import type { Game } from './game';
 import { B, idOf, metaOf, pack } from '../world/blocks';
-import { ItemStack, getItem, I, I2, I3, POTION_ITEMS, SPLASH_ITEMS } from './items';
+import { ItemStack, getItem, I, I2, I3, I7, POTION_ITEMS, SPLASH_ITEMS, LINGERING_ITEMS } from './items';
 import { POTION_BY_KEY } from './potiondata';
 
 export interface BrewingTile {
@@ -23,6 +23,9 @@ const EFFECT_INGREDIENTS: Record<number, string> = {
   [I2.BLAZE_POWDER]: 'strength',
   [I3.GOLDEN_CARROT]: 'night_vision',
   [I3.PUFFERFISH]: 'water_breathing',
+  [I7.RABBIT_FOOT]: 'leaping',
+  [I7.TURTLE_HELMET]: 'turtle_master',
+  [I7.PHANTOM_MEMBRANE]: 'slow_falling',
 };
 /** Fermented spider eye corruptions. */
 const CORRUPT: Record<string, string> = {
@@ -38,9 +41,16 @@ const CORRUPT: Record<string, string> = {
 const baseOf = (k: string) => k.replace(/^(long_|strong_)/, '');
 
 /** Result of adding `ingredient` to a potion, or null if nothing happens. */
-export function brewResult(potion: string, splash: boolean, ingredient: number): { key: string; splash: boolean } | null {
+export function brewResult(potion: string, splash: boolean, ingredient: number, lingering = false): { key: string; splash: boolean; lingering?: boolean } | null {
+  const r = brewBase(potion, splash || lingering, ingredient, lingering);
+  // a lingering potion stays lingering whatever else goes in
+  return r && lingering && !r.lingering ? { ...r, splash: false, lingering: true } : r;
+}
+function brewBase(potion: string, splash: boolean, ingredient: number, lingering: boolean): { key: string; splash: boolean; lingering?: boolean } | null {
   const has = (k: string) => POTION_BY_KEY.has(k);
   if (ingredient === I.GUNPOWDER) return splash ? null : { key: potion, splash: true };
+  // dragon's breath turns a splash potion lingering
+  if (ingredient === I7.DRAGON_BREATH) return splash && !lingering ? { key: potion, splash: false, lingering: true } : null;
   if (ingredient === I3.NETHER_WART) return potion === 'water' ? { key: 'awkward', splash } : null;
   if (ingredient === I.REDSTONE) {
     if (potion === 'water') return { key: 'mundane', splash };
@@ -61,16 +71,17 @@ export function brewResult(potion: string, splash: boolean, ingredient: number):
   return null;
 }
 export const isBrewingIngredient = (id: number) =>
-  id === I.GUNPOWDER || id === I3.NETHER_WART || id === I.REDSTONE || id === I.GLOWSTONE_DUST || id === I3.FERMENTED_SPIDER_EYE || id in EFFECT_INGREDIENTS;
+  id === I.GUNPOWDER || id === I7.DRAGON_BREATH || id === I3.NETHER_WART || id === I.REDSTONE || id === I.GLOWSTONE_DUST || id === I3.FERMENTED_SPIDER_EYE || id in EFFECT_INGREDIENTS;
 export const isBottle = (s: ItemStack) => !!getItem(s.id).potion;
 
 function bottleResult(s: ItemStack | null, ingredient: number): ItemStack | null {
   if (!s) return null;
   const d = getItem(s.id);
   if (!d.potion) return null;
-  const r = brewResult(d.potion, !!d.splash, ingredient);
+  const r = brewResult(d.potion, !!d.splash, ingredient, !!d.lingering);
   if (!r) return null;
-  return { id: (r.splash ? SPLASH_ITEMS : POTION_ITEMS)[r.key], count: 1 };
+  const id = (r.lingering ? LINGERING_ITEMS : r.splash ? SPLASH_ITEMS : POTION_ITEMS)[r.key];
+  return id === undefined ? null : { id, count: 1 };
 }
 
 export function newBrewingTile(): BrewingTile {

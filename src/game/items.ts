@@ -1,6 +1,6 @@
 // Item registry. Block items share ids with their blocks (< 1000); other items start at 1000.
 import { BLOCKS, B, B2, blockByName, Render, DYE_COLORS, WOOD, BEDS, SHULKER_BOXES, STONE2 } from '../world/blocks';
-import { POTIONS } from './potiondata';
+import { POTIONS, POTIONS2 } from './potiondata';
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'hoe' | 'sword' | 'shears';
 export interface ItemDef {
@@ -495,6 +495,13 @@ export const I10 = {
 export const I11 = {
   WRITTEN_BOOK: item('written_book', 'Written Book', { maxStack: 16 }),
 };
+// the potions of 1.9-1.13 (turtle master, slow falling, luck) in all their forms
+for (const p of POTIONS2) {
+  POTION_ITEMS[p.key] = item(`potion_${p.key}`, p.name, { maxStack: 1, potion: p.key, drink: true, sprite: `potion_${p.sprite}` });
+  SPLASH_ITEMS[p.key] = item(`splash_potion_${p.key}`, 'Splash ' + p.name, { maxStack: 1, potion: p.key, splash: true, sprite: `splash_potion_${p.sprite}` });
+  LINGERING_ITEMS[p.key] = item(`lingering_potion_${p.key}`, 'Lingering ' + p.name, { maxStack: 1, potion: p.key, lingering: true, sprite: `lingering_potion_${p.sprite}` });
+  TIPPED_ARROWS[p.key] = item(`tipped_arrow_${p.key}`, 'Arrow of ' + p.name.replace(/^Potion of (the )?/, ''), { potion: p.key, sprite: `tipped_arrow_${p.sprite}` });
+}
 
 // block items of the new blocks: sizes and fuel that differ from the defaults
 for (const id of [...BEDS]) { const d = ITEMS.get(id); if (d) d.maxStack = 1; }
