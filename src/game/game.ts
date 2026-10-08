@@ -257,6 +257,8 @@ export class Game {
     await world.init();
     const dim = new Dim(world, this);
     world.onBlockChange = (x, y, z, old, v) => {
+      // a spawner set down (placed, /setblock, /fill) holds a pig until a spawn egg changes it (1.16)
+      if ((v & 0xfff) === B.SPAWNER && (old & 0xfff) !== B.SPAWNER && !world.getTile(x, y, z)) world.setTile(x, y, z, { type: 'spawner', mob: 'pig', delay: 200 } as never);
       this.inDim(dim, () => dim.ticker.onChange(x, y, z, old, v));
       this.sublevels.blockChanged(dim, x, y, z);
       for (const p of this.players) if (p.dim === d) p.blockChanged(x, y, z, v);

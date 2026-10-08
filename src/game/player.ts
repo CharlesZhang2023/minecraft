@@ -141,6 +141,9 @@ export class Player extends LivingEntity {
     this.height = h;
   }
   override isFlying() { return this.flying; }
+  // 1.13 water: players sink slowly, and sprinting through it keeps more speed and doesn't sink at all
+  override waterDrag() { return this.sprinting ? 0.9 : 0.8; }
+  override waterSink() { return this.sprinting ? 0 : 0.005; }
   override groundSpeed() { return this.moveSpeed * (this.sprinting ? 1.3 : 1) * playerHooks.soulSpeed(this) * (this.blocking || this.using === 'bow' || this.using === 'crossbow' || this.using === 'trident' ? 0.2 : 1); }
   /** Armour toughness (1.9): diamond 2 a piece, netherite 3. */
   override armorToughness() { return this.inventory.armor.reduce((t, s) => t + (s ? getItem(s.id).armor?.toughness ?? 0 : 0), 0); }
@@ -159,7 +162,8 @@ export class Player extends LivingEntity {
   applyInput(inp: MoveInput) {
     this.sneaking = inp.sneak && !this.flying;
     let fwd = inp.forward, str = inp.strafe;
-    if (this.sneaking || (this.height < 1 && !this.gliding)) { fwd *= 0.3; str *= 0.3; }
+    // crawling (short, out of the water) is slow; gliding and swimming aren't
+    if (this.sneaking || (this.height < 1 && !this.gliding && !(this.swimming && this.inWater))) { fwd *= 0.3; str *= 0.3; }
     // pressing jump in mid-air spreads the elytra
     if (inp.jump && !this.jumpWasDown && !this.gliding && this.canGlide()) this.gliding = true;
     this.jumpWasDown = inp.jump;
@@ -168,9 +172,11 @@ export class Player extends LivingEntity {
     this.strafe = str;
     this.jumping = inp.jump;
     // sprinting rules
-    const canSprint = (this.food > 6 || this.canFly) && !this.sneaking && fwd >= 0.8 && this.eatingTicks === 0 && this.height > 1;
+    const canSprint = (this.food > 6 || this.canFly) && !this.sneaking && fwd >= 0.8 && this.eatingTicks === 0 && (this.height > 1 || this.swimming);
     if (inp.sprint && canSprint && !this.collidedH) this.sprinting = true;
     if (!canSprint || this.collidedH) this.sprinting = false;
+    // sneaking in water sinks faster (1.13)
+    if (inp.sneak && this.inWater && !this.flying) this.vy -= 0.04;
     if (this.flying) {
       if (inp.sneak) this.vy -= 0.15;
       if (inp.jump) this.vy += 0.15;
@@ -190,6 +196,7 @@ export class Player extends LivingEntity {
       this.cameraYaw *= 0.5;
       this.prevHealth = this.health;
       this.armor = this.inventory.armorPoints();
+      playerHooks.combatTick(this);
       this.environment();
       this.updateSwing();
       if (this.hurtTime > 0) this.hurtTime--;
@@ -254,7 +261,7 @@ export class Player extends LivingEntity {
     if (this.swimming && this.inWater) {
       // swimming moves along the look, up and down included (dolphin's grace speeds it up)
       const yaw = (this.yaw * Math.PI) / 180, pitch = (this.pitch * Math.PI) / 180;
-      const sp = 0.04 * (this.effects.has('dolphins_grace') ? 2.5 : 1) * (1 + Math.min(3, this.depthStrider()) * 0.3);
+      const sp = 0.028 * (this.effects.has('dolphins_grace') ? 2.5 : 1) * (1 + Math.min(3, this.depthStrider()) * 0.3);
       if (forward > 0) {
         this.vx += -Math.sin(yaw) * Math.cos(pitch) * sp;
         this.vy += -Math.sin(pitch) * sp;

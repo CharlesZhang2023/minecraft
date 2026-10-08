@@ -220,6 +220,36 @@ const swim = await t.page.evaluate(({ x, y, z }) => {
 ok(swim.swimming && swim.h < 1, `sprinting under water swims (lying flat, ${swim.h} tall)`);
 ok(swim.dove && swim.ahead, 'and moves along the look, diving when looking down');
 
+// through the keys, tick by tick: swimming lasts (lying flat doesn't stop the sprint), and 1.13's water drifts
+// down slowly when still, faster when sneaking
+const strokes = await t.page.evaluate(({ x, y, z }) => {
+  const p = window.game.player, go = (inp, n) => { const seen = []; for (let i = 0; i < n; i++) { p.applyInput(inp); p.tick(); seen.push(p.swimming); } return seen; };
+  const still = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
+  // from the pool's north side, swimming south through it
+  p.setPos(x + 0.5, y + 3, z - 3.5);
+  p.vx = p.vy = p.vz = 0; p.yaw = 0; p.pitch = 0; p.swimming = false;
+  go(still, 20);
+  const sink = p.vy;
+  const seen = go({ ...still, forward: 1, sprint: true }, 20).slice(2);
+  const speed = Math.hypot(p.vx, p.vz);
+  go(still, 10);
+  go({ ...still, sneak: true }, 15);
+  return { sink, steady: seen.every(Boolean), speed, sneak: p.vy };
+}, pool);
+ok(strokes.steady, 'holding sprint under water keeps swimming every tick');
+ok(strokes.speed > 0.2 && strokes.speed < 0.3, `swimming picks up toward 1.13's 5.6 m/s (${(strokes.speed * 20).toFixed(1)} m/s)`);
+ok(strokes.sink < -0.01 && strokes.sink > -0.04, `still in water sinks slowly (${strokes.sink.toFixed(3)} a tick)`);
+ok(strokes.sneak < -0.12, `sneaking sinks faster (${strokes.sneak.toFixed(3)} a tick)`);
+
+// a spawner set down holds a pig (1.16) and spawns them
+const pigs = await run((g, p, { blocks }) => {
+  const x = Math.floor(p.x) - 25, y = Math.floor(p.y) + 40, z = Math.floor(p.z), w = g.world;
+  for (let a = -4; a <= 4; a++) for (let c = -4; c <= 4; c++) { w.set(x + a, y - 1, z + c, 1); for (let b = 0; b < 3; b++) w.set(x + a, y + b, z + c, 0); }
+  w.set(x, y, z, blocks.B.SPAWNER);
+  return w.getTile(x, y, z);
+});
+ok(pigs?.type === 'spawner' && pigs.mob === 'pig', `a placed spawner holds a pig (${JSON.stringify(pigs)})`);
+
 ok(t.errors.length === 0, 'no page errors ' + t.errors.slice(0, 3).join(' | '));
 await t.close();
 console.log(fails.length ? `${fails.length} failed` : 'all passed');

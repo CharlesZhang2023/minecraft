@@ -18,6 +18,7 @@ import { ArmorStand } from '../entity/armorstand';
 import { Hanging, ItemFrame, Painting } from '../entity/hanging';
 import { ShulkerBullet } from '../entity/endmobs';
 import { Entity } from '../entity/entity';
+import { createEntity } from '../entity/registry';
 import { LivingEntity } from '../entity/living';
 import { ItemEntity, FallingBlock, PrimedTnt, Arrow, XpOrb, Snowball, Fireball } from '../entity/item';
 import { ThrownPotion } from '../entity/potion';
@@ -281,6 +282,7 @@ export class EntityRenderer {
     }
     this.drawSignTexts(game, t);
     this.drawBanners(game);
+    this.drawSpawnerMobs(game, t);
     // beacon beams (the beacons' tiles keep their colour; 0 is off)
     if (w.dimension === 'overworld' || w.dimension === 'nether' || w.dimension === 'end') {
       const ccx = Math.floor(cam.x) >> 4, ccz = Math.floor(cam.z) >> 4;
@@ -369,6 +371,40 @@ export class EntityRenderer {
     }
     if (sh.count) {
       this.r.drawDyn(sh, { blend: true, cull: false, fullbright: true, alphaCut: 0.002, depthWrite: false });
+    }
+  }
+
+  /** One of each kind of mob, never in the world, shown turning inside spawners. */
+  private spawnerMobs = new Map<string, LivingEntity | null>();
+  /** The little mob turning inside each spawner nearby (vanilla's mob spawner renderer): it spins while a player is
+   * within 16 blocks, and big mobs are shrunk to fit the cage. */
+  private drawSpawnerMobs(game: Game, t: number) {
+    const w = game.world!, cam = this.r.cam, p = game.player;
+    const ccx = Math.floor(cam.x) >> 4, ccz = Math.floor(cam.z) >> 4;
+    for (const c of w.chunks.values()) {
+      if (!c.ready || !c.tiles.size || Math.abs(c.cx - ccx) > 2 || Math.abs(c.cz - ccz) > 2) continue;
+      for (const [i, tl] of c.tiles) {
+        const st = tl as unknown as { type: string; mob?: string };
+        if (st.type !== 'spawner' || idOf(c.blocks[i]) !== B.SPAWNER) continue;
+        const bx = c.cx * 16 + (i & 15), by = i >> 8, bz = c.cz * 16 + ((i >> 4) & 15);
+        const x = bx + 0.5 - cam.x, y = by - cam.y, z = bz + 0.5 - cam.z;
+        if (x * x + y * y + z * z > 32 * 32 || !this.r.boxVisible(x - 0.5, y, z - 0.5, x + 0.5, y + 1, z + 0.5)) continue;
+        const kind = st.mob ?? 'pig';
+        let e = this.spawnerMobs.get(kind);
+        if (e === undefined) {
+          const made = createEntity(kind, w, game as never);
+          e = made instanceof LivingEntity ? made : null;
+          this.spawnerMobs.set(kind, e);
+        }
+        if (!e) continue;
+        const near = !!p && Math.hypot(p.x - bx - 0.5, p.y - by - 0.5, p.z - bz - 0.5) < 16;
+        const spin = ((bx * 37 + bz * 61 + by * 13) % 360) + (near ? (game.ticks + t) * 12 : 0);
+        e.bodyYaw = e.pBodyYaw = e.headYaw = e.pHeadYaw = e.yaw = spin;
+        e.age = game.ticks;
+        const size = Math.max(e.width, e.height);
+        const [sky, blk] = w.getLight(bx, by, bz);
+        this.drawLiving(game, e, x, y + 0.2, z, t, sky, blk, { scale: 0.53125 / Math.max(1, size), tilt: 30 });
+      }
     }
   }
 
@@ -484,7 +520,7 @@ export class EntityRenderer {
     this.drawPart('crystal', 'crystal', 'base', q, [sky, blk], overlay);
   }
 
-  private drawLiving(game: Game, e: LivingEntity, x: number, y: number, z: number, t: number, sky: number, blk: number) {
+  private drawLiving(game: Game, e: LivingEntity, x: number, y: number, z: number, t: number, sky: number, blk: number, display?: { scale: number; tilt: number }) {
     const anyE = e as unknown as Record<string, unknown>;
     const model = (anyE.model as string) ?? 'biped';
     const skin = model === 'villager' && anyE.profession ? 'villager_' + (anyE.profession as string) : (anyE.skin as string) ?? 'steve';
@@ -504,7 +540,7 @@ export class EntityRenderer {
     }
     const overlay: [number, number, number, number] = e.hurtTime > 0 || e.deathTime > 0 ? [1, 0, 0, 0.3] : [0, 0, 0, 0];
     const baby = !!anyE.baby;
-    let sc = (baby ? 0.5 : 1) * ((anyE.renderScale as number) ?? 1);
+    let sc = (baby ? 0.5 : 1) * ((anyE.renderScale as number) ?? 1) * (display?.scale ?? 1);
     // creeper swell
     const swell = (anyE.swell as number) ?? 0;
     if (swell > 0) {
@@ -516,7 +552,8 @@ export class EntityRenderer {
       if (Math.floor(s / 30 * 10) % 2) overlay[0] = overlay[1] = overlay[2] = 1, overlay[3] = Math.max(overlay[3], s / 30 * 0.6);
     }
     let tilt: [number, number] | undefined;
-    if (e instanceof Player && e.swimming && !e.gliding) tilt = [-90 - pitch, 0];
+    if (display) tilt = [display.tilt, 0];
+    else if (e instanceof Player && e.swimming && !e.gliding) tilt = [-90 - pitch, 0];
     else if (anyE.sleeping && (e instanceof Player || anyE.typeName === 'Villager')) tilt = [-90, 0];
     else if (e instanceof Player && e.gliding) {
       // vanilla RenderPlayer: swing level over the first second, then bank by the angle between look and motion

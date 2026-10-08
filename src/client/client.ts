@@ -724,7 +724,9 @@ export class Client {
     const aim = va !== undefined ? va?.dir ?? null : this.touchAim() ? (i.aim ? this.screenRay(i.aim.x, i.aim.y) : null) : this.lookVec(p.yaw, p.pitch);
     const pressed = va ? [...va.pressed] : i.takeMousePressed();
     if (va) i.takeMousePressed();
-    const held = ['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft'].filter((k) => i.isDown(k));
+    // a swing at a mob or at the air starts the attack charge over, as it does on the server (for the crosshair bar)
+    if (act && pressed.includes(0) && (this.targetEntity || !this.target)) p.attackTicks = 0;
+    const held =['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft'].filter((k) => i.isDown(k));
     conn.send({
       t: 'in', x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, yaw: p.yaw, pitch: p.pitch,
       g: p.onGround, sn: p.sneaking, sp: p.sprinting, fl: p.flying, jp: inp.jump, gl: p.gliding, sw: p.swimming, wh: p.wallHit, fw: inp.forward, st: inp.strafe,

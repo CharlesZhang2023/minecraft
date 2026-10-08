@@ -231,14 +231,14 @@ export class LivingEntity extends Entity {
   travel(strafe: number, forward: number) {
     if (this.inWater && !this.isFlying()) {
       const y0 = this.y;
-      let drag = 0.8, accel = 0.02;
+      let drag = this.waterDrag(), accel = 0.02;
       let ds = Math.min(3, this.depthStrider());
       if (!this.onGround) ds *= 0.5;
       if (ds > 0) { drag += ((0.546 - drag) * ds) / 3; accel += ((this.groundSpeed() - accel) * ds) / 3; }
       this.moveRelative(strafe, forward, accel);
       this.move(this.vx, this.vy, this.vz);
       this.vx *= drag; this.vy *= 0.8; this.vz *= drag;
-      this.vy -= 0.02;
+      this.vy -= this.waterSink();
       if (this.collidedH && this.canMoveTo(this.vx, this.vy + 0.6 - this.y + y0, this.vz)) this.vy = 0.3;
       return;
     }
@@ -286,6 +286,9 @@ export class LivingEntity extends Entity {
   }
 
   gravity() { return 0.08; }
+  /** Water: how much speed is kept each tick, and how fast it pulls down. */
+  waterDrag() { return 0.8; }
+  waterSink() { return 0.02; }
   depthStrider() { return 0; }
   isFlying() { return false; }
   groundSpeed() { return this.moveSpeed * (this.sprinting ? 1.3 : 1) * this.speedFactor(); }

@@ -31,6 +31,30 @@ ok(charge.s0 < 0.1 && charge.s1 >= 1, `the attack charge refills (${charge.s0.to
 ok(charge.weak > 0 && charge.weak < charge.strong / 3, `a spammed swing is weak (${charge.weak.toFixed(1)} vs ${charge.strong.toFixed(1)})`);
 ok(charge.axe[0] === 9 && charge.axe[1] === 1, 'axes hit for 9 at one swing a second (diamond)');
 
+// the charge fills with the server's own ticks: a diamond sword swung once a second kills a skeleton in three hits
+await mods((g, p, { items }) => {
+  p.inventory.main[p.inventory.selected] = items.stack(items.TOOLS.diamond_sword);
+  const s = g.interact.spawnMob('skeleton', p.x + 1.5, p.y, p.z); s.noAi = true;
+  window.__skeleton = s;
+});
+const swings = [];
+for (let i = 0; i < 5; i++) {
+  await wait(1000);
+  const r = await mods((g, p) => {
+    const s = window.__skeleton;
+    if (s.dead) return null;
+    s.invulnerable = 0; p.vy = 0; p.fallDistance = 0;
+    const h = s.health, ticks = p.attackTicks;
+    g.interact.attack(s);
+    return { ticks, dealt: h - s.health, dead: s.health <= 0 };
+  });
+  if (!r) break;
+  swings.push(r);
+  if (r.dead) break;
+}
+ok(swings[0]?.ticks >= 13, `the charge refills on the server between swings (${swings[0]?.ticks} ticks)`);
+ok(swings.length === 3 && swings.at(-1).dead, `a diamond sword kills a skeleton in 3 swings (${swings.map((s) => s.dealt.toFixed(1)).join(', ')})`);
+
 // sweeping: a full sword swing on the ground hits the mobs next to the target too
 const sweep = await mods((g, p, { items }) => {
   p.inventory.main[p.inventory.selected] = items.stack(items.TOOLS.iron_sword);

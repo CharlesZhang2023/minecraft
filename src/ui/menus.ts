@@ -422,15 +422,13 @@ export class PauseScreen extends Screen {
       new Button(this.ui, W / 2 - 100, y + 16, 200, 20, 'Back to Game', () => this.ui.close()),
       // your own world: let others in (the real game's "Open to LAN"); in someone else's, nothing to open
       Object.assign(new Button(this.ui, W / 2 - 100, y + 40, 98, 20, this.game.room || this.game.guests().length ? 'Players...' : 'Open to LAN', () => this.ui.open(new HostScreen(this.ui, this))), { enabled: !!this.game.server && !this.game.remote }),
-      // phones have no F5: the camera toggle takes the Statistics slot
+      // phones have no F5: the camera toggle takes the Mods slot
       device.touch
         ? new Button(this.ui, W / 2 + 2, y + 40, 98, 20, () => ['First Person', 'Back View', 'Front View'][this.game.thirdPerson], () => { this.game.thirdPerson = (this.game.thirdPerson + 1) % 3; })
         : new Button(this.ui, W / 2 + 2, y + 40, 98, 20, 'Mods...', () => openMods(this.ui, this)),
       new Button(this.ui, W / 2 - 100, y + 64, 98, 20, 'Options...', () => this.ui.open(new OptionsScreen(this.ui, this))),
       new Button(this.ui, W / 2 + 2, y + 64, 98, 20, 'Controls', () => this.ui.open(new ControlsScreen(this.ui, this))),
-      new Button(this.ui, W / 2 - 100, y + 88 - 4, 98, 20, 'Advancements', () => this.ui.open(new AdvancementsScreen(this.ui))),
-      new Button(this.ui, W / 2 + 2, y + 88 - 4, 98, 20, 'Statistics', () => this.ui.open(new StatsScreen(this.ui, this))),
-      new Button(this.ui, W / 2 - 100, y + 112, 200, 20, this.game.remote ? 'Disconnect' : 'Save and Quit to Title', () => this.quit()),
+      new Button(this.ui, W / 2 - 100, y + 96, 200, 20, this.game.remote ? 'Disconnect' : 'Save and Quit to Title', () => this.quit()),
     ];
   }
   async quit() {
@@ -497,17 +495,25 @@ export class OptionsScreen extends Screen {
 
 const GFX_NAMES: Record<string, string> = { auto: 'Auto', webgpu: 'WebGPU', webgl2: 'WebGL 2' };
 
-/** More options: the keepInventory rule (your own world), music on demand, the agent connection and the graphics API. */
+/** More options: advancements and statistics (in a world), the keepInventory rule (your own world), music on
+ * demand, the agent connection, the language and the graphics API. */
 export class MoreOptionsScreen extends Screen {
   constructor(ui: UI, public parent: Screen) { super(ui); }
   override pausesGame = true;
+  private noteY = 0;
   override init() {
     const W = this.gui.w, H = this.gui.h, x = W / 2 - 100;
-    const host = this.game.world && !this.game.panorama && !this.game.remote ? this.game.server : null;
+    const inWorld = !!this.game.world && !this.game.panorama;
+    const host = inWorld && !this.game.remote ? this.game.server : null;
     const o = this.game.options;
-    let y = Math.max(40, H / 4);
-    const row = () => { const r = y; y += 24; return r; };
+    // six rows between the title and Done, closer together on short screens
+    const step = H < 220 ? 22 : 24;
+    let y = Math.max(28, Math.min(H / 4, H - 48 - step * 6));
+    const row = () => { const r = y; y += step; return r; };
+    const r0 = row();
     this.widgets = [
+      Object.assign(new Button(this.ui, x, r0, 98, 20, 'Advancements', () => this.ui.open(new AdvancementsScreen(this.ui, this))), { enabled: inWorld }),
+      Object.assign(new Button(this.ui, x + 102, r0, 98, 20, 'Statistics', () => this.ui.open(new StatsScreen(this.ui, this))), { enabled: inWorld }),
       // items stay with you when you die; a rule of the world, so only in your own
       Object.assign(new Button(this.ui, x, row(), 200, 20, () => (host ? t('Keep Inventory: {0}', t(host.keepInventory ? 'ON' : 'OFF')) : t('Keep Inventory: in your own world')), () => { if (host) host.keepInventory = !host.keepInventory; }), { enabled: !!host }),
       new Button(this.ui, x, row(), 200, 20, 'Play Music Now', () => { this.game.audio.init(); this.game.audio.playPiece(); }),
@@ -522,13 +528,16 @@ export class MoreOptionsScreen extends Screen {
       }),
       new Button(this.ui, x, H - 28, 200, 20, 'Done', () => this.ui.open(this.parent)),
     ];
+    this.noteY = y + 4;
   }
   private note = '';
   override render(ctx: Ctx, mx: number, my: number) {
     if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
     else this.gui.dirtBackground(ctx);
-    this.gui.textCenter(ctx, 'More Options', this.gui.w / 2, 15, '#FFFFFF');
-    if (this.note) this.gui.textCenter(ctx, this.note, this.gui.w / 2, Math.max(40, this.gui.h / 4) + 24 * 5 + 4, '#FFFF80');
+    // the note goes under the buttons, or (short screens, no room above Done) in place of the title
+    const roomy = this.noteY + 10 <= this.gui.h - 28;
+    if (!this.note || roomy) this.gui.textCenter(ctx, 'More Options', this.gui.w / 2, 15, '#FFFFFF');
+    if (this.note) this.gui.textCenter(ctx, this.note, this.gui.w / 2, roomy ? this.noteY : 15, '#FFFF80');
     super.render(ctx, mx, my);
   }
   override key(e: KeyboardEvent) {

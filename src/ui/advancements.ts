@@ -10,6 +10,9 @@ import { t } from '../i18n/i18n';
 const CW = 28, CH = 26;
 export class AdvancementsScreen extends Screen {
   tab: AdvTab = 'story';
+  /** The menu it was opened from (L opens it over the game). */
+  constructor(ui: UI, private parent: Screen | null = null) { super(ui); }
+  override close() { this.ui.open(this.parent); }
   private pan: Record<string, [number, number]> = {};
   private drag: [number, number] | null = null;
   private box() {

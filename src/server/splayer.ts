@@ -4,7 +4,7 @@ import type { Game } from '../game/game';
 import type { Conn, Msg } from '../net/conn';
 import type { Dimension } from '../world/world';
 import { chunkKey } from '../world/world';
-import { Player } from '../game/player';
+import { Player, playerHooks } from '../game/player';
 import { Interaction } from '../game/interact';
 import { Achievements } from '../game/achievements';
 import type { BlockHit } from '../game/raycast';
@@ -106,6 +106,8 @@ export class NetPlayer extends Player {
     this.prevHealth = this.health;
     if (this.dead) { this.deathTime++; this.updateSwing(); return; }
     this.armor = this.inventory.armorPoints();
+    // the attack charge (what a hit does depends on it), the shield's cooldown, frost walker, the turtle shell
+    playerHooks.combatTick(this);
     const dx = this.x - this.lastX, dz = this.z - this.lastZ;
     this.lastX = this.x;
     this.lastZ = this.z;
