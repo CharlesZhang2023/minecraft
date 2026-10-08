@@ -6,6 +6,7 @@ import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { itemByName, stack } from '../game/items';
 import { blockByName } from '../world/blocks';
+import { t } from '../i18n/i18n';
 
 type Tab = 'general' | 'items' | 'mobs';
 const GENERAL: [string, string, 'time' | 'cm' | 'dmg' | 'n'][] = [
@@ -60,7 +61,7 @@ export class StatsScreen extends Screen {
     rows.slice(this.scroll, this.scroll + fit).forEach((r, i) => {
       const y = top + i * rowH;
       if (i % 2) { ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(W / 2 - 150, y - 1, 300, rowH); }
-      if (this.tab === 'general') { g.text(ctx, r[0], W / 2 - 140, y); g.text(ctx, r[1], W / 2 + 140 - g.font.width(r[1]), y); }
+      if (this.tab === 'general') { g.text(ctx, r[0], W / 2 - 140, y); g.text(ctx, r[1], W / 2 + 140 - g.textWidth(r[1]), y); }
       else if (this.tab === 'mobs') { g.text(ctx, r[0], W / 2 - 140, y); g.text(ctx, r[1], W / 2 + 30, y); g.text(ctx, r[2], W / 2 + 90, y); }
       else {
         const id = itemByName(r[0])?.id ?? blockByName(r[0])?.id;
@@ -87,9 +88,9 @@ export class StatsScreen extends Screen {
 function fmt(v: number, kind: 'time' | 'cm' | 'dmg' | 'n'): string {
   if (kind === 'time') {
     const s = v / 20;
-    return s >= 86400 ? `${(s / 86400).toFixed(2)} d` : s >= 3600 ? `${(s / 3600).toFixed(2)} h` : s >= 60 ? `${(s / 60).toFixed(2)} min` : `${s.toFixed(1)} s`;
+    return s >= 86400 ? t('{0} d', (s / 86400).toFixed(2)) : s >= 3600 ? t('{0} h', (s / 3600).toFixed(2)) : s >= 60 ? t('{0} min', (s / 60).toFixed(2)) : t('{0} s', s.toFixed(1));
   }
-  if (kind === 'cm') return v >= 100000 ? `${(v / 100000).toFixed(2)} km` : `${(v / 100).toFixed(2)} m`;
-  if (kind === 'dmg') return `${(v / 20).toFixed(1)} hearts`;
+  if (kind === 'cm') return v >= 100000 ? t('{0} km', (v / 100000).toFixed(2)) : t('{0} m', (v / 100).toFixed(2));
+  if (kind === 'dmg') return t('{0} hearts', (v / 20).toFixed(1));
   return String(v);
 }

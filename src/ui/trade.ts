@@ -7,6 +7,7 @@ import { getItem, stack } from '../game/items';
 import { villagerTraded, LEVEL_NAMES, LEVEL_XP } from '../entity/villagers';
 import { heroDiscount } from '../game/raids';
 import { I } from '../game/items';
+import { t as tr } from '../i18n/i18n';
 
 export class TradeScreen extends ContainerScreen {
   title = 'Trading';
@@ -37,7 +38,7 @@ export class TradeScreen extends ContainerScreen {
   override drawBackground(ctx: Ctx, mx: number, my: number) {
     const trades = this.villager.ensureTrades();
     const v = this.villager, prof = v.profession || 'villager';
-    const name = `${prof[0].toUpperCase() + prof.slice(1)} - ${LEVEL_NAMES[v.level - 1] ?? ''}`;
+    const name = `${tr(prof[0].toUpperCase() + prof.slice(1).replace(/_/g, ' '))} - ${tr(LEVEL_NAMES[v.level - 1] ?? '')}`;
     this.gui.textCenter(ctx, name, this.left + 189, this.top + 6, '#404040', false);
     // the villager's experience toward its next level
     const lo = LEVEL_XP[v.level - 1] ?? 0, hi = LEVEL_XP[v.level] ?? lo;
@@ -66,9 +67,10 @@ export class TradeScreen extends ContainerScreen {
     ctx.fillStyle = '#8b8b8b';
     ctx.fillRect(this.left + 109, this.top + 27, 160, 58);
     const hovered = trades.findIndex((_, i) => { const r = this.offerRect(i); return mx >= r.x && my >= r.y && mx < r.x + r.w && my < r.y + r.h; });
-    const t = trades[hovered];
-    if (t) {
-      const lines = [`${t.cost[1]} x ${getItem(t.cost[0]).display}${t.cost2 ? ` + ${t.cost2[1]} x ${getItem(t.cost2[0]).display}` : ''}`, `-> ${t.result[1]} x ${getItem(t.result[0]).display}`, t.uses >= t.max ? '§cOut of stock' : this.affordable(t) ? '§aClick to trade' : '§7Not enough items'];
+    const o = trades[hovered];
+    if (o) {
+      const of = (n: number, id: number) => tr('{0} x {1}', n, tr(getItem(id).display));
+      const lines = [of(o.cost[1], o.cost[0]) + (o.cost2 ? ' + ' + of(o.cost2[1], o.cost2[0]) : ''), '-> ' + of(o.result[1], o.result[0]), o.uses >= o.max ? '§cOut of stock' : this.affordable(o) ? '§aClick to trade' : '§7Not enough items'];
       lines.forEach((l, i) => this.gui.text(ctx, l, this.left + 113, this.top + 32 + i * 11, '#FFFFFF'));
     } else this.gui.text(ctx, 'Pick a trade on the left', this.left + 113, this.top + 32, '#E0E0E0');
   }

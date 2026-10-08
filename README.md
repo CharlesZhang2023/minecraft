@@ -49,6 +49,18 @@ doesn't answer within 2.5 s and the server answers first (the CDN can't be reach
 from the game's own server. A file the CDN doesn't have is fetched from the server too, so the CDN can lag behind
 without breaking anything. Indexes and the game itself always come from the server.
 
+### Languages
+
+English, Simplified Chinese (简体中文) and Traditional Chinese (繁體中文): the globe button on the title screen, or
+Options > More... > Language (`?lang=zh_cn` in the address picks one too). The game's text is written in English and
+looked up in `src/i18n/zh_cn.ts` (screens, messages) and `src/i18n/zh_cn_names.ts` (blocks, items, mobs, biomes,
+effects, enchantments, advancements, with the Chinese Minecraft Wiki's standard names). Traditional Chinese is made
+from those with OpenCC (Taiwan's characters and wording, plus a few fixes): `npm run i18n` after changing them.
+Messages the host makes (chat, commands, deaths) travel untranslated, so every player reads them in their own
+language. Chinese is drawn with GNU Unifont glyphs like the real game's (tools/i18n, SIL Open Font License): each
+language's characters load with it, any other character's page of the font when it's first needed. Chinese input
+methods work in chat, signs, books and text fields.
+
 ## Agents (Claude Code, scripts)
 
 The dev server lets programs on this computer look at and change the running game: blocks, text blueprints,
@@ -228,7 +240,8 @@ src/render   renderer (shared culling, sorting, sky, clouds) with WebGPU and Web
 src/game     game loop (20 TPS), player, interaction, block ticks, items, recipes, audio synth, storage, portals
 src/entity   entity physics (vanilla collision), living entities, mobs & AI, pathfinding, spawning, boats
 src/sublevel sub-levels: shipyard plots, poses, Rapier physics, collision and riding in each one's frame, /sublevel
-src/ui       bitmap font, GUI primitives, isometric item icons, HUD, menus, containers, trading
+src/ui       bitmap font (+ Unifont glyphs), GUI primitives, isometric item icons, HUD, menus, containers, trading
+src/i18n     translations: the English -> language tables, loading a language, messages translated where they're shown
 src/mod      mod loader, registries and per-world id binding, events, mixins, mod API, repository client
 src/agent    the agent API inside the game tab (development only): blocks, blueprints, pictures, events, code
 src/packs    resource and shader packs: zip reading, the pack repository, texture names, applying them

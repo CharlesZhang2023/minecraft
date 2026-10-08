@@ -38,8 +38,10 @@ export class Input {
 
   constructor(public el: HTMLCanvasElement) {
     window.addEventListener('keydown', (e) => {
-      // text typed on a soft keyboard is delivered through the bridge in ui/touch.ts
-      if ((e.target as HTMLElement | null)?.id === 'hidden-input' && !['Escape', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.code)) return;
+      // text typed into the hidden box (soft keyboards; any keyboard while a screen takes text) is delivered through the
+      // bridge in ui/touch.ts; keys that don't type (Escape, arrows, Tab, Page Up...) still come this way
+      if ((e.target as HTMLElement | null)?.id === 'hidden-input' && !['Escape', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.code) &&
+        (e.key.length === 1 || ['Backspace', 'Enter', 'Process', 'Unidentified', 'Dead'].includes(e.key) || e.isComposing)) return;
       if (e.code === 'Tab' || e.code === 'F3' || e.code === 'F1' || e.code === 'F2' || e.code === 'F5' || e.code === 'Space' || (e.ctrlKey && e.code !== 'KeyV' && e.code !== 'KeyC')) e.preventDefault();
       if (e.code.startsWith('Arrow') || e.code === 'Slash' || e.code === 'Quote') e.preventDefault();
       const consumed = this.onKeyDown(e);

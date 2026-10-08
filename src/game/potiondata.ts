@@ -1,4 +1,5 @@
 // Status effects and potion types (pure data, shared by items, sprites and gameplay).
+import { tc } from '../i18n/i18n';
 
 export interface EffectDef { id: string; name: string; color: number; bad: boolean; instant?: boolean; icon: number }
 
@@ -119,9 +120,11 @@ export function formatDuration(ticks: number): string {
   const s = Math.floor(ticks / 20);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+/** An effect's name as shown, in the player's language. */
+export const effectName = (id: string) => tc('effect', EFFECTS[id]?.name ?? id);
 /** Tooltip line for one effect, e.g. "Speed II (1:30)". */
 export function effectLine([id, dur, amp]: EffectSpec, scale = 1): string {
   const e = EFFECTS[id];
   const lvl = amp > 0 ? ' ' + ROMAN[amp + 1] : '';
-  return (e.bad ? '§c' : '§9') + e.name + lvl + (e.instant ? '' : ` (${formatDuration(Math.floor(dur * scale))})`);
+  return (e.bad ? '§c' : '§9') + effectName(id) + lvl + (e.instant ? '' : ` (${formatDuration(Math.floor(dur * scale))})`);
 }

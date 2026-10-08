@@ -10,6 +10,7 @@ import type { Game } from '../game/game';
 
 const MODES = ['Impulse', 'Chain', 'Repeat'];
 export class CommandBlockScreen extends Screen {
+  override wantsText() { return true; }
   override twin = true;
   cmd = '';
   mode = 0;
@@ -39,7 +40,7 @@ export class CommandBlockScreen extends Screen {
   private buttons() {
     const L = this.left, T = this.top;
     return [
-      { id: 'mode', x: L, y: T + 70, w: 96, label: MODES[this.mode] },
+      { id: 'mode', x: L, y: T + 70, w: 96, label: 'mode:' + MODES[this.mode] },
       { id: 'cond', x: L + 102, y: T + 70, w: 96, label: this.conditional ? 'Conditional' : 'Unconditional' },
       { id: 'auto', x: L + 204, y: T + 70, w: 96, label: this.auto ? 'Always Active' : 'Needs Redstone' },
       { id: 'done', x: L + 50, y: T + 130, w: 200, label: 'Done' },

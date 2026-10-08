@@ -1,5 +1,6 @@
 // GUI drawing primitives in Minecraft's style. All coordinates are in GUI pixels.
 import { Font } from './font';
+import { localize } from '../i18n/i18n';
 import { getTexture } from '../render/textures';
 
 export type Ctx = CanvasRenderingContext2D;
@@ -94,12 +95,16 @@ export class Gui {
     ctx.imageSmoothingEnabled = false;
   }
 
-  text(ctx: Ctx, t: string, x: number, y: number, color = '#FFFFFF', shadow = true) {
-    this.font.draw(ctx, t, x, y, color, shadow);
+  // Labels drawn here are UI text: English ones are shown in the player's language (see i18n.ts). Players' own words
+  // (chat, signs, names) go straight to the font.
+  text(ctx: Ctx, s: string, x: number, y: number, color = '#FFFFFF', shadow = true) {
+    this.font.draw(ctx, localize(s), x, y, color, shadow);
   }
-  textCenter(ctx: Ctx, t: string, cx: number, y: number, color = '#FFFFFF', shadow = true) {
-    this.font.drawCentered(ctx, t, cx, y, color, shadow);
+  textCenter(ctx: Ctx, s: string, cx: number, y: number, color = '#FFFFFF', shadow = true) {
+    this.font.drawCentered(ctx, localize(s), cx, y, color, shadow);
   }
+  /** Width of a label as `text` draws it. */
+  textWidth(s: string) { return this.font.width(localize(s)); }
 
   /** The classic menu background: darkened dirt tiles. */
   dirtBackground(ctx: Ctx, x = 0, y = 0, w = this.w, h = this.h) {
@@ -170,6 +175,7 @@ export class Gui {
   /** Tooltip box like the item hover tooltip. */
   tooltip(ctx: Ctx, lines: string[], mx: number, my: number) {
     if (!lines.length) return;
+    lines = lines.map(localize);
     const w = Math.max(...lines.map((l) => this.font.width(l))) + 6;
     const h = lines.length * 10 + (lines.length > 1 ? 2 : 0) + 4;
     let x = mx + 12, y = my - 12;
@@ -192,11 +198,11 @@ export class Gui {
     ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
     ctx.fillStyle = '#000000';
     ctx.fillRect(x, y, w, h);
-    let t = value;
-    while (this.font.width(t) > w - 8 && t.length) t = t.slice(1);
+    let v = value;
+    while (this.font.width(v) > w - 8 && v.length) v = v.slice(1);
     if (!value && placeholder && !focused) this.text(ctx, placeholder, x + 4, y + (h - 8) / 2, '#707070', false);
-    this.text(ctx, t, x + 4, y + (h - 8) / 2, '#E0E0E0');
-    if (focused && Math.floor(performance.now() / 300) % 2 === 0) this.text(ctx, '_', x + 4 + this.font.width(t) + 1, y + (h - 8) / 2, '#E0E0E0');
+    this.font.draw(ctx, v, x + 4, y + (h - 8) / 2, '#E0E0E0');
+    if (focused && Math.floor(performance.now() / 300) % 2 === 0) this.font.draw(ctx, '_', x + 4 + this.font.width(v) + 1, y + (h - 8) / 2, '#E0E0E0');
   }
 
   slider(ctx: Ctx, x: number, y: number, w: number, h: number, label: string, frac: number, hover: boolean) {

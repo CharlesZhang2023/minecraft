@@ -10,6 +10,7 @@ import type { Player } from '../game/player';
 import type { TileEntity } from '../world/world';
 import { Events } from '../mod/events';
 import { formatBlock } from './blockspec';
+import { english } from '../i18n/i18n';
 
 export type P3 = [number, number, number];
 
@@ -220,7 +221,7 @@ export class Agent {
     const add = chat.add.bind(chat);
     chat.add = (text: string) => {
       add(text);
-      this.emit('chat', { text: String(text).replace(/§./g, '') });
+      this.emit('chat', { text: english(String(text)).replace(/§./g, '') });
     };
     const P = (p: Player) => this.game.server?.playerOf(p)?.name ?? 'player';
     const at = (c: { x: number; y: number; z: number }) => [c.x, c.y, c.z];

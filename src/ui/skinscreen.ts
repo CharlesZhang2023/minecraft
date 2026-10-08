@@ -4,6 +4,7 @@ import { Screen, Button } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { SKIN_PRESETS, presetSkin, skinFront, decodeSkin, importSkinFile } from '../render/skins';
+import { t } from '../i18n/i18n';
 
 interface Cell { id: string; x: number; y: number; w: number; h: number }
 
@@ -38,7 +39,7 @@ export class SkinScreen extends Screen {
     const gx = x0 + vw + 16, gy = top;
     this.cells = [...SKIN_PRESETS.map((p) => p.id), 'custom'].map((id, i) => ({ id, x: gx + (i % cols) * cw, y: gy + Math.floor(i / cols) * ch, w: cw - 2, h: ch - 2 }));
     const by = H - 50;
-    this.armsButton = new Button(this.ui, W / 2 + 5, by, 150, 20, () => `Arms: ${this.o.customSlim ? 'Slim' : 'Classic'}`, () => {
+    this.armsButton = new Button(this.ui, W / 2 + 5, by, 150, 20, () => t('Arms: {0}', t(this.o.customSlim ? 'Slim' : 'Classic')), () => {
       this.o.customSlim = !this.o.customSlim;
       this.thumbs.delete('custom');
       this.customFor = '';

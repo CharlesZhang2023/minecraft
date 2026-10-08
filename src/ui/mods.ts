@@ -8,6 +8,7 @@ import { CONFIGS, type ConfigEntry } from '../mod/config';
 import { CONFIG_SCREENS } from '../mod/hooks';
 import { modState } from '../mod/state';
 import { itemByName } from '../game/items';
+import { t } from '../i18n/i18n';
 
 const ROW = 36;
 
@@ -75,7 +76,7 @@ export class ModsScreen extends Screen {
   }
   private install() {
     const s = this.sel();
-    if (s?.repo) this.run(`Installing ${s.manifest.name ?? s.id}...`, () => mods.installFromRepo(s.repo!));
+    if (s?.repo) this.run(t('Installing {0}...', s.manifest.name ?? s.id), () => mods.installFromRepo(s.repo!));
   }
   private remove() {
     const s = this.sel();
@@ -96,7 +97,7 @@ export class ModsScreen extends Screen {
       const f = input.files?.[0];
       if (!f) return;
       if (f.size > 8 * 1024 * 1024) { this.status = '§cThat file is too big for a mod'; return; }
-      this.run(`Adding ${f.name}...`, async () => mods.installFile(await f.text()));
+      this.run(t('Adding {0}...', f.name), async () => mods.installFile(await f.text()));
     };
     input.click();
   }
@@ -149,21 +150,21 @@ export class ModsScreen extends Screen {
 
   private state(m: ModListing): string {
     if (m.error && m.installed) return '§c' + this.fit(m.error, 270);
-    if (!m.installed) return '§9Available in the mod repository';
-    const parts = [m.enabled ? '§aEnabled' : '§7Disabled'];
-    if (m.active) parts.push('§2in play');
-    else if (m.enabled && !m.loaded) parts.push('§7not loaded');
-    if (m.update) parts.push(`§eUpdate: ${m.repo!.version}`);
-    if (m.manifest.environment === 'client') parts.push('§3client only');
-    return parts.join('§7, ');
+    if (!m.installed) return '§9' + t('Available in the mod repository');
+    const parts = [m.enabled ? '§a' + t('Enabled') : '§7' + t('Disabled')];
+    if (m.active) parts.push('§2' + t('in play'));
+    else if (m.enabled && !m.loaded) parts.push('§7' + t('not loaded'));
+    if (m.update) parts.push('§e' + t('Update: {0}', m.repo!.version));
+    if (m.manifest.environment === 'client') parts.push('§3' + t('client only'));
+    return parts.join('§7' + t(', '));
   }
 
   private details(m: ModListing): string[] {
-    const out = [`§e${m.manifest.name ?? m.id}`, `§7id: ${m.id}, version ${m.manifest.version}`];
-    if (m.manifest.authors?.length) out.push(`§7by ${m.manifest.authors.join(', ')}`);
+    const out = [`§e${m.manifest.name ?? m.id}`, '§7' + t('id: {0}, version {1}', m.id, m.manifest.version)];
+    if (m.manifest.authors?.length) out.push('§7' + t('by {0}', m.manifest.authors.join(', ')));
     const deps = Object.entries(m.manifest.depends ?? {}).map(([d, r]) => `${d} ${r}`);
-    if (deps.length) out.push(`§7needs ${deps.join(', ')}`);
-    if (m.installed) out.push(`§7from ${({ repo: 'the mod repository', file: 'a file', host: 'a game host' } as const)[m.installed.source]}`);
+    if (deps.length) out.push('§7' + t('needs {0}', deps.join(', ')));
+    if (m.installed) out.push('§7' + t(({ repo: 'from the mod repository', file: 'from a file', host: 'from a game host' } as const)[m.installed.source]));
     for (const e of (modState.errors.get(m.id) ?? []).slice(-3)) out.push('§c' + this.fit(e, 300));
     return out;
   }
@@ -221,19 +222,19 @@ export class ModConfigScreen extends Screen {
     const label = e.label ?? k;
     switch (e.type) {
       case 'boolean':
-        return new Button(this.ui, x, y, 150, 20, () => `${label}: ${v[k] ? 'ON' : 'OFF'}`, () => { v[k] = !v[k]; save(); });
+        return new Button(this.ui, x, y, 150, 20, () => t('{0}: {1}', label, t(v[k] ? 'ON' : 'OFF')), () => { v[k] = !v[k]; save(); });
       case 'enum':
-        return new Button(this.ui, x, y, 150, 20, () => `${label}: ${e.labels?.[e.options.indexOf(v[k] as string)] ?? v[k]}`, () => {
+        return new Button(this.ui, x, y, 150, 20, () => t('{0}: {1}', label, e.labels?.[e.options.indexOf(v[k] as string)] ?? v[k]), () => {
           v[k] = e.options[(e.options.indexOf(v[k] as string) + 1) % e.options.length];
           save();
         });
       case 'number': {
         const steps = e.step ? Math.round((e.max - e.min) / e.step) : 0;
         const val = (f: number) => { const n = e.min + (e.max - e.min) * f; return e.step ? Math.round(n / e.step) * e.step : n; };
-        return new Slider(this.ui, x, y, 150, 20, ((v[k] as number) - e.min) / (e.max - e.min || 1), (f) => `${label}: ${+val(f).toFixed(2)}`, (f) => { v[k] = val(f); save(); }, steps);
+        return new Slider(this.ui, x, y, 150, 20, ((v[k] as number) - e.min) / (e.max - e.min || 1), (f) => t('{0}: {1}', label, +val(f).toFixed(2)), (f) => { v[k] = val(f); save(); }, steps);
       }
       case 'key':
-        return new Button(this.ui, x, y, 150, 20, () => `${label}: ${this.capture === k ? '> ? <' : String(v[k]).replace(/^Key|^Digit/, '')}`, () => { this.capture = k; });
+        return new Button(this.ui, x, y, 150, 20, () => t('{0}: {1}', label, this.capture === k ? '> ? <' : String(v[k]).replace(/^Key|^Digit/, '')), () => { this.capture = k; });
       default: {
         const t = new TextField(this.ui, x, y + 10, 150, 14, String(v[k] ?? ''), e.maxLength ?? 64);
         const char = t.char.bind(t), key = t.key.bind(t);
@@ -257,7 +258,7 @@ export class ModConfigScreen extends Screen {
   override render(ctx: Ctx, mx: number, my: number) {
     if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
     else this.gui.dirtBackground(ctx);
-    this.gui.textCenter(ctx, `${this.title} Settings`, this.gui.w / 2, 14, '#FFFFFF');
+    this.gui.textCenter(ctx, t('{0} Settings', this.title), this.gui.w / 2, 14, '#FFFFFF');
     const cfg = CONFIGS.get(this.mod);
     if (cfg) Object.entries(cfg.schema).forEach(([, e], i) => {
       if (e.type !== 'string') return;

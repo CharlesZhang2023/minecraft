@@ -13,6 +13,7 @@ import { LivingEntity } from '../entity/living';
 import { COMMANDS, ENTITIES } from '../mod/hooks';
 import { modState } from '../mod/state';
 import { sublevelCommand } from '../sublevel/commands';
+import { tm } from '../i18n/i18n';
 
 export class Commands {
   history: string[] = [];
@@ -33,7 +34,8 @@ export class Commands {
     const self: Entity | null = source ? source.self : p;
     // commands written without a target act on whoever runs them (a command block: the nearest player)
     const me: Entity | null = self ?? (source ? p : null);
-    const named = (e: Entity) => entityName(g, e);
+    // players by name; mobs by a name each reader sees in their language
+    const named = (e: Entity) => (g.playerOf(e) || (e as { customName?: string }).customName ? entityName(g, e) : tm(entityName(g, e)));
     /** Does this word name targets (a selector or a player's name)? */
     const isTarget = (s: string | undefined) => isSelector(s) || (!!s && g.players.some((q) => q.name.toLowerCase() === s.toLowerCase()));
     /** The entities a word picks (or whoever runs the command, when it's missing); players only unless `any`. */
@@ -43,7 +45,7 @@ export class Commands {
       if (!out.length) throw new Error(any ? 'No entity was found' : 'No player was found');
       return out;
     };
-    const many = (l: Entity[], what = 'players') => (l.length === 1 ? named(l[0]) : `${l.length} ${what}`);
+    const many = (l: Entity[], what = 'players') => (l.length === 1 ? named(l[0]) : tm(`{0} ${what}`, l.length));
     try {
       // mod commands (a mod may also take over a vanilla one)
       const mc = COMMANDS.get(cmd);
@@ -69,7 +71,8 @@ export class Commands {
           if (m === undefined) throw new Error('Unknown game mode');
           for (const e of who(args[1])) {
             (e as Player).setGameMode(m as GameMode);
-            out.push(e === self ? `Set own game mode to ${['Survival', 'Creative', 'Adventure', 'Spectator'][m]} Mode` : `Set ${named(e)}'s game mode to ${['Survival', 'Creative', 'Adventure', 'Spectator'][m]} Mode`);
+            const mode = tm(['Survival', 'Creative', 'Adventure', 'Spectator'][m] + ' Mode');
+            out.push(e === self ? tm('Set own game mode to {0}', mode) : tm("Set {0}'s game mode to {1}", named(e), mode));
           }
           break;
         }
@@ -79,16 +82,16 @@ export class Commands {
           if (isNaN(v)) throw new Error('Invalid time');
           if (args[0] === 'set') g.time = Math.floor(g.time / 24000) * 24000 + v;
           else if (args[0] === 'add') g.time += v;
-          else if (args[0] === 'query') { out.push(`The time is ${g.time % 24000}`); break; }
+          else if (args[0] === 'query') { out.push(tm('The time is {0}', g.time % 24000)); break; }
           else throw new Error('Usage: /time <set|add> <value>');
-          out.push(`Set the time to ${g.time % 24000}`);
+          out.push(tm('Set the time to {0}', g.time % 24000));
           break;
         }
         case 'weather': {
           const k = args[0] as 'clear' | 'rain' | 'thunder';
           if (!['clear', 'rain', 'thunder'].includes(k)) throw new Error('Usage: /weather <clear|rain|thunder>');
           g.weather!.setWeather(k, 6000 + Math.floor(Math.random() * 6000));
-          out.push(`Changing to ${k === 'clear' ? 'clear' : k === 'rain' ? 'rain' : 'rain and thunder'}`);
+          out.push(k === 'clear' ? 'Changing to clear weather' : k === 'rain' ? 'Changing to rain' : 'Changing to rain and thunder');
           break;
         }
         case 'tp':
@@ -111,7 +114,7 @@ export class Commands {
             e.vx = e.vy = e.vz = 0;
             (e as { fallDistance?: number }).fallDistance = 0;
           }
-          out.push(`Teleported ${many(movers, 'entities')} to ${to}`);
+          out.push(tm('Teleported {0} to {1}', many(movers, 'entities'), to));
           break;
         }
         case 'give': {
@@ -119,7 +122,7 @@ export class Commands {
           const to = who(isTarget(args[0]) ? args.shift() : undefined) as Player[];
           const name = (args[0] ?? '').replace('minecraft:', '');
           const def = itemByName(name) ?? [...ITEMS.values()].find((d) => d.display.toLowerCase() === name.replace(/_/g, ' ').toLowerCase());
-          if (!def) throw new Error(`Unknown item '${name}'`);
+          if (!def) throw new Error(tm("Unknown item '{0}'", name));
           const n = Math.max(1, Math.min(6400, parseInt(args[1] ?? '1') || 1));
           for (const q of to) {
             let left = n;
@@ -130,19 +133,19 @@ export class Commands {
               left -= k;
             }
           }
-          out.push(`Gave ${n} [${def.display}] to ${many(to)}`);
+          out.push(tm('Gave {0} [{1}] to {2}', n, tm(def.display), many(to)));
           g.audio.play('pop', null, 0.2, 2);
           break;
         }
         case 'summon': {
           const type = (args[0] ?? '').replace('minecraft:', '').toLowerCase();
           const modType = ENTITIES.get(type);
-          if (!MOB_TYPES[type] && !(modType && modState.active.has(modType.mod))) throw new Error(`Unknown entity '${type}'. Try: ${Object.keys(MOB_TYPES).join(', ')}`);
+          if (!MOB_TYPES[type] && !(modType && modState.active.has(modType.mod))) throw new Error(tm("Unknown entity '{0}'. Try: {1}", type, Object.keys(MOB_TYPES).join(', ')));
           // in front of a player who runs it; where a command block (or /execute positioned) is
           const d = self && !origin ? g.lookVec(self.yaw, 0) : { x: 0, z: 0 };
           const x = args[1] ? coord(args[1], o.x) : o.x + d.x * 2, y = args[2] ? coord(args[2], o.y) : o.y, z = args[3] ? coord(args[3], o.z) : o.z + d.z * 2;
           g.interact!.spawnMob(type, x, y, z);
-          out.push(`Summoned new ${type[0].toUpperCase() + type.slice(1)}`);
+          out.push(tm('Summoned new {0}', tm(type.split(/[_ ]/).map((w) => w[0].toUpperCase() + w.slice(1)).join(' '))));
           break;
         }
         case 'kill': {
@@ -151,7 +154,7 @@ export class Commands {
             if (e instanceof LivingEntity) e.damage(1000, 'kill');
             else e.removed = true;
           }
-          out.push(`Killed ${many(list, 'entities')}`);
+          out.push(tm('Killed {0}', many(list, 'entities')));
           break;
         }
         case 'difficulty': {
@@ -159,14 +162,14 @@ export class Commands {
           if (d === undefined) throw new Error('Unknown difficulty');
           g.options.difficulty = d;
           for (const sp of g.players) sp.entity.difficulty = d;
-          out.push(`The difficulty has been set to ${['Peaceful', 'Easy', 'Normal', 'Hard'][d]}`);
+          out.push(tm('The difficulty has been set to {0}', tm(['Peaceful', 'Easy', 'Normal', 'Hard'][d])));
           break;
         }
         case 'locate': {
           if ((args[0] ?? '').toLowerCase() !== 'stronghold') throw new Error('Usage: /locate stronghold');
           const seed = g.meta?.seed ?? 0;
           const s = nearestSite(seed, p.x, p.z);
-          out.push(`The nearest stronghold is at [${s.x}, ~, ${s.z}] (${Math.round(Math.hypot(s.x - p.x, s.z - p.z))} blocks away)`);
+          out.push(tm('The nearest stronghold is at [{0}, ~, {1}] ({2} blocks away)', s.x, s.z, Math.round(Math.hypot(s.x - p.x, s.z - p.z))));
           break;
         }
         case 'dimension': case 'dim': {
@@ -178,7 +181,7 @@ export class Commands {
           break;
         }
         case 'seed':
-          out.push(`Seed: [${g.meta?.seed}]`);
+          out.push(tm('Seed: [{0}]', String(g.meta?.seed)));
           break;
         case 'spawnpoint': {
           // /spawnpoint [targets] [x y z]
@@ -186,7 +189,7 @@ export class Commands {
           for (const q of list) {
             const at = args.length >= 4 ? [coord(args[1], o.x), coord(args[2], o.y), coord(args[3], o.z)] : [q.x, q.y, q.z];
             q.spawnX = Math.floor(at[0]); q.spawnY = Math.floor(at[1]); q.spawnZ = Math.floor(at[2]);
-            out.push(`Set ${named(q)}'s spawn point to ${q.spawnX}, ${q.spawnY}, ${q.spawnZ}`);
+            out.push(tm("Set {0}'s spawn point to {1}, {2}, {3}", named(q), q.spawnX, q.spawnY, q.spawnZ));
           }
           break;
         }
@@ -207,13 +210,13 @@ export class Commands {
           for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++)
             for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++)
               for (let z = Math.min(z0, z1); z <= Math.max(z0, z1); z++) g.world!.set(x, y, z, b.id);
-          out.push(`Successfully filled ${vol} blocks`);
+          out.push(tm('Successfully filled {0} blocks', vol));
           break;
         }
         case 'clear': {
           const list = who(args[0]) as Player[];
           for (const q of list) q.inventory.clear();
-          out.push(`Cleared the inventory of ${many(list)}`);
+          out.push(tm('Cleared the inventory of {0}', many(list)));
           break;
         }
         case 'xp':
@@ -229,7 +232,7 @@ export class Commands {
             else if (mode === 'set') { q.xpLevel = 0; q.xpProgress = 0; q.xpTotal = 0; q.addXp(n); }
             else q.addXp(n);
           }
-          out.push(`${mode === 'set' ? 'Set' : 'Gave'} ${n} experience ${levels ? 'levels' : 'points'} ${mode === 'set' ? 'on' : 'to'} ${many(list)}`);
+          out.push(tm(`${mode === 'set' ? 'Set' : 'Gave'} {0} experience ${levels ? 'levels' : 'points'} ${mode === 'set' ? 'on' : 'to'} {1}`, n, many(list)));
           break;
         }
         case 'gamerule': {
@@ -238,14 +241,14 @@ export class Commands {
             keepInventory: [() => g.keepInventory, (v) => (g.keepInventory = v)],
           };
           const name = Object.keys(rules).find((r) => r.toLowerCase() === (args[0] ?? '').toLowerCase());
-          if (!name) throw new Error(args[0] ? `Unknown gamerule '${args[0]}'. Try: ${Object.keys(rules).join(', ')}` : `Usage: /gamerule <${Object.keys(rules).join('|')}> [true|false]`);
+          if (!name) throw new Error(args[0] ? tm("Unknown gamerule '{0}'. Try: {1}", args[0], Object.keys(rules).join(', ')) : `Usage: /gamerule <${Object.keys(rules).join('|')}> [true|false]`);
           const [get, set] = rules[name];
           const v = (args[1] ?? '').toLowerCase();
-          if (!v) { out.push(`Gamerule ${name} is currently set to: ${get()}`); break; }
-          if (v !== 'true' && v !== 'false') throw new Error(`Invalid value '${args[1]}': expected true or false`);
+          if (!v) { out.push(tm('Gamerule {0} is currently set to: {1}', name, String(get()))); break; }
+          if (v !== 'true' && v !== 'false') throw new Error(tm("Invalid value '{0}': expected true or false", args[1]));
           set(v === 'true');
           // keepInventory tells everyone itself
-          if (name !== 'keepInventory') out.push(`Gamerule ${name} is now set to: ${get()}`);
+          if (name !== 'keepInventory') out.push(tm('Gamerule {0} is now set to: {1}', name, String(get())));
           break;
         }
         case 'effect': {
@@ -257,13 +260,13 @@ export class Commands {
           else { list = who(undefined, true) as LivingEntity[]; name = args[0] ?? ''; rest = args.slice(1); }
           name = name.replace(/minecraft:/g, '');
           if (!list.length) throw new Error('No entity was found');
-          if (name === 'clear') { for (const e of list) e.clearEffects(); out.push(`Took all effects from ${many(list, 'targets')}`); break; }
+          if (name === 'clear') { for (const e of list) e.clearEffects(); out.push(tm('Took all effects from {0}', many(list, 'targets'))); break; }
           if (name.startsWith('clear:')) name = name.slice(6), rest = ['0'];
-          if (!EFFECTS[name]) throw new Error(`Unknown effect: ${name}. Try: ${Object.keys(EFFECTS).join(', ')}`);
+          if (!EFFECTS[name]) throw new Error(tm('Unknown effect: {0}. Try: {1}', name, Object.keys(EFFECTS).join(', ')));
           const secs = rest[0] ? parseInt(rest[0]) : 30, amp = rest[1] ? parseInt(rest[1]) : 0;
-          if (secs <= 0) { for (const e of list) e.removeEffect(name); out.push(`Took ${EFFECTS[name].name} from ${many(list, 'targets')}`); break; }
+          if (secs <= 0) { for (const e of list) e.removeEffect(name); out.push(tm('Took {0} from {1}', tm('effect:' + EFFECTS[name].name), many(list, 'targets'))); break; }
           for (const e of list) e.addEffect(name, secs * 20, Math.max(0, Math.min(9, amp)));
-          out.push(`Given ${EFFECTS[name].name} (ID ${EFFECTS[name].icon + 1}) * ${amp} to ${many(list, 'targets')} for ${secs} seconds`);
+          out.push(tm('Given {0} (ID {1}) * {2} to {3} for {4} seconds', tm('effect:' + EFFECTS[name].name), EFFECTS[name].icon + 1, amp, many(list, 'targets'), secs));
           break;
         }
         case 'enchant': {
@@ -271,10 +274,10 @@ export class Commands {
           const target = who(isTarget(args[0]) ? args.shift() : undefined)[0] as Player;
           const held = target.inventory.held();
           const e = ENCH_BY_ID.get((args[0] ?? '').replace(/^minecraft:/, ''));
-          if (!held) throw new Error(`${named(target)} is not holding an item`);
-          if (!e) throw new Error(`Unknown enchantment. Try: ${[...ENCH_BY_ID.keys()].join(', ')}`);
+          if (!held) throw new Error(tm('{0} is not holding an item', named(target)));
+          if (!e) throw new Error(tm('Unknown enchantment. Try: {0}', [...ENCH_BY_ID.keys()].join(', ')));
           const lvl = Math.max(1, Math.min(e.max, parseInt(args[1] ?? '1') || 1));
-          if (!e.applies(held) && held.id !== I3.ENCHANTED_BOOK) throw new Error(`${e.name} cannot be applied to this item`);
+          if (!e.applies(held) && held.id !== I3.ENCHANTED_BOOK) throw new Error(tm('{0} cannot be applied to this item', tm('enchantment:' + e.name)));
           held.ench = { ...(held.ench ?? {}), [e.id]: lvl };
           out.push('Enchanting succeeded');
           break;
@@ -282,7 +285,7 @@ export class Commands {
         case 'heal': {
           const list = who(args[0]) as Player[];
           for (const q of list) { q.health = q.maxHealth; q.food = 20; q.saturation = 20; q.fireTicks = 0; }
-          out.push(`Healed ${many(list)}`);
+          out.push(tm('Healed {0}', many(list)));
           break;
         }
         case 'say': {
@@ -295,13 +298,13 @@ export class Commands {
           const list = who(args.shift());
           const text = args.map((a) => (isSelector(a) ? select(g, a, o, self).map(named).join(', ') : a)).join(' ');
           const from = source ? source.name : named(p);
-          for (const q of list) g.playerOf(q)?.send({ t: 'chat', msg: `§7§o${from} whispers to you: ${text}` });
-          out.push(`§7§oYou whisper to ${many(list)}: ${text}`);
+          for (const q of list) g.playerOf(q)?.send({ t: 'chat', msg: '§7§o' + tm('{0} whispers to you: {1}', from, text) });
+          out.push('§7§o' + tm('You whisper to {0}: {1}', many(list), text));
           break;
         }
         case 'testfor': {
           const list = who(args[0] ?? '@e', true);
-          out.push(`Found ${list.map(named).join(', ')}`);
+          out.push(tm('Found {0}', list.map(named).join(', ')));
           break;
         }
         case 'execute':
@@ -355,20 +358,20 @@ export class Commands {
           if (what === 'block') {
             const x = Math.floor(coord(args[i + 2] ?? '', o.x)), y = Math.floor(coord(args[i + 3] ?? '', o.y)), z = Math.floor(coord(args[i + 4] ?? '', o.z));
             const b = blockByName((args[i + 5] ?? '').replace('minecraft:', ''));
-            if (!b) throw new Error(`Unknown block '${args[i + 5] ?? ''}'`);
+            if (!b) throw new Error(tm("Unknown block '{0}'", args[i + 5] ?? ''));
             ok = g.world!.getId(x, y, z) === b.id;
             next = i + 6;
           } else if (what === 'entity') { ok = select(g, args[i + 2] ?? '', o, self).length > 0; next = i + 3; }
-          else throw new Error(`Unknown condition '${what ?? ''}' (block or entity)`);
+          else throw new Error(tm("Unknown condition '{0}' (block or entity)", what ?? ''));
           if (ok === want) step(next, self, o);
           return;
         }
-        default: throw new Error(`Unknown /execute subcommand '${word}'`);
+        default: throw new Error(tm("Unknown /execute subcommand '{0}'", word));
       }
     };
     step(0, self, origin);
     if (!ran && !passed) throw new Error('Test failed');
-    if (!ran) out.push(passed > 1 ? `Test passed, count: ${passed}` : 'Test passed');
+    if (!ran) out.push(passed > 1 ? tm('Test passed, count: {0}', passed) : 'Test passed');
     return out;
   }
 }

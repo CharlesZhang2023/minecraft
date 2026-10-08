@@ -7,6 +7,7 @@ import type { Ctx } from './gui';
 import type { ItemStack } from '../game/items';
 import { getItem, stack } from '../game/items';
 import { recipeList, ingredientMatches, type FlatRecipe } from '../game/recipes';
+import { t } from '../i18n/i18n';
 
 interface Host {
   left: number; top: number; pw: number;
@@ -157,9 +158,10 @@ function ingredientLines(r: FlatRecipe): string[] {
   const counts = new Map<string, number>();
   for (const c of r.cells) {
     if (c === undefined) continue;
-    const name = getItem(Array.isArray(c) ? c[0] : c).display + (Array.isArray(c) && c.length > 1 ? ' (any)' : '');
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    const name = getItem(Array.isArray(c) ? c[0] : c).display;
+    const shown = Array.isArray(c) && c.length > 1 ? t('{0} (any)', t(name)) : t(name);
+    counts.set(shown, (counts.get(shown) ?? 0) + 1);
   }
-  return [...counts].map(([n, k]) => `§7${k} x ${n}`);
+  return [...counts].map(([n, k]) => '§7' + t('{0} x {1}', k, n));
 }
 void stack;

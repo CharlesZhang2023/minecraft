@@ -473,6 +473,7 @@ export class SignScreen extends Screen {
     if (t?.type === 'sign' && t.lines) this.lines = t.lines.slice(0, 4).concat(['', '', '', '']).slice(0, 4);
   }
   override tick() { this.blink++; }
+  override wantsText() { return true; }
   override render(ctx: Ctx, mx: number, my: number) {
     const g = this.gui, cx = Math.floor(g.w / 2), top = Math.floor(g.h / 2) - 60;
     ctx.fillStyle = 'rgba(16,16,16,0.6)';
@@ -486,7 +487,7 @@ export class SignScreen extends Screen {
     ctx.fillRect(cx - 2, top + 52, 4, 30);
     this.lines.forEach((l, i) => {
       const cur = i === this.line && Math.floor(this.blink / 6) % 2 === 0;
-      g.textCenter(ctx, cur ? `> ${l} <` : l, cx, top + 4 + i * 12, '#000000', false);
+      g.font.drawCentered(ctx, cur ? `> ${l} <` : l, cx, top + 4 + i * 12, '#000000', false);
     });
     const b = this.done();
     const hover = mx >= b.x && my >= b.y && mx < b.x + b.w && my < b.y + b.h;

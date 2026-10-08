@@ -8,6 +8,7 @@ import { JIGSAW, JIGSAW_ORIENTS, STRUCTURE_BLOCK, FACING6, idOf, metaOf, pack } 
 import type { Game } from '../game/game';
 import { structureTile, saveStructure, loadStructure, detectStructure, MAX_SIZE, SAVE, LOAD, CORNER, DATA, type StructureTile } from '../game/structureblocks';
 import { jigsawTile, generateJigsaw, type JigsawTile } from '../game/jigsaw';
+import { t } from '../i18n/i18n';
 
 interface Field { id: string; x: number; y: number; w: number; get(): string; set(v: string): void; max: number; num?: boolean }
 interface Button { id: string; x: number; y: number; w: number; label: string }
@@ -16,6 +17,7 @@ interface Button { id: string; x: number; y: number; w: number; label: string }
 abstract class EditScreen extends Screen {
   override twin = true;
   focus = '';
+  override wantsText() { return !!this.focus; }
   cancelled = false;
   action = '';
   protected loaded = false;
@@ -118,21 +120,21 @@ export class StructureBlockScreen extends EditScreen {
   }
   buttons(): Button[] {
     const L = this.left, T = this.top, out: Button[] = [];
-    const onOff = (b: boolean) => (b ? 'ON' : 'OFF');
+    const onOff = (b: boolean) => t(b ? 'ON' : 'OFF');
     if (this.mode === SAVE) {
-      out.push({ id: 'entities', x: L, y: T + 88, w: 146, label: `Include entities: ${onOff(this.entities)}` });
+      out.push({ id: 'entities', x: L, y: T + 88, w: 146, label: t('Include entities: {0}', onOff(this.entities)) });
       out.push({ id: 'detect', x: L + 154, y: T + 88, w: 70, label: 'Detect' });
-      out.push({ id: 'box', x: L + 230, y: T + 88, w: 70, label: `Box: ${onOff(this.showBox)}` });
+      out.push({ id: 'box', x: L + 230, y: T + 88, w: 70, label: t('Box: {0}', onOff(this.showBox)) });
       out.push({ id: 'save', x: L + 102, y: T + 114, w: 96, label: 'SAVE' });
     }
     if (this.mode === LOAD) {
       [0, 90, 180, 270].forEach((deg, q) => out.push({ id: 'rot' + q, x: L + q * 37, y: T + 88, w: 35, label: this.rotation === q ? `[${deg}]` : String(deg) }));
       out.push({ id: 'mirror', x: L + 154, y: T + 88, w: 70, label: MIRROR_LABEL[this.mirror] });
-      out.push({ id: 'entities', x: L + 230, y: T + 88, w: 70, label: `Ents: ${onOff(this.entities)}` });
+      out.push({ id: 'entities', x: L + 230, y: T + 88, w: 70, label: t('Ents: {0}', onOff(this.entities)) });
       out.push({ id: 'load', x: L + 102, y: T + 114, w: 96, label: 'LOAD' });
-      out.push({ id: 'box', x: L + 204, y: T + 114, w: 96, label: `Box: ${onOff(this.showBox)}` });
+      out.push({ id: 'box', x: L + 204, y: T + 114, w: 96, label: t('Box: {0}', onOff(this.showBox)) });
     }
-    out.push({ id: 'mode', x: L, y: T + 114, w: 96, label: `Mode: ${MODE_LABEL[this.mode]}` });
+    out.push({ id: 'mode', x: L, y: T + 114, w: 96, label: t('Mode: {0}', t(MODE_LABEL[this.mode])) });
     out.push({ id: 'done', x: L + 46, y: T + 168, w: 100, label: 'Done' });
     out.push({ id: 'cancel', x: L + 154, y: T + 168, w: 100, label: 'Cancel' });
     return out;
@@ -155,7 +157,7 @@ export class StructureBlockScreen extends EditScreen {
     if (this.mode === SAVE || this.mode === LOAD) g.text(ctx, 'Relative Position', L, T + 48, '#a0a0a0');
     if (this.mode === SAVE) g.text(ctx, 'Structure Size', L + 154, T + 48, '#a0a0a0');
     if (this.mode === LOAD) { g.text(ctx, 'Integrity', L + 154, T + 48, '#a0a0a0'); g.text(ctx, 'Seed', L + 230, T + 48, '#a0a0a0'); }
-    const hint = this.mode === CORNER ? 'Marks a corner of a structure for its save block\'s Detect' : this.mode === DATA ? 'A marker for generated structures (an entity, or "chest <loot table>")' : this.mode === LOAD ? 'Load once to show the size, again to place it' : `Up to ${MAX_SIZE} blocks each way; structure voids are skipped`;
+    const hint = this.mode === CORNER ? 'Marks a corner of a structure for its save block\'s Detect' : this.mode === DATA ? 'A marker for generated structures (an entity, or "chest <loot table>")' : this.mode === LOAD ? 'Load once to show the size, again to place it' : t('Up to {0} blocks each way; structure voids are skipped', MAX_SIZE);
     g.text(ctx, hint, L, T + 144, '#808080');
     this.drawFields(ctx);
     this.drawButtons(ctx, mx, my);
@@ -209,10 +211,10 @@ export class JigsawScreen extends EditScreen {
   }
   buttons(): Button[] {
     const L = this.left, T = this.top, out: Button[] = [];
-    if (this.vertical()) out.push({ id: 'joint', x: L, y: T + 140, w: 96, label: `Joint: ${this.joint === 'aligned' ? 'Aligned' : 'Rollable'}` });
+    if (this.vertical()) out.push({ id: 'joint', x: L, y: T + 140, w: 96, label: t('Joint: {0}', t(this.joint === 'aligned' ? 'Aligned' : 'Rollable')) });
     out.push({ id: 'less', x: L + 102, y: T + 140, w: 20, label: '-' });
     out.push({ id: 'more', x: L + 180, y: T + 140, w: 20, label: '+' });
-    out.push({ id: 'keep', x: L + 204, y: T + 140, w: 96, label: `Keep Jigsaws: ${this.keep ? 'ON' : 'OFF'}` });
+    out.push({ id: 'keep', x: L + 204, y: T + 140, w: 96, label: t('Keep Jigsaws: {0}', t(this.keep ? 'ON' : 'OFF')) });
     out.push({ id: 'generate', x: L + 77, y: T + 166, w: 146, label: 'Generate' });
     out.push({ id: 'done', x: L + 46, y: T + 196, w: 100, label: 'Done' });
     out.push({ id: 'cancel', x: L + 154, y: T + 196, w: 100, label: 'Cancel' });
@@ -232,7 +234,7 @@ export class JigsawScreen extends EditScreen {
     ctx.fillRect(0, 0, g.w, g.h);
     g.textCenter(ctx, 'Jigsaw Block', L + 150, T - 10);
     ['Target Pool', 'Name', 'Target Name', 'Turns into'].forEach((s, i) => g.text(ctx, s, L, T + i * 34, '#a0a0a0'));
-    g.textCenter(ctx, `Levels: ${this.levels}`, L + 151, T + 146);
+    g.textCenter(ctx, t('Levels: {0}', this.levels), L + 151, T + 146);
     this.drawFields(ctx);
     this.drawButtons(ctx, mx, my);
     super.render(ctx, mx, my);

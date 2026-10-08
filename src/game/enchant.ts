@@ -2,6 +2,7 @@
 import { getItem, ItemStack, I, I2, I3, itemId } from './items';
 import { Random } from '../noise';
 import { B } from '../world/blocks';
+import { tc } from '../i18n/i18n';
 
 export interface EnchDef { id: string; name: string; max: number; weight: number; applies: (s: ItemStack) => boolean; group?: string; /** Only from loot, trading and fishing (never the table). */ treasure?: boolean; curse?: boolean }
 
@@ -65,7 +66,8 @@ export const ENCHANTS: EnchDef[] = [
 export const ENCH_BY_ID = new Map(ENCHANTS.map((e) => [e.id, e]));
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
-export const enchName = (id: string, lvl: number) => `${ENCH_BY_ID.get(id)?.name ?? id}${ENCH_BY_ID.get(id)?.max === 1 && lvl === 1 ? '' : ' ' + (ROMAN[lvl] ?? lvl)}`;
+/** An enchantment and its level as shown, in the player's language. */
+export const enchName = (id: string, lvl: number) => `${tc('enchantment', ENCH_BY_ID.get(id)?.name ?? id)}${ENCH_BY_ID.get(id)?.max === 1 && lvl === 1 ? '' : ' ' + (ROMAN[lvl] ?? lvl)}`;
 /** Effective level of an enchantment on a tool/armour piece (stored book enchantments don't count). */
 export const level = (s: ItemStack | null | undefined, id: string) => (s && s.id !== I3.ENCHANTED_BOOK ? s.ench?.[id] ?? 0 : 0);
 export const isBook = (s: ItemStack | null | undefined) => !!s && s.id === I3.ENCHANTED_BOOK;

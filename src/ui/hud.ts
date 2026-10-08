@@ -11,6 +11,7 @@ import { EnderDragon } from '../entity/dragon';
 import { LivingEntity } from '../entity/living';
 import { device } from '../game/device';
 import { touchHotbar } from './touchlayout';
+import { t } from '../i18n/i18n';
 
 export class Hud {
   private itemNameTimer = 0;
@@ -340,7 +341,7 @@ export class Hud {
     const raiders = g.entities.filter((e) => ((e as unknown as { raid?: number }).raid ?? 0) > 0 && !(e as LivingEntity).dead && e.distanceTo(p) < 96) as LivingEntity[];
     if (raiders.length) {
       const hp = raiders.reduce((a, e) => a + e.health, 0), max = raiders.reduce((a, e) => a + e.maxHealth, 0);
-      this.drawBossBar(ctx, `Raid - Raiders Remaining: ${raiders.length}`, hp / max, '#4a1010', '#c02020');
+      this.drawBossBar(ctx, t('Raid - Raiders Remaining: {0}', raiders.length), hp / max, '#4a1010', '#c02020');
       return;
     }
     if (g.world.dimension !== 'end') return;
@@ -448,7 +449,7 @@ export class Hud {
       if (l) {
         ctx.fillStyle = 'rgba(80,80,80,0.56)';
         ctx.fillRect(1, y - 1, gui.font.width(l) + 2, 9);
-        gui.text(ctx, l, 2, y, '#E0E0E0', false);
+        gui.font.draw(ctx, l, 2, y, '#E0E0E0', false);
       }
       y += 9;
     }
@@ -465,7 +466,7 @@ export class Hud {
         const w = gui.font.width(l);
         ctx.fillStyle = 'rgba(80,80,80,0.56)';
         ctx.fillRect(gui.w - w - 3, y - 1, w + 2, 9);
-        gui.text(ctx, l, gui.w - w - 2, y, '#E0E0E0', false);
+        gui.font.draw(ctx, l, gui.w - w - 2, y, '#E0E0E0', false);
       }
       y += 9;
     }

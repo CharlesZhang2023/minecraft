@@ -19,6 +19,7 @@ import { formatBlock, parseBlock } from './blockspec';
 import { findPath } from '../entity/path';
 import * as W from './world';
 import { METHODS, POS_HELP } from './spec';
+import { english } from '../i18n/i18n';
 
 type Params = Record<string, unknown>;
 type Method = (p: Params) => unknown;
@@ -179,7 +180,7 @@ export function makeMethods(a: Agent): Record<string, Method> {
       const run = (c: string) => {
         const line = String(c).trim();
         if (!line) return [];
-        return a.act(() => a.server.commands.run(line.startsWith('/') ? line : '/' + line)).map((l) => l.replace(/§./g, ''));
+        return a.act(() => a.server.commands.run(line.startsWith('/') ? line : '/' + line)).map((l) => english(l).replace(/§./g, ''));
       };
       if (Array.isArray(p.cmds)) return { output: (p.cmds as unknown[]).map((c) => run(String(c))) };
       if (p.cmd === undefined) throw new Error('Which command? (`cmd`)');

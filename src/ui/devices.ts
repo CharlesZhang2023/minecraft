@@ -7,6 +7,7 @@ import { ItemStack, getItem, I, I2, I3, stackName } from '../game/items';
 import { B, idOf, metaOf, pack } from '../world/blocks';
 import { BrewingTile, BREW_TIME, isBrewingIngredient, newBrewingTile } from '../game/brewing';
 import { anvilCombine, AnvilResult } from '../game/enchant';
+import { t } from '../i18n/i18n';
 
 type Items = (ItemStack | null)[];
 
@@ -58,7 +59,7 @@ export class DispenserScreen extends TileScreen {
   }
   override quickTargets(s: Slot): string[] { return s.group === 'disp' ? ['hotbar', 'main'] : ['disp']; }
   override drawForeground(ctx: Ctx) {
-    this.label(ctx, this.title, 88 - this.gui.font.width(this.title) / 2, 6);
+    this.label(ctx, this.title, 88 - this.gui.textWidth(this.title) / 2, 6);
     this.label(ctx, 'Inventory', 8, 72);
   }
 }
@@ -117,7 +118,7 @@ export class BrewingScreen extends TileScreen {
     if (!t.items[4]) { ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(L + 17, T + 17, 16, 16); }
   }
   override drawForeground(ctx: Ctx) {
-    this.label(ctx, 'Brewing Stand', 88 - this.gui.font.width('Brewing Stand') / 2, 6);
+    this.label(ctx, 'Brewing Stand', 88 - this.gui.textWidth('Brewing Stand') / 2, 6);
     this.label(ctx, 'Inventory', 8, 72);
   }
 }
@@ -228,12 +229,12 @@ export class AnvilScreen extends ContainerScreen {
     if (r) {
       const p = this.game.player!;
       const tooMuch = r.cost >= 40 && !p.creative;
-      const t = tooMuch ? 'Too Expensive!' : `Enchantment Cost: ${r.cost}`;
+      const cost = tooMuch ? t('Too Expensive!') : t('Enchantment Cost: {0}', r.cost);
       const ok = this.affordable();
-      const w = this.gui.font.width(t);
+      const w = this.gui.font.width(cost);
       ctx.fillStyle = 'rgba(0,0,0,0.3)';
       ctx.fillRect(this.left + 168 - w - 6, this.top + 67, w + 4, 11);
-      this.gui.text(ctx, t, this.left + 168 - w - 4, this.top + 69, ok ? '#80FF20' : '#FF6060');
+      this.gui.text(ctx, cost, this.left + 168 - w - 4, this.top + 69, ok ? '#80FF20' : '#FF6060');
     }
   }
   override onClose() {

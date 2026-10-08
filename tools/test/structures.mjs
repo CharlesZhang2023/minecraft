@@ -4,7 +4,7 @@
 //   of pieces from a pool; the debug stick picking and stepping a block's properties; a comparator reading the
 //   rotation of an item in a frame on the far side of a block.
 //   node tools/test/structures.mjs
-import { openWorld, wait } from './browser.mjs';
+import { openWorld, wait, english } from './browser.mjs';
 
 const t = await openWorld({ seed: 31, mode: 1 });
 const fails = [];
@@ -182,7 +182,7 @@ const jg = await t.page.evaluate(async () => {
     return { msg, r1: name(bx + 3, by, bz), r2: name(bx + 6, by, bz), r3: name(bx + 9, by, bz), r4: name(bx + 12, by, bz), joint: name(bx + 3, by + 1, bz + 1), pool: jw.poolTemplates(g, 'test:rooms') };
   });
 });
-ok(/Generated 3 pieces/.test(jg.msg), `a jigsaw generates 3 levels of pieces from its pool (${jg.msg}; pool ${JSON.stringify(jg.pool)})`);
+ok(/Generated 3 pieces/.test(english(jg.msg)), `a jigsaw generates 3 levels of pieces from its pool (${jg.msg}; pool ${JSON.stringify(jg.pool)})`);
 ok(jg.r1 === 'bricks' && jg.r2 === 'bricks' && jg.r3 === 'bricks' && jg.r4 === 'air', `joined end to end, no further (${jg.r1} ${jg.r2} ${jg.r3} ${jg.r4})`);
 ok(jg.joint === 'glowstone', `joined jigsaws turn into their final state (${jg.joint})`);
 
@@ -220,7 +220,8 @@ const ds = await t.page.evaluate(async () => {
 ok(ds.a === 'oak_stairs[facing=east]', `the debug stick steps the picked property (${ds.a})`);
 ok(ds.b === 'oak_stairs[facing=east,half=top]', `attacking picks the next one (${ds.b})`);
 ok(ds.c === 'wheat[age=7]', `sneaking steps back, round to the last value (${ds.c})`);
-ok(ds.bars.some((m) => m === 'selected "half" (bottom)') && ds.bars.some((m) => m === '"facing" to east') && ds.bars.at(-1) === '"minecraft:stone" has no properties', `it says what it did (${JSON.stringify(ds.bars)})`);
+const bars = ds.bars.map(english);
+ok(bars.some((m) => m === 'selected "half" (bottom)') && bars.some((m) => m === '"facing" to east') && bars.at(-1) === '"minecraft:stone" has no properties', `it says what it did (${JSON.stringify(bars)})`);
 
 // ---------------------------------------------------------------- item frames into comparators
 const fr = await t.page.evaluate(async () => {

@@ -13,6 +13,7 @@ import { Random } from '../noise';
 import { chestLoot } from './loot';
 import { getTemplate, templateNames, normName, cellTransform, blockTransform, placeTemplate, type Template, type StructureTile } from './structureblocks';
 import type { World } from '../world/world';
+import { tm } from '../i18n/i18n';
 
 export interface JigsawTile { type: 'jigsaw'; name: string; target: string; pool: string; final: string; joint: 'rollable' | 'aligned' }
 export const jigsawTile = (w: World, x: number, y: number, z: number): JigsawTile => {
@@ -113,8 +114,8 @@ export function generateJigsaw(g: Game, x: number, y: number, z: number, levels:
   }
   if (!keepJigsaws) for (const [fx, fy, fz, fv] of finals) if (w.getId(fx, fy, fz) === JIGSAW) w.set(fx, fy, fz, fv);
   for (const [mx, my, mz, text] of markers) dataMarker(g, mx, my, mz, text);
-  if (!pieces) throw new Error(poolTemplates(g, jigsawTile(w, x, y, z).pool).length ? 'No piece fits here' : `The pool '${normName(jigsawTile(w, x, y, z).pool)}' has no structures`);
-  return `Generated ${pieces} piece${pieces === 1 ? '' : 's'}`;
+  if (!pieces) throw new Error(poolTemplates(g, jigsawTile(w, x, y, z).pool).length ? 'No piece fits here' : tm("The pool '{0}' has no structures", normName(jigsawTile(w, x, y, z).pool)));
+  return tm(pieces === 1 ? 'Generated {0} piece' : 'Generated {0} pieces', pieces);
 }
 
 /** A data marker in a generated piece: an entity, or a chest of loot. */

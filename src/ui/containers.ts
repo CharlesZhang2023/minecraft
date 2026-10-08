@@ -21,6 +21,7 @@ import type { Horse } from '../entity/horse';
 import { CREATIVE_TABS, MOD_NAMES } from '../mod/hooks';
 import { isActive, guard } from '../mod/state';
 import { Events } from '../mod/events';
+import { t, localize } from '../i18n/i18n';
 
 export interface Slot {
   x: number; y: number;
@@ -409,38 +410,39 @@ export function tooltipLines(s: ItemStack): string[] {
   }
   if (s.ench) for (const [k, v] of Object.entries(s.ench)) lines.push('§7' + enchName(k, v));
   if (typeof s.tag?.color === 'number') lines.push('§7Dyed');
-  if (s.id === I7.SHIELD && s.tag?.shieldBase !== undefined) lines.push(`§7${DYE_COLORS[s.tag.shieldBase as number].split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')}`);
-  for (const l of s.banner ?? []) lines.push(`§7${DYE_COLORS[l.c].split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')} ${PATTERNS[l.p]?.[0] ?? l.p}`);
+  const colour = (c: number) => DYE_COLORS[c].split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+  if (s.id === I7.SHIELD && s.tag?.shieldBase !== undefined) lines.push('§7' + t(colour(s.tag.shieldBase as number)));
+  for (const l of s.banner ?? []) lines.push('§7' + t('{0} {1}', t(colour(l.c)), t(PATTERNS[l.p]?.[0] ?? l.p)));
   if (s.id === I9.OMINOUS_BANNER) lines[0] = '§6§o' + (s.name ?? 'Ominous Banner');
   if (s.id === I11.WRITTEN_BOOK) {
-    const t = s.tag as { title?: string; author?: string; generation?: number } | undefined;
-    if (t?.title) lines[0] = (s.name ?? t.title);
-    lines.push(`§7by ${t?.author ?? 'Unknown'}`, `§7${GENERATIONS[t?.generation ?? 0] ?? 'Tattered'}`);
+    const b = s.tag as { title?: string; author?: string; generation?: number } | undefined;
+    if (b?.title) lines[0] = (s.name ?? b.title);
+    lines.push('§7' + t('by {0}', b?.author ?? t('Unknown')), '§7' + t(GENERATIONS[b?.generation ?? 0] ?? 'Tattered'));
   }
   if (mapIdOf(s) !== null) {
     const d = (globalThis as { game?: { maps?: Map<number, MapData> } }).game?.maps?.get(mapIdOf(s)!);
-    lines.push(`§7Id #${mapIdOf(s)}`);
-    if (d) lines.push(`§7Scaling at 1:${1 << d.scale}`, ...(d.locked ? ['§7Locked'] : []));
+    lines.push('§7' + t('Id #{0}', mapIdOf(s)));
+    if (d) lines.push('§7' + t('Scaling at 1:{0}', 1 << d.scale), ...(d.locked ? ['§7Locked'] : []));
   }
   if (s.box) {
     const inside = s.box.filter((x): x is ItemStack => !!x);
-    for (const it of inside.slice(0, 5)) lines.push(`§7${getItem(it.id).display} x${it.count}`);
-    if (inside.length > 5) lines.push(`§7§oand ${inside.length - 5} more...`);
+    for (const it of inside.slice(0, 5)) lines.push('§7' + t('{0} x{1}', t(it.name ?? getItem(it.id).display), it.count));
+    if (inside.length > 5) lines.push('§7§o' + t('and {0} more...', inside.length - 5));
   }
-  if (s.id === I6.FIREWORK_ROCKET) lines.push(`§7Flight Duration: ${s.fw?.flight ?? 1}`);
+  if (s.id === I6.FIREWORK_ROCKET) lines.push('§7' + t('Flight Duration: {0}', s.fw?.flight ?? 1));
   for (const e of s.fw?.ex ?? []) {
     const pad = s.id === I6.FIREWORK_ROCKET ? '  ' : '';
-    const names = (cs: number[]) => cs.map((c) => FIREWORK_DYES.find((d) => d.col === c)?.name ?? 'Custom').join(', ');
-    lines.push(`§7${pad}${FIREWORK_SHAPES[e.shape] ?? 'Unknown Shape'}`);
+    const names = (cs: number[]) => cs.map((c) => t(FIREWORK_DYES.find((d) => d.col === c)?.name ?? 'Custom')).join(t(', '));
+    lines.push(`§7${pad}${t(FIREWORK_SHAPES[e.shape] ?? 'Unknown Shape')}`);
     if (e.colors.length) lines.push(`§7${pad}  ${names(e.colors)}`);
-    if (e.fade?.length) lines.push(`§7${pad}  Fade to ${names(e.fade)}`);
-    if (e.trail) lines.push(`§7${pad}  Trail`);
-    if (e.twinkle) lines.push(`§7${pad}  Twinkle`);
+    if (e.fade?.length) lines.push(`§7${pad}  ${t('Fade to {0}', names(e.fade))}`);
+    if (e.trail) lines.push(`§7${pad}  ${t('Trail')}`);
+    if (e.twinkle) lines.push(`§7${pad}  ${t('Twinkle')}`);
   }
-  if (d.tool?.type === 'sword' || d.attack) lines.push('', `§9+${d.attack ?? 1} Attack Damage`);
-  if (d.armor?.points) lines.push('', `§9+${d.armor.points} Armor`);
-  if (d.durability && s.damage) lines.push(`Durability: ${d.durability - s.damage} / ${d.durability}`);
-  if (d.food) lines.push(`§7Restores ${d.food.hunger / 2} hunger`);
+  if (d.tool?.type === 'sword' || d.attack) lines.push('', '§9' + t('+{0} Attack Damage', d.attack ?? 1));
+  if (d.armor?.points) lines.push('', '§9' + t('+{0} Armor', d.armor.points));
+  if (d.durability && s.damage) lines.push(t('Durability: {0} / {1}', d.durability - s.damage, d.durability));
+  if (d.food) lines.push('§7' + t('Restores {0} hunger', d.food.hunger / 2));
   // mods: the item's own lines, listeners, and whose it is (like Mod Menu)
   if (d.behavior?.tooltip) guard(d.mod, 'tooltip', () => d.behavior!.tooltip!(s, lines), undefined);
   if (Events.tooltip.any) Events.tooltip.fire({ stack: s, lines });
@@ -625,7 +627,7 @@ export class FurnaceScreen extends ContainerScreen {
   }
   override drawForeground(ctx: Ctx) {
     const name = this.tile.kind === 'smoker' ? 'Smoker' : this.tile.kind === 'blast' ? 'Blast Furnace' : 'Furnace';
-    this.label(ctx, name, 88 - this.gui.font.width(name) / 2, 6);
+    this.label(ctx, name, 88 - this.gui.textWidth(name) / 2, 6);
     this.label(ctx, 'Inventory', 8, 72);
   }
 }
@@ -675,7 +677,7 @@ export class ChestScreen extends ContainerScreen {
     const w = this.game.world!, p = this.partner!;
     const first = p[0] + p[2] < this.x + this.z ? p : [this.x, this.y, this.z];
     const second = first === p ? [this.x, this.y, this.z] : p;
-    this.title = 'Large ' + (BLOCKS[w.getId(this.x, this.y, this.z)]?.display ?? 'Chest');
+    this.title = t('Large {0}', t(BLOCKS[w.getId(this.x, this.y, this.z)]?.display ?? 'Chest'));
     [first, second].forEach(([x, y, z], half) => {
       const items = this.tileAt(x, y, z).items;
       for (let r = 0; r < 3; r++) for (let c = 0; c < 9; c++) {
@@ -938,7 +940,9 @@ export class CreativeScreen extends ContainerScreen {
   refreshItems() {
     const q = this.search?.value.toLowerCase() ?? '';
     const tab = this.pageTabs[this.tab] ?? TABS[SEARCH];
-    this.items = tab.items().filter((st) => this.tab !== SEARCH || !q || tooltipLines(st).join(' ').replace(/§./g, '').toLowerCase().includes(q));
+    // names match in English and in the player's language
+    const text = (st: ItemStack) => { const l = tooltipLines(st); return [...l, ...l.map(localize)].join(' ').replace(/§./g, '').toLowerCase(); };
+    this.items = tab.items().filter((st) => this.tab !== SEARCH || !q || text(st).includes(q));
     this.scroll = Math.min(this.scroll, this.maxScroll());
   }
   maxScroll() {

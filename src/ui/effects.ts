@@ -2,7 +2,7 @@
 import { device } from '../game/device';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
-import { EFFECTS, ROMAN, formatDuration } from '../game/potiondata';
+import { EFFECTS, ROMAN, formatDuration, effectName } from '../game/potiondata';
 import type { ActiveEffect } from '../entity/living';
 
 // 9x9 glyphs: x = effect colour, h = highlight, o = outline, w = white, k = black
@@ -101,7 +101,7 @@ export function drawEffectList(ctx: Ctx, ui: UI, x: number, y: number) {
     gui.panel(ctx, x, yy, 120, 32);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(effectIcon(e.id), x + 6, yy + 7, 18, 18);
-    const name = EFFECTS[e.id].name + (e.amp > 0 ? ' ' + (ROMAN[e.amp + 1] ?? e.amp + 1) : '');
+    const name = effectName(e.id) + (e.amp > 0 ? ' ' + (ROMAN[e.amp + 1] ?? e.amp + 1) : '');
     gui.text(ctx, name, x + 28, yy + 6, '#FFFFFF');
     gui.text(ctx, e.dur > 32767 ? '**:**' : formatDuration(e.dur), x + 28, yy + 16, '#7F7F7F');
   });

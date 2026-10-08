@@ -47,7 +47,7 @@ self.addEventListener('fetch', (e) => {
     const hit = await cache.match(req, { ignoreVary: true, ignoreSearch: true });
     if (hit) return hit;
     const r = await fetch(req);
-    if (r.ok && url.pathname.includes('/assets/')) cache.put(req, r.clone());
+    if (r.ok && (url.pathname.includes('/assets/') || url.pathname.includes('/font/'))) cache.put(req, r.clone());
     return r;
   })());
 });

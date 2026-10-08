@@ -5,6 +5,7 @@ import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { ADVANCEMENTS, TABS, layout, type Adv, type AdvTab } from '../game/advancements';
 import { itemByName, stack, I } from '../game/items';
+import { t } from '../i18n/i18n';
 
 const CW = 28, CH = 26;
 export class AdvancementsScreen extends Screen {
@@ -35,7 +36,7 @@ export class AdvancementsScreen extends Screen {
     const name = TABS.find((t) => t[0] === this.tab)![1];
     const list = ADVANCEMENTS.filter((a) => a.tab === this.tab);
     const done = list.filter((a) => this.earned(a)).length;
-    g.text(ctx, `${name}  §7${done}/${list.length}`, b.x, b.y + b.h + 5, '#404040', false);
+    g.text(ctx, `${t(name)}  §7${done}/${list.length}`, b.x, b.y + b.h + 5, '#404040', false);
     const pos = layout(this.tab);
     const [px, py] = this.pan[this.tab] ?? [8, 8];
     const at = (id: string): [number, number] => { const p = pos.get(id)!; return [b.x + px + p[0] * CW, b.y + py + p[1] * CH]; };

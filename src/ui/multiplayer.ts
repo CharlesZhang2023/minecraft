@@ -9,16 +9,11 @@ import { hostPairing, joinPairing } from '../net/pair';
 import { qrCanvas, QrScanner } from '../net/qr';
 import { cleanName } from '../net/protocol';
 import { saveOptions } from '../game/options';
+import { t, localize } from '../i18n/i18n';
+import type { Font } from './font';
 
-const wrap = (s: string, n = 52) => {
-  const out: string[] = [];
-  let line = '';
-  for (const w of s.split(' ')) {
-    if ((line + ' ' + w).trim().length > n) { out.push(line); line = w; } else line = (line + ' ' + w).trim();
-  }
-  if (line) out.push(line);
-  return out;
-};
+/** A message (perhaps an error's) in lines of about n characters, in the player's language. */
+const wrap = (font: Font, s: string, n = 52) => font.wrap(localize(s), n * 6);
 
 // ------------------------------------------------------------------ joining
 export class MultiplayerScreen extends Screen {
@@ -51,7 +46,7 @@ export class MultiplayerScreen extends Screen {
     this.saveName();
     const c = cleanCode(code);
     if (c.length < 4) return;
-    this.ui.open(new ConnectingScreen(this.ui, this, `Joining ${c}`, (status) => joinRoom(c, status)));
+    this.ui.open(new ConnectingScreen(this.ui, this, t('Joining {0}', c), (status) => joinRoom(c, status)));
   }
 
   override tick() {
@@ -112,7 +107,7 @@ export class ConnectingScreen extends Screen {
     const W = this.gui.w, H = this.gui.h;
     this.gui.dirtBackground(ctx);
     this.gui.textCenter(ctx, this.title, W / 2, H / 2 - 30, '#FFFFFF');
-    if (this.error) wrap(this.error).forEach((l, i) => this.gui.textCenter(ctx, l, W / 2, H / 2 - 10 + i * 11, '#FF8080'));
+    if (this.error) wrap(this.gui.font, this.error).forEach((l, i) => this.gui.textCenter(ctx, l, W / 2, H / 2 - 10 + i * 11, '#FF8080'));
     else this.gui.textCenter(ctx, this.status, W / 2, H / 2 - 10, '#A0A0A0');
     super.render(ctx, mx, my);
   }
@@ -193,7 +188,7 @@ abstract class PairingScreen extends Screen {
     ctx.strokeRect(x + size * 0.15, y + size * 0.15, size * 0.7, size * 0.7);
   }
   protected drawMessage(ctx: Ctx, cx: number, y: number) {
-    if (this.message) wrap(this.message, 40).forEach((l, i) => this.gui.textCenter(ctx, l, cx, y + i * 10, this.bad ? '#FF8080' : '#80FF80'));
+    if (this.message) wrap(this.gui.font, this.message, 40).forEach((l, i) => this.gui.textCenter(ctx, l, cx, y + i * 10, this.bad ? '#FF8080' : '#80FF80'));
   }
   override key(e: KeyboardEvent) {
     if (e.code === 'Enter' && this.paste?.focused) { this.read(this.paste.value); return true; }
@@ -381,11 +376,11 @@ export class HostScreen extends Screen {
       this.gui.textCenter(ctx, 'or find this world there if on the same Wi-Fi.', W / 2, 62, '#A0A0A0');
     } else {
       this.gui.textCenter(ctx, this.online === false ? 'Online play is not set up on this site' : 'Get a code friends can join with', W / 2, 30, '#A0A0A0');
-      if (this.error) wrap(this.error).forEach((l, i) => this.gui.textCenter(ctx, l, W / 2, 40 + i * 10, '#FF8080'));
+      if (this.error) wrap(this.gui.font, this.error).forEach((l, i) => this.gui.textCenter(ctx, l, W / 2, 40 + i * 10, '#FF8080'));
     }
     const guests = g.guests();
     this.gui.text(ctx, guests.length ? 'Playing here:' : 'Nobody else is here yet', x, 126, '#A0A0A0');
-    guests.slice(0, 5).forEach((sp, i) => this.gui.text(ctx, sp.name, x + 4, 139 + i * 16, '#FFFFFF'));
+    guests.slice(0, 5).forEach((sp, i) => this.gui.font.draw(ctx, sp.name, x + 4, 139 + i * 16, '#FFFFFF'));
     super.render(ctx, mx, my);
   }
 }

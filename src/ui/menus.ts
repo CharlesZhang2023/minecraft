@@ -14,6 +14,9 @@ import { PackScreen } from './packs';
 import { AgentScreen } from './agentscreen';
 import { AdvancementsScreen } from './advancements';
 import { StatsScreen } from './stats';
+import { t, LANGUAGES, language } from '../i18n/i18n';
+import { setLanguage } from '../i18n/languages';
+import { loadGlyphSet } from './unifont';
 
 const SPLASHES = [
   'Now in JavaScript!', 'Also try Terraria!', '100% procedural!', 'Punching trees!', 'Blocky!', 'Now with WebGPU!', 'Now with caves!',
@@ -85,6 +88,17 @@ function makeLogo(): HTMLCanvasElement {
 }
 
 // ------------------------------------------------------------------ title
+const GLOBE = [
+  '...####...',
+  '.##.##.##.',
+  '.#..#..#..',
+  '##########',
+  '#...#...##',
+  '##########',
+  '.#..#..#..',
+  '.##.##.##.',
+  '...####...',
+];
 const HANGER = [
   '.....##.....',
   '....#..#....',
@@ -123,8 +137,9 @@ export class TitleScreen extends Screen {
       new Button(this.ui, x + 102, y + 48, 98, 20, 'Mods', () => openMods(this.ui, this)),
       new Button(this.ui, x, y + 84, 98, 20, 'Options...', () => this.ui.open(new OptionsScreen(this.ui, this))),
       new Button(this.ui, x + 102, y + 84, 98, 20, 'Controls', () => this.ui.open(new ControlsScreen(this.ui, this))),
+      new IconButton(this.ui, x - 24, y + 84, 20, 20, GLOBE, () => this.ui.open(new LanguageScreen(this.ui, this))),
       // the Pocket Edition's coat hanger: skins
-      new IconButton(this.ui, x - 24, y + 84, 20, 20, HANGER, () => this.ui.open(new SkinScreen(this.ui, this))),
+      new IconButton(this.ui, x + 204, y + 84, 20, 20, HANGER, () => this.ui.open(new SkinScreen(this.ui, this))),
     ];
     if (!this.game.world) startPanorama(this.ui);
   }
@@ -143,15 +158,15 @@ export class TitleScreen extends Screen {
     const lw = 274, lh = Math.round((logoCanvas.height / logoCanvas.width) * lw);
     ctx.drawImage(logoCanvas, Math.round(W / 2 - lw / 2), 30, lw, lh);
     ctx.save();
-    const t = (performance.now() - this.started) / 1000;
-    const s = (1.8 - Math.abs(Math.sin((t % 1) * Math.PI * 2) * 0.1)) * 100 / (this.gui.font.width(this.splash) + 32);
+    const secs = (performance.now() - this.started) / 1000;
+    const s = (1.8 - Math.abs(Math.sin((secs % 1) * Math.PI * 2) * 0.1)) * 100 / (this.gui.font.width(this.splash) + 32);
     ctx.translate(W / 2 + 110, 30 + lh - 8);
     ctx.rotate(-20 * Math.PI / 180);
     ctx.scale(s, s);
     this.gui.font.drawCentered(ctx, this.splash, 0, -4, '#FFFF00');
     ctx.restore();
     this.gui.text(ctx, 'Minecraft Web Edition 1.0', 2, H - 10, '#FFFFFF');
-    const note = 'Fan-made recreation. Not an official Minecraft product.';
+    const note = t('Fan-made recreation. Not an official Minecraft product.');
     this.gui.text(ctx, note, W - this.gui.font.width(note) - 2, H - 10, '#FFFFFF');
     super.render(ctx, mx, my);
     if (!this.game.loadProgress() && this.game.world) this.gui.textCenter(ctx, '', W / 2, H - 30);
@@ -175,7 +190,7 @@ async function startPanorama(ui: UI) {
 async function quickPlay(ui: UI) {
   const now = Date.now();
   const seed = (Math.random() * 2 ** 31) | 0;
-  const meta: WorldMeta = { id: 'w' + now.toString(36), name: 'New World', seed, seedText: String(seed), gameMode: 0, hardcore: false, created: now, lastPlayed: now, time: 0, generatorVersion: GENERATOR_VERSION };
+  const meta: WorldMeta = { id: 'w' + now.toString(36), name: t('New World'), seed, seedText: String(seed), gameMode: 0, hardcore: false, created: now, lastPlayed: now, time: 0, generatorVersion: GENERATOR_VERSION };
   await Storage.saveWorld(meta);
   await playWorld(ui, meta);
 }
@@ -189,7 +204,7 @@ export async function playWorld(ui: UI, meta: WorldMeta) {
   // a world saved with mods that aren't installed / enabled now: their blocks and items would show as missing
   const missing = session.missingFor(meta);
   if (missing.length && !(await new Promise<boolean>((resolve) => ui.open(new ConfirmScreen(ui, 'This world was played with mods you don\'t have enabled:',
-    `${missing.join(', ')}. Their blocks and items will show as missing until you enable them again.`, 'Play Anyway', resolve))))) {
+    t('{0}. Their blocks and items will show as missing until you enable them again.', missing.join(', ')), 'Play Anyway', resolve))))) {
     ui.open(new SelectWorldScreen(ui));
     return;
   }
@@ -215,7 +230,7 @@ export class SelectWorldScreen extends Screen {
     this.play = new Button(this.ui, W / 2 - 154, H - 52, 150, 20, 'Play Selected World', () => this.playSel());
     this.del = new Button(this.ui, W / 2 - 154, H - 28, 72, 20, 'Delete', () => {
       const w = this.worlds[this.selected];
-      if (w) this.ui.open(new ConfirmScreen(this.ui, `Are you sure you want to delete this world?`, `'${w.name}' will be lost forever! (A long time!)`, 'Delete', async (ok) => {
+      if (w) this.ui.open(new ConfirmScreen(this.ui, `Are you sure you want to delete this world?`, t("'{0}' will be lost forever! (A long time!)", w.name), 'Delete', async (ok) => {
         if (ok) { await Storage.deleteWorld(w.id); this.selected = -1; }
         this.ui.open(this);
       }));
@@ -260,7 +275,7 @@ export class SelectWorldScreen extends Screen {
       }
       // world icon: a grass block
       ctx.drawImage(this.game.icons.get(2), x + 2, y + 1, 30, 30);
-      this.gui.text(ctx, w.name, x + 36, y + 1, '#FFFFFF');
+      this.gui.font.draw(ctx, w.name, x + 36, y + 1, '#FFFFFF');
       const d = new Date(w.lastPlayed);
       this.gui.text(ctx, `${w.id} (${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0, 5)})`, x + 36, y + 12, '#808080');
       const mode = w.hardcore ? '§cHardcore Mode!' : ['Survival Mode', 'Creative Mode', 'Adventure Mode', 'Spectator Mode'][w.player ? (w.player as { gameMode: number }).gameMode ?? w.gameMode : w.gameMode];
@@ -322,12 +337,12 @@ export class CreateWorldScreen extends Screen {
   constructor(ui: UI, public parent: Screen) { super(ui); }
   override init() {
     const W = this.gui.w, H = this.gui.h;
-    this.name = new TextField(this.ui, W / 2 - 100, 60, 200, 20, this.name?.value ?? 'New World', 32);
+    this.name = new TextField(this.ui, W / 2 - 100, 60, 200, 20, this.name?.value ?? t('New World'), 32);
     this.name.focused = true;
     this.seed = new TextField(this.ui, W / 2 - 100, 110, 200, 20, this.seed?.value ?? '', 32, 'Leave blank for a random seed');
     const modes = ['Survival', 'Hardcore', 'Creative'];
-    const modeBtn = new Button(this.ui, W / 2 - 75, 145, 150, 20, () => `Game Mode: ${modes[this.mode]}`, () => (this.mode = (this.mode + 1) % 3));
-    const keepBtn = new Button(this.ui, W / 2 - 75, 182, 150, 20, () => `Keep Inventory: ${this.keepInventory ? 'ON' : 'OFF'}`, () => (this.keepInventory = !this.keepInventory));
+    const modeBtn = new Button(this.ui, W / 2 - 75, 145, 150, 20, () => t('Game Mode: {0}', t(modes[this.mode])), () => (this.mode = (this.mode + 1) % 3));
+    const keepBtn = new Button(this.ui, W / 2 - 75, 182, 150, 20, () => t('Keep Inventory: {0}', t(this.keepInventory ? 'ON' : 'OFF')), () => (this.keepInventory = !this.keepInventory));
     this.widgets = [
       this.name, this.seed, modeBtn, keepBtn,
       new Button(this.ui, W / 2 - 155, H - 28, 150, 20, 'Create New World', () => this.create()),
@@ -339,7 +354,7 @@ export class CreateWorldScreen extends Screen {
     const text = this.seed.value.trim();
     const seed = text ? hashString(text) : (Math.random() * 2 ** 31) | 0;
     const meta: WorldMeta = {
-      id: 'w' + now.toString(36), name: this.name.value.trim() || 'New World', seed, seedText: text || String(seed),
+      id: 'w' + now.toString(36), name: this.name.value.trim() || t('New World'), seed, seedText: text || String(seed),
       gameMode: this.mode === 2 ? 1 : 0, hardcore: this.mode === 1, created: now, lastPlayed: now, time: 0, generatorVersion: GENERATOR_VERSION,
       keepInventory: this.keepInventory,
     };
@@ -443,26 +458,26 @@ export class OptionsScreen extends Screen {
     const step = H < 256 ? 23 : 24;
     let y = Math.min(H / 6 - 12, H - 52 - step * 7);
     const row = () => { const r = y; y += step; return r; };
-    const onoff = (b: boolean) => (b ? 'ON' : 'OFF');
+    const onoff = (b: boolean) => t(b ? 'ON' : 'OFF');
     const r1 = row(), r2 = row(), r3 = row(), r4 = row(), r5 = row(), r6 = row(), r7 = row(), r8 = row();
     this.widgets = [
-      new Slider(this.ui, x0, r1, 150, 20, (o.fov - 30) / 80, (v) => `FOV: ${Math.round(30 + v * 80) === 70 ? 'Normal' : Math.round(30 + v * 80) === 110 ? 'Quake Pro' : Math.round(30 + v * 80)}`, (v) => { o.fov = Math.round(30 + v * 80); save(); }),
-      new Button(this.ui, x1, r1, 150, 20, () => `Difficulty: ${['Peaceful', 'Easy', 'Normal', 'Hard'][o.difficulty]}`, () => { if (this.game.meta?.hardcore) return; o.difficulty = (o.difficulty + 1) % 4; save(); }),
-      new Slider(this.ui, x0, r2, 150, 20, (o.renderDistance - 2) / 14, (v) => `Render Distance: ${Math.round(2 + v * 14)} chunks`, (v) => { o.renderDistance = Math.round(2 + v * 14); save(); }, 14),
-      new Slider(this.ui, x1, r2, 150, 20, o.gamma, (v) => `Brightness: ${v === 0 ? 'Moody' : v === 1 ? 'Bright' : '+' + Math.round(v * 100) + '%'}`, (v) => { o.gamma = v; save(); }),
-      new Slider(this.ui, x0, r3, 150, 20, o.sensitivity, (v) => `${device.touch ? 'Mouse ' : ''}Sensitivity: ${Math.round(v * 200)}%`, (v) => { o.sensitivity = v; save(); }),
-      new Button(this.ui, x1, r3, 150, 20, () => `GUI Scale: ${o.guiScale === 0 ? 'Auto' : o.guiScale}`, () => { o.guiScale = (o.guiScale + 1) % 5; save(); this.init(); }),
-      new Button(this.ui, x0, r4, 150, 20, () => `View Bobbing: ${onoff(o.viewBobbing)}`, () => { o.viewBobbing = !o.viewBobbing; save(); }),
-      new Button(this.ui, x1, r4, 150, 20, () => `Clouds: ${o.clouds ? 'Fancy' : 'OFF'}`, () => { o.clouds = !o.clouds; save(); }),
-      new Slider(this.ui, x0, r5, 150, 20, o.volume, (v) => `Master Volume: ${v === 0 ? 'OFF' : Math.round(v * 100) + '%'}`, (v) => { o.volume = v; save(); }),
-      new Slider(this.ui, x1, r5, 150, 20, o.music, (v) => `Music: ${v === 0 ? 'OFF' : Math.round(v * 100) + '%'}`, (v) => { o.music = v; save(); }),
-      new Button(this.ui, x0, r6, 150, 20, () => `Particles: ${['All', 'Decreased', 'Minimal'][o.particles]}`, () => { o.particles = (o.particles + 1) % 3; save(); }),
-      new Button(this.ui, x1, r6, 150, 20, () => `Invert Mouse: ${onoff(o.invertY)}`, () => { o.invertY = !o.invertY; save(); }),
-      new Button(this.ui, x0, r7, 150, 20, () => `Show FPS: ${onoff(o.showFps)}`, () => { o.showFps = !o.showFps; save(); }),
+      new Slider(this.ui, x0, r1, 150, 20, (o.fov - 30) / 80, (v) => t('FOV: {0}', Math.round(30 + v * 80) === 70 ? t('Normal') : Math.round(30 + v * 80) === 110 ? t('Quake Pro') : Math.round(30 + v * 80)), (v) => { o.fov = Math.round(30 + v * 80); save(); }),
+      new Button(this.ui, x1, r1, 150, 20, () => t('Difficulty: {0}', t(['Peaceful', 'Easy', 'Normal', 'Hard'][o.difficulty])), () => { if (this.game.meta?.hardcore) return; o.difficulty = (o.difficulty + 1) % 4; save(); }),
+      new Slider(this.ui, x0, r2, 150, 20, (o.renderDistance - 2) / 14, (v) => t('Render Distance: {0} chunks', Math.round(2 + v * 14)), (v) => { o.renderDistance = Math.round(2 + v * 14); save(); }, 14),
+      new Slider(this.ui, x1, r2, 150, 20, o.gamma, (v) => t('Brightness: {0}', v === 0 ? t('Moody') : v === 1 ? t('Bright') : '+' + Math.round(v * 100) + '%'), (v) => { o.gamma = v; save(); }),
+      new Slider(this.ui, x0, r3, 150, 20, o.sensitivity, (v) => t(device.touch ? 'Mouse Sensitivity: {0}%' : 'Sensitivity: {0}%', Math.round(v * 200)), (v) => { o.sensitivity = v; save(); }),
+      new Button(this.ui, x1, r3, 150, 20, () => t('GUI Scale: {0}', o.guiScale === 0 ? t('Auto') : o.guiScale), () => { o.guiScale = (o.guiScale + 1) % 5; save(); this.init(); }),
+      new Button(this.ui, x0, r4, 150, 20, () => t('View Bobbing: {0}', onoff(o.viewBobbing)), () => { o.viewBobbing = !o.viewBobbing; save(); }),
+      new Button(this.ui, x1, r4, 150, 20, () => t('Clouds: {0}', t(o.clouds ? 'Fancy' : 'OFF')), () => { o.clouds = !o.clouds; save(); }),
+      new Slider(this.ui, x0, r5, 150, 20, o.volume, (v) => t('Master Volume: {0}', v === 0 ? t('OFF') : Math.round(v * 100) + '%'), (v) => { o.volume = v; save(); }),
+      new Slider(this.ui, x1, r5, 150, 20, o.music, (v) => t('Music: {0}', v === 0 ? t('OFF') : Math.round(v * 100) + '%'), (v) => { o.music = v; save(); }),
+      new Button(this.ui, x0, r6, 150, 20, () => t('Particles: {0}', t(['All', 'Decreased', 'Minimal'][o.particles])), () => { o.particles = (o.particles + 1) % 3; save(); }),
+      new Button(this.ui, x1, r6, 150, 20, () => t('Invert Mouse: {0}', onoff(o.invertY)), () => { o.invertY = !o.invertY; save(); }),
+      new Button(this.ui, x0, r7, 150, 20, () => t('Show FPS: {0}', onoff(o.showFps)), () => { o.showFps = !o.showFps; save(); }),
       // the rest (game rules, music, the agent) is one screen further
       new Button(this.ui, x1, r7, 150, 20, 'More...', () => this.ui.open(new MoreOptionsScreen(this.ui, this))),
       new Button(this.ui, x0, r8, 150, 20, 'Resource Packs...', () => this.ui.open(new PackScreen(this.ui, this, 'resource'))),
-      new Button(this.ui, x1, r8, 150, 20, () => `Shaders: ${this.game.renderer.shaderPackName() || 'OFF'}...`, () => this.ui.open(new PackScreen(this.ui, this, 'shader'))),
+      new Button(this.ui, x1, r8, 150, 20, () => t('Shaders: {0}...', this.game.renderer.shaderPackName() || t('OFF')), () => this.ui.open(new PackScreen(this.ui, this, 'shader'))),
       new Button(this.ui, x0, H - 28, 98, 20, 'Skin...', () => this.ui.open(new SkinScreen(this.ui, this))),
       new Button(this.ui, W / 2 - 51, H - 28, 102, 20, 'Distant Terrain...', () => this.ui.open(new DistantTerrainScreen(this.ui, this))),
       new Button(this.ui, W / 2 + 57, H - 28, 98, 20, 'Done', () => this.ui.open(this.parent)),
@@ -494,11 +509,12 @@ export class MoreOptionsScreen extends Screen {
     const row = () => { const r = y; y += 24; return r; };
     this.widgets = [
       // items stay with you when you die; a rule of the world, so only in your own
-      Object.assign(new Button(this.ui, x, row(), 200, 20, () => (host ? `Keep Inventory: ${host.keepInventory ? 'ON' : 'OFF'}` : 'Keep Inventory: in your own world'), () => { if (host) host.keepInventory = !host.keepInventory; }), { enabled: !!host }),
+      Object.assign(new Button(this.ui, x, row(), 200, 20, () => (host ? t('Keep Inventory: {0}', t(host.keepInventory ? 'ON' : 'OFF')) : t('Keep Inventory: in your own world')), () => { if (host) host.keepInventory = !host.keepInventory; }), { enabled: !!host }),
       new Button(this.ui, x, row(), 200, 20, 'Play Music Now', () => { this.game.audio.init(); this.game.audio.playPiece(); }),
       new Button(this.ui, x, row(), 200, 20, 'Agent...', () => this.ui.open(new AgentScreen(this.ui, this))),
+      new Button(this.ui, x, row(), 200, 20, () => t('Language: {0}', LANGUAGES.find((l) => l.code === language())?.name ?? 'English') + '...', () => this.ui.open(new LanguageScreen(this.ui, this))),
       // what draws the world: made once at start-up, so a change shows after a reload
-      new Button(this.ui, x, row(), 200, 20, () => `Graphics: ${GFX_NAMES[o.gfx] ?? 'Auto'}${o.gfx === 'auto' ? ` (${this.game.renderer.backend === 'webgpu' ? 'WebGPU' : 'WebGL 2'})` : ''}`, () => {
+      new Button(this.ui, x, row(), 200, 20, () => t('Graphics: {0}', t(GFX_NAMES[o.gfx] ?? 'Auto')) + (o.gfx === 'auto' ? ` (${this.game.renderer.backend === 'webgpu' ? 'WebGPU' : 'WebGL 2'})` : ''), () => {
         o.gfx = o.gfx === 'auto' ? 'webgpu' : o.gfx === 'webgpu' ? 'webgl2' : 'auto';
         this.game.saveOptions();
         const now = this.game.renderer.backend, want = o.gfx === 'auto' ? (navigator.gpu ? 'webgpu' : 'webgl2') : o.gfx;
@@ -512,7 +528,7 @@ export class MoreOptionsScreen extends Screen {
     if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
     else this.gui.dirtBackground(ctx);
     this.gui.textCenter(ctx, 'More Options', this.gui.w / 2, 15, '#FFFFFF');
-    if (this.note) this.gui.textCenter(ctx, this.note, this.gui.w / 2, Math.max(40, this.gui.h / 4) + 24 * 4 + 4, '#FFFF80');
+    if (this.note) this.gui.textCenter(ctx, this.note, this.gui.w / 2, Math.max(40, this.gui.h / 4) + 24 * 5 + 4, '#FFFF80');
     super.render(ctx, mx, my);
   }
   override key(e: KeyboardEvent) {
@@ -535,9 +551,9 @@ export class DistantTerrainScreen extends Screen {
     let y = Math.max(40, H / 4);
     const row = () => { const r = y; y += 24; return r; };
     this.widgets = [
-      new Button(this.ui, x, row(), 200, 20, () => `Distant Terrain: ${o.lod ? 'ON' : 'OFF'}`, () => { o.lod = !o.lod; save(); }),
-      new Slider(this.ui, x, row(), 200, 20, at / n, (v) => `Distance: ${STEPS[Math.round(v * n)]} chunks`, (v) => { o.lodDistance = STEPS[Math.round(v * n)]; save(); }, n),
-      new Button(this.ui, x, row(), 200, 20, () => `Detail: ${['Low', 'Medium', 'High'][o.lodQuality] ?? 'Medium'}`, () => { o.lodQuality = (o.lodQuality + 1) % 3; save(); }),
+      new Button(this.ui, x, row(), 200, 20, () => t('Distant Terrain: {0}', t(o.lod ? 'ON' : 'OFF')), () => { o.lod = !o.lod; save(); }),
+      new Slider(this.ui, x, row(), 200, 20, at / n, (v) => t('Distance: {0} chunks', STEPS[Math.round(v * n)]), (v) => { o.lodDistance = STEPS[Math.round(v * n)]; save(); }, n),
+      new Button(this.ui, x, row(), 200, 20, () => t('Detail: {0}', t(['Low', 'Medium', 'High'][o.lodQuality] ?? 'Medium')), () => { o.lodQuality = (o.lodQuality + 1) % 3; save(); }),
       new Button(this.ui, x, H - 28, 200, 20, 'Done', () => this.ui.open(this.parent)),
     ];
   }
@@ -566,11 +582,11 @@ export class ControlsScreen extends Screen {
     if (device.touch) {
       const save = () => this.game.saveOptions();
       this.widgets.push(
-        new Button(this.ui, W / 2 - 155, 30, 150, 20, () => `Movement: ${o.touchMove === 'joystick' ? 'Joystick' : 'D-Pad'}`, () => { o.touchMove = o.touchMove === 'joystick' ? 'dpad' : 'joystick'; save(); }),
-        new Button(this.ui, W / 2 + 5, 30, 150, 20, () => `Aim: ${o.touchAim === 'crosshair' ? 'Crosshair' : 'Touch'}`, () => { o.touchAim = o.touchAim === 'crosshair' ? 'touch' : 'crosshair'; save(); }),
-        new Slider(this.ui, W / 2 - 155, 54, 150, 20, o.touchSensX, (v) => `Look Across: ${Math.round(v * 200)}%`, (v) => { o.touchSensX = v; save(); }),
-        new Slider(this.ui, W / 2 + 5, 54, 150, 20, o.touchSensY, (v) => `Look Up/Down: ${Math.round(v * 200)}%`, (v) => { o.touchSensY = v; save(); }),
-        new Button(this.ui, W / 2 - 155, 78, 150, 20, () => `Swipe Up: ${o.touchSwipeDown ? 'Look Down' : 'Look Up'}`, () => { o.touchSwipeDown = !o.touchSwipeDown; save(); }),
+        new Button(this.ui, W / 2 - 155, 30, 150, 20, () => t('Movement: {0}', t(o.touchMove === 'joystick' ? 'Joystick' : 'D-Pad')), () => { o.touchMove = o.touchMove === 'joystick' ? 'dpad' : 'joystick'; save(); }),
+        new Button(this.ui, W / 2 + 5, 30, 150, 20, () => t('Aim: {0}', t(o.touchAim === 'crosshair' ? 'Crosshair' : 'Touch')), () => { o.touchAim = o.touchAim === 'crosshair' ? 'touch' : 'crosshair'; save(); }),
+        new Slider(this.ui, W / 2 - 155, 54, 150, 20, o.touchSensX, (v) => t('Look Across: {0}%', Math.round(v * 200)), (v) => { o.touchSensX = v; save(); }),
+        new Slider(this.ui, W / 2 + 5, 54, 150, 20, o.touchSensY, (v) => t('Look Up/Down: {0}%', Math.round(v * 200)), (v) => { o.touchSensY = v; save(); }),
+        new Button(this.ui, W / 2 - 155, 78, 150, 20, () => t('Swipe Up: {0}', t(o.touchSwipeDown ? 'Look Down' : 'Look Up')), () => { o.touchSwipeDown = !o.touchSwipeDown; save(); }),
       );
     }
   }
@@ -656,10 +672,10 @@ export class DeathScreen extends Screen {
     ctx.save();
     ctx.translate(W / 2, 30);
     ctx.scale(2, 2);
-    this.gui.font.drawCentered(ctx, this.game.meta?.hardcore ? 'Game over!' : 'You died!', 0, 0, '#FFFFFF');
+    this.gui.font.drawCentered(ctx, t(this.game.meta?.hardcore ? 'Game over!' : 'You died!'), 0, 0, '#FFFFFF');
     ctx.restore();
     this.gui.textCenter(ctx, this.msg, W / 2, 85, '#FFFFFF');
-    this.gui.textCenter(ctx, `Score: §e${this.game.player?.xpTotal ?? 0}`, W / 2, 100, '#FFFFFF');
+    this.gui.textCenter(ctx, t('Score: {0}', '§e' + (this.game.player?.xpTotal ?? 0)), W / 2, 100, '#FFFFFF');
     super.render(ctx, mx, my);
   }
   override key() { return true; }
@@ -731,9 +747,9 @@ export class ChatScreen extends Screen {
     this.ui.chat.render(ctx, true);
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(2, this.gui.h - 14, this.gui.w - 4, 12);
-    let t = this.input.value;
-    while (this.gui.font.width(t) > this.gui.w - 12 && t.length) t = t.slice(1);
-    this.gui.text(ctx, t + (Math.floor(performance.now() / 300) % 2 ? '_' : ''), 4, this.gui.h - 12, '#FFFFFF');
+    let v = this.input.value;
+    while (this.gui.font.width(v) > this.gui.w - 12 && v.length) v = v.slice(1);
+    this.gui.font.draw(ctx, v + (Math.floor(performance.now() / 300) % 2 ? '_' : ''), 4, this.gui.h - 12, '#FFFFFF');
   }
   override key(e: KeyboardEvent) {
     const cmds = this.game.chatHistory;
@@ -775,6 +791,61 @@ export class ChatScreen extends Screen {
     return super.mouseDown(mx, my, b);
   }
   override onClose() { this.ui.chat.scroll = 0; }
+}
+
+/** Language: the game's text in another language (Chinese comes with its glyphs, loaded when picked). */
+export class LanguageScreen extends Screen {
+  override touchScrolls = true;
+  private busy = '';
+  constructor(ui: UI, public parent: Screen) { super(ui); }
+  override pausesGame = true;
+  override init() {
+    // the languages' own names, in their own scripts
+    void loadGlyphSet('base');
+    const W = this.gui.w, H = this.gui.h;
+    this.widgets = [new Button(this.ui, W / 2 - 100, H - 28, 200, 20, 'Done', () => this.ui.open(this.parent))];
+  }
+  private rowY(i: number) { return 40 + i * 24; }
+  override render(ctx: Ctx, mx: number, my: number) {
+    const W = this.gui.w;
+    if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
+    else this.gui.dirtBackground(ctx);
+    this.gui.textCenter(ctx, 'Language', W / 2, 15, '#FFFFFF');
+    LANGUAGES.forEach((l, i) => {
+      const y = this.rowY(i), on = l.code === (this.busy || language());
+      const hover = mx >= W / 2 - 110 && mx < W / 2 + 110 && my >= y && my < y + 20;
+      if (on || hover) {
+        ctx.fillStyle = on ? '#808080' : '#404040';
+        ctx.fillRect(W / 2 - 110, y, 220, 20);
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(W / 2 - 109, y + 1, 218, 18);
+      }
+      this.gui.font.drawCentered(ctx, `${l.name} (${l.region})`, W / 2, y + 6, '#FFFFFF');
+    });
+    this.gui.textCenter(ctx, '(Language translations may not be 100% accurate)', W / 2, this.gui.h - 42, '#808080');
+    super.render(ctx, mx, my);
+  }
+  override mouseDown(mx: number, my: number, b: number) {
+    if (super.mouseDown(mx, my, b)) return true;
+    const W = this.gui.w;
+    const i = LANGUAGES.findIndex((_, k) => mx >= W / 2 - 110 && mx < W / 2 + 110 && my >= this.rowY(k) && my < this.rowY(k) + 20);
+    const l = LANGUAGES[i];
+    if (!l || this.busy || l.code === language()) return !!l;
+    this.game.audio.play('click', null, 0.6, 1);
+    this.busy = l.code;
+    setLanguage(l.code).then(() => {
+      this.game.options.language = l.code;
+      this.game.saveOptions();
+    }).catch((e) => console.warn('language', e)).finally(() => {
+      this.busy = '';
+      this.init();
+    });
+    return true;
+  }
+  override key(e: KeyboardEvent) {
+    if (e.code === 'Escape') { this.ui.open(this.parent); return true; }
+    return super.key(e);
+  }
 }
 
 // ------------------------------------------------------------------ credits (after the first trip home from the End)

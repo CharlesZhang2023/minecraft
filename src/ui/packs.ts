@@ -6,6 +6,7 @@ import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { packs, type PackListing } from '../packs/packs';
 import type { PackKind, ShaderSetting } from '../packs/types';
+import { t } from '../i18n/i18n';
 
 const ROW = 36;
 /** Icons of packs (data: URLs), decoded once. */
@@ -87,7 +88,7 @@ export class PackScreen extends Screen {
 
   /** Download it if it isn't here yet. */
   private async ensure(s: PackListing) {
-    if (!s.installed && s.repo) await packs.install(s.repo, (f) => { this.status = `Downloading ${s.manifest.name ?? s.id}... ${Math.round(f * 100)}%`; });
+    if (!s.installed && s.repo) await packs.install(s.repo, (f) => { this.status = t('Downloading {0}... {1}%', s.manifest.name ?? s.id, Math.round(f * 100)); });
   }
 
   private toggle() {
@@ -120,8 +121,8 @@ export class PackScreen extends Screen {
   private install() {
     const s = this.sel();
     if (!s?.repo) return;
-    this.run(`Downloading ${s.manifest.name ?? s.id}...`, async () => {
-      await packs.install(s.repo!, (f) => { this.status = `Downloading ${s.manifest.name ?? s.id}... ${Math.round(f * 100)}%`; });
+    this.run(t('Downloading {0}...', s.manifest.name ?? s.id), async () => {
+      await packs.install(s.repo!, (f) => { this.status = t('Downloading {0}... {1}%', s.manifest.name ?? s.id, Math.round(f * 100)); });
       // an updated pack in use: use the new version
       if (s.active) { if (this.kind === 'resource') await packs.applyResources(); else return packs.applyShader(); }
     });
@@ -145,9 +146,9 @@ export class PackScreen extends Screen {
       const f = input.files?.[0];
       if (!f) return;
       if (f.size > 256 * 1024 * 1024) { this.status = '§cThat file is too big'; return; }
-      this.run(`Adding ${f.name}...`, async () => {
+      this.run(t('Adding {0}...', f.name), async () => {
         const p = await packs.installFile(f);
-        if (p.manifest.kind !== this.kind) return `That's a ${p.manifest.kind} pack: find it under ${p.manifest.kind === 'resource' ? 'Resource Packs' : 'Shader Packs'}`;
+        if (p.manifest.kind !== this.kind) return t(p.manifest.kind === 'resource' ? "That's a resource pack: find it under Resource Packs" : "That's a shader pack: find it under Shader Packs");
       });
     };
     input.click();
@@ -200,18 +201,18 @@ export class PackScreen extends Screen {
   }
 
   private state(p: PackListing): string {
-    if (!p.installed) return '§9In the pack repository';
+    if (!p.installed) return '§9' + t('In the pack repository');
     const parts: string[] = [];
-    if (p.active) parts.push(this.kind === 'resource' ? `§aIn use (#${this.game.options.resourcePacks.indexOf(p.id) + 1})` : '§aIn use');
-    else parts.push('§7Downloaded');
-    if (p.update) parts.push(`§eUpdate: ${p.repo!.version}`);
-    if (p.installed.source === 'file') parts.push('§7from a file');
-    return parts.join('§7, ');
+    if (p.active) parts.push(this.kind === 'resource' ? '§a' + t('In use (#{0})', this.game.options.resourcePacks.indexOf(p.id) + 1) : '§a' + t('In use'));
+    else parts.push('§7' + t('Downloaded'));
+    if (p.update) parts.push('§e' + t('Update: {0}', p.repo!.version));
+    if (p.installed.source === 'file') parts.push('§7' + t('from a file'));
+    return parts.join('§7' + t(', '));
   }
 
   private details(p: PackListing): string[] {
-    const out = [`§e${p.manifest.name ?? p.id}`, `§7${p.kind} pack, version ${p.manifest.version}`];
-    if (p.manifest.authors?.length) out.push(`§7by ${p.manifest.authors.join(', ')}`);
+    const out = [`§e${p.manifest.name ?? p.id}`, '§7' + t(p.kind === 'resource' ? 'resource pack, version {0}' : 'shader pack, version {0}', p.manifest.version)];
+    if (p.manifest.authors?.length) out.push('§7' + t('by {0}', p.manifest.authors.join(', ')));
     if (p.manifest.credit) out.push('§7' + this.fit(p.manifest.credit, 300));
     if (p.repo) out.push(`§7${(p.repo.size / 1048576).toFixed(1)} MB`);
     return out;
@@ -267,15 +268,15 @@ export class ShaderSettingsScreen extends Screen {
   private widget(s: ShaderSetting, x: number, y: number, v: Record<string, boolean | number>, set: (k: string, x: boolean | number) => void) {
     switch (s.type) {
       case 'bool':
-        return new Button(this.ui, x, y, 150, 20, () => `${s.name}: ${v[s.id] ? 'ON' : 'OFF'}`, () => set(s.id, !v[s.id]));
+        return new Button(this.ui, x, y, 150, 20, () => t('{0}: {1}', s.name, t(v[s.id] ? 'ON' : 'OFF')), () => set(s.id, !v[s.id]));
       case 'enum':
-        return new Button(this.ui, x, y, 150, 20, () => `${s.name}: ${s.labels?.[s.options.indexOf(v[s.id] as number)] ?? v[s.id]}`, () => {
+        return new Button(this.ui, x, y, 150, 20, () => t('{0}: {1}', s.name, s.labels?.[s.options.indexOf(v[s.id] as number)] ?? v[s.id]), () => {
           set(s.id, s.options[(s.options.indexOf(v[s.id] as number) + 1) % s.options.length]);
         });
       default: {
         const steps = s.step ? Math.round((s.max - s.min) / s.step) : 0;
         const val = (f: number) => { const n = s.min + (s.max - s.min) * f; return s.step ? Math.round(n / s.step) * s.step : n; };
-        return new Slider(this.ui, x, y, 150, 20, ((v[s.id] as number) - s.min) / (s.max - s.min || 1), (f) => `${s.name}: ${+val(f).toFixed(2)}`, (f) => set(s.id, val(f)), steps);
+        return new Slider(this.ui, x, y, 150, 20, ((v[s.id] as number) - s.min) / (s.max - s.min || 1), (f) => t('{0}: {1}', s.name, +val(f).toFixed(2)), (f) => set(s.id, val(f)), steps);
       }
     }
   }
@@ -294,7 +295,7 @@ export class ShaderSettingsScreen extends Screen {
     if (this.game.world && !this.game.panorama) this.backgroundGradient(ctx);
     else this.gui.dirtBackground(ctx);
     const b = packs.shaderBundle(this.id);
-    this.gui.textCenter(ctx, `${b?.manifest.name ?? this.id} Settings`, this.gui.w / 2, 12, '#FFFFFF');
+    this.gui.textCenter(ctx, t('{0} Settings', b?.manifest.name ?? this.id), this.gui.w / 2, 12, '#FFFFFF');
     super.render(ctx, mx, my);
     const list = b?.manifest.settings ?? [];
     list.forEach((s, i) => {

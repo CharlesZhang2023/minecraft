@@ -15,6 +15,7 @@ import { POT_PLANTS } from '../world/models';
 import { Random } from '../noise';
 import { tickHive, harvestHive, type HiveTile } from '../entity/bees';
 import { tickBeacon, tickConduit, type BeaconTile, type ConduitTile } from './beacon';
+import { tm } from '../i18n/i18n';
 
 /** The interaction (one player's hands) as stations see it. */
 export interface Hands {
@@ -207,7 +208,7 @@ export function stationUse(h: Hands, x: number, y: number, z: number, v: number,
         w.setTile(x, y, z, { type: 'jukebox', disc: { ...held, count: 1 } } as never);
         h.consume(1);
         g.audio.play('disc.' + getItem(held.id).disc, at(x, y, z), 1, 1);
-        g.ui.hud.actionBar('Now Playing: C418 - ' + getItem(held.id).disc);
+        g.ui.hud.actionBar(tm('Now Playing: {0}', 'C418 - ' + getItem(held.id).disc));
         return true;
       }
       return false;

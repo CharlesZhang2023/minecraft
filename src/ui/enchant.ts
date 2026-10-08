@@ -6,6 +6,7 @@ import { I, I3, getItem } from '../game/items';
 import { B } from '../world/blocks';
 import { Random } from '../noise';
 import { canEnchant, slotCosts, rollEnchants, enchName } from '../game/enchant';
+import { t } from '../i18n/i18n';
 
 const RUNES = 'abcdefghijklmnopqrstuvwxyz';
 
@@ -82,7 +83,7 @@ export class EnchantScreen extends ContainerScreen {
       if (cost <= 0 || mx < b.x || my < b.y || mx >= b.x + b.w || my >= b.y + b.h || !this.slotsE[0]) continue;
       const roll = rollEnchants(this.slotsE[0], cost, new Random(this.seed() + i));
       const first = Object.entries(roll)[0];
-      this.gui.tooltip(ctx, [first ? enchName(first[0], first[1]) + ' . . . ?' : '?', `§7${i + 1} Lapis Lazuli`, `§7${i + 1} Enchantment Level${i ? 's' : ''}`], mx, my);
+      this.gui.tooltip(ctx, [first ? enchName(first[0], first[1]) + ' . . . ?' : '?', '§7' + t('{0} Lapis Lazuli', i + 1), '§7' + t(i ? '{0} Enchantment Levels' : '{0} Enchantment Level', i + 1)], mx, my);
     }
   }
   override mouseDown(mx: number, my: number, button: number): boolean {

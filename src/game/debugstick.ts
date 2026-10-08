@@ -6,6 +6,7 @@ import type { Player } from './player';
 import type { ItemStack } from './items';
 import { BLOCKS, idOf } from '../world/blocks';
 import { stateOf, stateValues, withState } from '../agent/blockspec';
+import { tm } from '../i18n/i18n';
 
 export function debugStick(g: Game, p: Player, s: ItemStack, x: number, y: number, z: number, use: boolean, back: boolean) {
   if (!p.creative) return;
@@ -13,14 +14,14 @@ export function debugStick(g: Game, p: Player, s: ItemStack, x: number, y: numbe
   const name = 'minecraft:' + BLOCKS[id].name;
   const values = stateValues(id), keys = Object.keys(values);
   const say = (m: string) => g.ui.hud.actionBar(m);
-  if (!keys.length) { say(`"${name}" has no properties`); return; }
+  if (!keys.length) { say(tm('"{0}" has no properties', name)); return; }
   const picks = ((s.tag ??= {}).debug ??= {}) as Record<string, string>;
   let k = keys.includes(picks[name]) ? picks[name] : keys[0];
   if (!use) {
     // pick the next property (the first one if none was picked yet for this block)
     k = picks[name] && keys.includes(picks[name]) ? keys[(keys.indexOf(k) + (back ? keys.length - 1 : 1)) % keys.length] : keys[0];
     picks[name] = k;
-    say(`selected "${k}" (${stateOf(v)[k]})`);
+    say(tm('selected "{0}" ({1})', k, String(stateOf(v)[k])));
     return;
   }
   picks[name] = k;
@@ -33,8 +34,8 @@ export function debugStick(g: Game, p: Player, s: ItemStack, x: number, y: numbe
     t.suppress = true;
     w.set(x, y, z, n);
     t.suppress = false;
-    say(`"${k}" to ${val}`);
+    say(tm('"{0}" to {1}', k, String(val)));
     return;
   }
-  say(`"${k}" to ${stateOf(v)[k]}`);
+  say(tm('"{0}" to {1}', k, String(stateOf(v)[k])));
 }

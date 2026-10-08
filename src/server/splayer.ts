@@ -18,6 +18,7 @@ import { validLook } from '../render/skins';
 import { CHANNELS, MAX_PAYLOAD } from '../mod/hooks';
 import { modState, guard } from '../mod/state';
 import { SubLevel } from '../sublevel/ship';
+import { tm } from '../i18n/i18n';
 
 /** What a client sends every tick. */
 export interface InputPacket {
@@ -180,8 +181,9 @@ export class ServerPlayer {
     this.achievements = new Achievements(game);
     this.achievements.onUnlock = (id, title, kind) => {
       this.send({ t: 'ach', id });
-      const what = kind === 'achievement' ? 'has just earned the achievement §a' : kind === 'challenge' ? 'has completed the challenge §5' : kind === 'goal' ? 'has reached the goal §a' : 'has made the advancement §a';
-      for (const p of game.players) p.send({ t: 'chat', msg: `${this.name} ${what}[${title}]` });
+      const what = kind === 'achievement' ? '{0} has just earned the achievement {1}' : kind === 'challenge' ? '{0} has completed the challenge {1}' : kind === 'goal' ? '{0} has reached the goal {1}' : '{0} has made the advancement {1}';
+      const msg = tm(what, this.name, (kind === 'challenge' ? '§5[' : '§a[') + tm(title) + ']');
+      for (const p of game.players) p.send({ t: 'chat', msg });
     };
   }
 

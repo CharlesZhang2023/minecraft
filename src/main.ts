@@ -13,6 +13,7 @@ import { createRenderer } from './render/backend';
 import { packs } from './packs/packs';
 import { loadOptions } from './game/options';
 import { readPairing, startAgent } from './agent/pairing';
+import { setLanguage } from './i18n/languages';
 
 const gl = document.getElementById('gl') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLCanvasElement;
@@ -30,6 +31,7 @@ async function start() {
     mods.boot().catch((e) => console.error('mod loader', e)),
     createRenderer(gl, options.gfx),
     packs.boot(options).catch((e) => console.error('packs', e)),
+    setLanguage(new URLSearchParams(location.search).get('lang') ?? options.language).catch((e) => console.error('language', e)),
   ]);
   (window as unknown as { mods: unknown }).mods = mods;
   (window as unknown as { packs: unknown }).packs = packs;

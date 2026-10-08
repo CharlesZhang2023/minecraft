@@ -7,6 +7,11 @@ import { mkdirSync } from 'node:fs';
 export const OUT = 'output/tests';
 mkdirSync(OUT, { recursive: true });
 export const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A message the game made to be translated where it's shown (src/i18n/i18n.ts `tm`), in English. */
+export const english = (s) => String(s).replace(/\u0001(.*?)\u0002/gs, (_, json) => {
+  const [en, ...args] = JSON.parse(json);
+  return en.replace(/^(effect|enchantment|mode):(?=\S)/, '').replace(/\{(\d+)\}/g, (all, n) => (args[n] === undefined ? all : english(args[n])));
+});
 
 export async function openWorld({ port = process.env.MC_PORT ?? '5177', seed = 12345, mode = 1, time = 6000, extra = '', width = 1000, height = 600, dim } = {}) {
   const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal', '--enable-webgl', '--ignore-gpu-blocklist'] });

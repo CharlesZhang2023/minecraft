@@ -6,6 +6,7 @@ import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { ItemStack, I7, I11 } from '../game/items';
 import type { LecternTile } from '../game/stations';
+import { t } from '../i18n/i18n';
 
 export interface BookTag { pages: string[]; title?: string; author?: string; generation?: number }
 export const bookTag = (s: ItemStack | null | undefined): BookTag => {
@@ -24,6 +25,7 @@ export class BookScreen extends Screen {
   page = 0;
   edit = false;
   signing = false;
+  override wantsText() { return this.edit || this.signing; }
   title = '';
   author = '';
   private blink = 0;
@@ -89,17 +91,17 @@ export class BookScreen extends Screen {
     if (this.signing) {
       g.textCenter(ctx, 'Enter Book Title:', cx, top + 34, '#000000', false);
       const cur = Math.floor(this.blink / 6) % 2 === 0 ? '_' : '';
-      g.textCenter(ctx, this.title + cur, cx, top + 50, '#000000', false);
-      g.textCenter(ctx, `by ${this.game.player?.name || 'Player'}`, cx, top + 60, '#555555', false);
+      g.font.drawCentered(ctx, this.title + cur, cx, top + 50, '#000000', false);
+      g.textCenter(ctx, t('by {0}', this.game.player?.name || 'Player'), cx, top + 60, '#555555', false);
       g.textCenter(ctx, 'Note! When you sign the', cx, top + 84, '#000000', false);
       g.textCenter(ctx, 'book, it will no longer', cx, top + 94, '#000000', false);
       g.textCenter(ctx, 'be editable.', cx, top + 104, '#000000', false);
     } else {
-      const label = `Page ${this.page + 1} of ${this.pages.length}`;
+      const label = t('Page {0} of {1}', this.page + 1, this.pages.length);
       g.text(ctx, label, left + w - 10 - g.font.width(label), top + 12, '#000000', false);
       const text = this.pages[this.page] ?? '';
       const lines = g.font.wrap(text + (this.edit && Math.floor(this.blink / 6) % 2 === 0 ? '_' : ''), PAGE_W);
-      lines.slice(0, PAGE_LINES).forEach((l, i) => g.text(ctx, l, left + 18, top + 26 + i * 9, '#000000', false));
+      lines.slice(0, PAGE_LINES).forEach((l, i) => g.font.draw(ctx, l, left + 18, top + 26 + i * 9, '#000000', false));
     }
     for (const b of this.buttons()) {
       const hover = mx >= b.x && my >= b.y && mx < b.x + b.w && my < b.y + b.h;

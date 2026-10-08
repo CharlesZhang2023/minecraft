@@ -54,6 +54,7 @@ import { currentMap } from '../mod/registry';
 import { modState, guard } from '../mod/state';
 import { SubLevels } from '../sublevel/server';
 import { isShipyardX } from '../sublevel/shipyard';
+import { tm } from '../i18n/i18n';
 
 export const TICK_MS = 50;
 
@@ -399,7 +400,7 @@ export class Game {
     sp.send({ t: 'join', id: p.id, name, dim: dimName, seed: meta.seed, worldName: meta.name, hardcore: meta.hardcore, time: this.timeState(), owner, registry: currentMap() });
     sp.teleported();
     for (const m of early) sp.receive(m);
-    if (!owner) this.say(`§e${name} joined the game`);
+    if (!owner) this.say('§e' + tm('{0} joined the game', name));
     if (Events.playerJoin.any) this.asActor(sp, () => Events.playerJoin.fire(this, p));
     this.onPlayersChanged();
     return sp;
@@ -410,9 +411,9 @@ export class Game {
     p.onDamaged = () => {
       sp.event(['hurt', p.lastHurtDirection]);
     };
-    p.onDeath = (msg) => {
-      const named = msg.replace(/^Player\b/, sp.name);
-      this.say(named);
+    p.onDeath = (how, who) => {
+      const msg = tm(how, sp.name, who);
+      this.say(msg);
       sp.send({ t: 'death', msg });
       this.inDim(this.dims.get(sp.dim)!, () => {
         if (this.meta?.hardcore) p.setGameMode(GameMode.Spectator);
@@ -439,13 +440,14 @@ export class Game {
     const dim = this.dims.get(sp.dim);
     if (dim) { const k = dim.entities.indexOf(sp.entity); if (k >= 0) dim.entities.splice(k, 1); }
     if (!sp.conn.closed) sp.conn.close(reason === 'was kicked' ? 'kicked' : reason);
-    if (!sp.owner) this.say(`§e${sp.name} ${reason}`);
+    if (!sp.owner) this.say('§e' + tm(`{0} ${reason}`, sp.name));
     this.onPlayersChanged();
   }
 
   /** Chat from a player: a command or a message to everyone. */
   chat(sp: ServerPlayer, msg: string) {
-    msg = msg.trim();
+    // (control characters would let a message pass for a translated one of the game's: see i18n.ts)
+    msg = msg.replace(/[\u0000-\u001f]/g, '').trim();
     if (!msg) return;
     if (msg.startsWith('/')) {
       // mod commands can be open to everyone
@@ -466,7 +468,7 @@ export class Game {
   set keepInventory(v: boolean) {
     if (!this.meta) return;
     this.meta.keepInventory = v;
-    this.say(`§7Gamerule keepInventory is now set to: ${v}`);
+    this.say('§7' + tm('Gamerule keepInventory is now set to: {0}', String(v)));
   }
 
   say(msg: string) {

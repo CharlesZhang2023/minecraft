@@ -25,6 +25,7 @@ import { device } from '../game/device';
 import { SCREENS } from '../mod/hooks';
 import { isActive, guard } from '../mod/state';
 import { Events } from '../mod/events';
+import { t } from '../i18n/i18n';
 
 export class UI {
   /** The client's own UI (the server keeps twins of container screens: ServerUI). */
@@ -268,7 +269,7 @@ export class UI {
     a.download = `screenshot_${d.toISOString().replace(/[:.]/g, '-')}.png`;
     a.href = c.toDataURL('image/png');
     a.click();
-    this.chat.add(`Saved screenshot as ${a.download}`);
+    this.chat.add(t('Saved screenshot as {0}', a.download));
   }
 
   render(ctx: Ctx) {
@@ -286,14 +287,15 @@ export class UI {
       if (!first) this.previewBox = null;
     }
     const [mx, my] = this.toGui(g.input.mouseX, g.input.mouseY);
+    this.touch.syncDesktopKeyboard();
     if (g.world && g.player && !g.panorama && !g.hideHud) g.nameTags(ctx);
     if (g.world && g.player && !g.panorama) this.hud.render(ctx);
     if (g.world && !g.panorama && !this.screen && !g.input.locked && !g.hideHud && !g.view?.freePointer) {
-      const t = 'Click to play';
-      const w = this.gui.font.width(t) + 8;
+      const label = t('Click to play');
+      const w = this.gui.font.width(label) + 8;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(this.gui.w / 2 - w / 2, this.gui.h / 2 + 12, w, 12);
-      this.gui.textCenter(ctx, t, this.gui.w / 2, this.gui.h / 2 + 14, '#FFFFFF');
+      this.gui.textCenter(ctx, label, this.gui.w / 2, this.gui.h / 2 + 14, '#FFFFFF');
     }
     if (this.screen) {
       this.screen.render(ctx, mx, my);

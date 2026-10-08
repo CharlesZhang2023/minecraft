@@ -15,6 +15,7 @@ import { Inventory } from './inventory';
 import { I6 } from './items';
 import { B, B2 } from '../world/blocks';
 import type { Mount } from '../entity/mount';
+import { tm } from '../i18n/i18n';
 
 export enum GameMode { Survival = 0, Creative = 1, Adventure = 2, Spectator = 3 }
 
@@ -79,7 +80,8 @@ export class Player extends LivingEntity {
   pEyeOffset = 1.62;
   deathMessage = '';
   onDamaged: (src: DamageSource, amount: number) => void = () => {};
-  onDeath: (msg: string) => void = () => {};
+  /** Died: how (a death message with {0} for the player and {1} for the killer) and who did it (`tm` of a name). */
+  onDeath: (how: string, who: string) => void = () => {};
   prevHealth = 20;
   hurtFlash = 0; // health bar flashing ticks
   lastHurtDirection = 0;
@@ -426,28 +428,30 @@ export class Player extends LivingEntity {
     playerHooks.vanishOnDeath(this);
     super.die(source, attacker);
     live.game?.playerOf(this)?.achievements.died(attacker ? (attacker as unknown as { typeName?: string }).typeName ?? '' : '');
-    const who = attacker ? (attacker as unknown as { typeName?: string }).typeName ?? 'something' : '';
+    // {0} is the player, {1} the mob (translated where the message is shown)
+    const who = attacker ? tm((attacker as unknown as { typeName?: string }).typeName ?? 'something') : '';
     const msgs: Record<string, string> = {
-      fall: 'Player hit the ground too hard',
-      drown: 'Player drowned',
-      lava: 'Player tried to swim in lava',
-      fire: 'Player burned to death',
-      starve: 'Player starved to death',
-      void: 'Player fell out of the world',
-      cactus: 'Player was pricked to death',
-      explosion: attacker ? `Player was blown up by ${who}` : 'Player blew up',
-      mob: `Player was slain by ${who}`,
-      arrow: `Player was shot by ${who}`,
-      suffocate: 'Player suffocated in a wall',
-      magic: attacker ? `Player was killed by ${who} using magic` : 'Player was killed by magic',
-      thorns: `Player was killed while trying to hurt ${who}`,
-      wall: 'Player experienced kinetic energy',
-      firework: 'Player went off with a bang',
-      anvil: 'Player was squashed by a falling anvil',
-      kill: 'Player fell out of the world',
+      fall: '{0} hit the ground too hard',
+      drown: '{0} drowned',
+      lava: '{0} tried to swim in lava',
+      fire: '{0} burned to death',
+      starve: '{0} starved to death',
+      void: '{0} fell out of the world',
+      cactus: '{0} was pricked to death',
+      explosion: attacker ? '{0} was blown up by {1}' : '{0} blew up',
+      mob: '{0} was slain by {1}',
+      arrow: '{0} was shot by {1}',
+      suffocate: '{0} suffocated in a wall',
+      magic: attacker ? '{0} was killed by {1} using magic' : '{0} was killed by magic',
+      thorns: '{0} was killed while trying to hurt {1}',
+      wall: '{0} experienced kinetic energy',
+      firework: '{0} went off with a bang',
+      anvil: '{0} was squashed by a falling anvil',
+      kill: '{0} fell out of the world',
     };
-    this.deathMessage = msgs[source] ?? 'Player died';
-    this.onDeath(this.deathMessage);
+    const how = msgs[source] ?? '{0} died';
+    this.deathMessage = tm(how, 'Player', who);
+    this.onDeath(how, who);
   }
 
   addXp(n: number) {

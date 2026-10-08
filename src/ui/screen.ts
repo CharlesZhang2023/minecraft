@@ -122,6 +122,9 @@ export abstract class Screen {
   wantsKeyboard(): boolean {
     return this.widgets.some((w) => w instanceof TextField && w.focused && w.visible !== false);
   }
+  /** Is anything being typed (a text field, or text the screen edits itself)? With a keyboard, typing then goes
+   * through a hidden text box, so input methods (Chinese and the like) work. */
+  wantsText(): boolean { return this.wantsKeyboard(); }
   /** The GUI size changed (rotation, window resize, soft keyboard): rebuild the layout, keeping typed text. */
   relayout() {
     const fields = () => this.widgets.filter((w) => w instanceof TextField) as TextField[];

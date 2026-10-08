@@ -32,6 +32,7 @@ export interface Options {
   resourcePacks: string[]; // resource packs in use, by id, the first winning
   shaderPack: string; // the shader pack in use ('' = none)
   shaderSettings: Record<string, Record<string, boolean | number>>; // each shader pack's settings, by pack id
+  language: string; // the game's language (src/i18n): 'en_us', 'zh_cn' or 'zh_tw'
 }
 
 export const DEFAULT_OPTIONS: Options = {
@@ -65,6 +66,7 @@ export const DEFAULT_OPTIONS: Options = {
   resourcePacks: [],
   shaderPack: '',
   shaderSettings: {},
+  language: 'en_us',
 };
 
 /** A name for players who haven't picked one: Steve or Alex with a number. */

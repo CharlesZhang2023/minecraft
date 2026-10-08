@@ -62,6 +62,7 @@ import { CONFIGS } from '../mod/config';
 import { ConfirmScreen } from '../ui/menus';
 import { structureBox, type StructureTile } from '../game/structureblocks';
 import { STRUCTURE_BLOCK } from '../world/blocks';
+import { t, tm } from '../i18n/i18n';
 
 export const TICK_MS = 50;
 
@@ -356,7 +357,7 @@ export class Client {
           break;
         } else if (m.t === 'modsok') {
           const name = g.name;
-          if (server.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) { drop(`Someone called ${name} is already playing`); break; }
+          if (server.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) { drop(tm('Someone called {0} is already playing', name)); break; }
           if (server.players.length >= MAX_PLAYERS) { drop('The game is full'); break; }
           this.pendingGuests.splice(this.pendingGuests.indexOf(g), 1);
           server.addPlayer(g.conn, name, false, msgs.slice(msgs.indexOf(m) + 1)).then(() => {
@@ -824,7 +825,7 @@ export class Client {
       setTimeout(() => { if (this.modWaits.get(id) === resolve) { this.modWaits.delete(id); resolve(null); } }, 60000);
     });
     const confirm = (names: string[]) => new Promise<boolean>((resolve) => {
-      this.ui.open(new ConfirmScreen(this.ui, 'The host plays with mods that aren\'t in the mod repository:', names.join(', ') + ' (they run code in this page)', 'Install and join', (ok) => {
+      this.ui.open(new ConfirmScreen(this.ui, 'The host plays with mods that aren\'t in the mod repository:', t('{0} (they run code in this page)', names.join(', ')), 'Install and join', (ok) => {
         if (ok) this.ui.open(new LoadingScreen(this.ui, 'Getting mods'));
         resolve(ok);
       }));

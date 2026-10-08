@@ -11,6 +11,7 @@ import type { WorldMeta } from './storage';
 import { mirrorBlock, rotateBlock } from '../agent/blockspec';
 import { bbox, type BBox } from '../world/structure';
 import { Random } from '../noise';
+import { tm } from '../i18n/i18n';
 
 export interface StructureTile {
   type: 'structure';
@@ -224,13 +225,13 @@ export function saveStructure(g: Game, x: number, y: number, z: number): string 
   const w = g.world!, t = structureTile(w, x, y, z);
   const name = normName(t.name);
   if (!name) throw new Error('Structure name is missing');
-  if (!validName(name)) throw new Error(`Invalid structure name '${t.name}'`);
+  if (!validName(name)) throw new Error(tm("Invalid structure name '{0}'", t.name));
   const [sx, sy, sz] = t.size;
   if (sx <= 0 || sy <= 0 || sz <= 0) throw new Error('Structure size must be at least 1 in every direction');
   const ox = x + t.pos[0], oy = y + t.pos[1], oz = z + t.pos[2];
   for (let cx = ox >> 4; cx <= (ox + sx - 1) >> 4; cx++) for (let cz = oz >> 4; cz <= (oz + sz - 1) >> 4; cz++) if (!w.chunkAt(cx * 16, cz * 16)) throw new Error('The structure reaches into unloaded chunks');
   putTemplate(g, name, captureTemplate(g, ox, oy, oz, sx, sy, sz, t.entities, t.author));
-  return `Structure saved as '${name}'`;
+  return tm("Structure saved as '{0}'", name);
 }
 
 /**
@@ -242,12 +243,12 @@ export function loadStructure(g: Game, x: number, y: number, z: number, requireS
   const name = normName(t.name);
   if (!name) throw new Error('Structure name is missing');
   const tpl = getTemplate(g, name);
-  if (!tpl) throw new Error(`Structure '${name}' is not available`);
+  if (!tpl) throw new Error(tm("Structure '{0}' is not available", name));
   const same = tpl.size.every((n, i) => n === t.size[i]);
   if (!same) { t.size = [...tpl.size]; w.setTile(x, y, z, t as never); }
-  if (requireSize && !same) return `Size of '${name}' is ${tpl.size.join(' x ')}: load again to place it`;
+  if (requireSize && !same) return tm("Size of '{0}' is {1}: load again to place it", name, tpl.size.join(' x '));
   placeTemplate(g, tpl, x + t.pos[0], y + t.pos[1], z + t.pos[2], { mirror: t.mirror, rotation: t.rotation, integrity: t.integrity, seed: t.seed, entities: t.entities });
-  return `Structure loaded from '${name}'`;
+  return tm("Structure loaded from '{0}'", name);
 }
 
 /** Save mode's Detect: fit the box inside the corner blocks of the same name (up to 80 blocks away). */
@@ -266,15 +267,15 @@ export function detectStructure(g: Game, x: number, y: number, z: number): strin
       found.push([bx, by, bz]);
     }
   }
-  if (!found.length) throw new Error(`No corner blocks named '${name}' found`);
+  if (!found.length) throw new Error(tm("No corner blocks named '{0}' found", name));
   const lo = [0, 1, 2].map((a) => Math.min(...found.map((p) => p[a]))), hi = [0, 1, 2].map((a) => Math.max(...found.map((p) => p[a])));
   if (hi.some((h, a) => h - lo[a] < 2)) throw new Error('The corner blocks must enclose at least one block in every direction');
   const size = hi.map((h, a) => h - lo[a] - 1) as [number, number, number];
-  if (size.some((s) => s > MAX_SIZE)) throw new Error(`The corners are too far apart (at most ${MAX_SIZE})`);
+  if (size.some((s) => s > MAX_SIZE)) throw new Error(tm('The corners are too far apart (at most {0})', MAX_SIZE));
   t.pos = [lo[0] - x + 1, lo[1] - y + 1, lo[2] - z + 1];
   t.size = size;
   w.setTile(x, y, z, t as never);
-  return `Size detected: ${size.join(' x ')}`;
+  return tm('Size detected: {0}', size.join(' x '));
 }
 
 /** Redstone: a rising edge saves (save mode) or loads (load mode). */

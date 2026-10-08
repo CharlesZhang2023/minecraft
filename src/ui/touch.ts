@@ -20,6 +20,7 @@ import type { UI } from './ui';
 import type { Input } from '../game/input';
 import { device } from '../game/device';
 import * as Menus from './menus';
+import { TextField } from './screen';
 import { PAD_B, PAD_S, padOrigin, touchHotbar } from './touchlayout';
 import { getItem, I } from '../game/items';
 import { Entity } from '../entity/entity';
@@ -89,6 +90,8 @@ class SoftKeyboard {
     el.addEventListener('compositionend', () => { this.composing = false; this.flush(); });
     el.addEventListener('input', () => this.flush());
     el.addEventListener('keydown', (e) => {
+      // (with a keyboard, Enter while an input method composes picks the words, it doesn't send)
+      if (!device.touch && e.isComposing) return;
       if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         this.input.synthKey('Enter', 'Enter');
@@ -111,6 +114,20 @@ class SoftKeyboard {
     this.el.value = SENT;
     this.prev = SENT;
     try { this.el.setSelectionRange(SENT.length, SENT.length); } catch { /* ignore */ }
+  }
+
+  /**
+   * With a keyboard, while something is being typed: keep the hidden box focused (every frame), so input methods
+   * compose Chinese and the like there; their word list shows by `at` (CSS pixels).
+   */
+  syncDesktop(want: boolean, at: { x: number; y: number } | null) {
+    const el = this.el;
+    if (want && document.activeElement !== el) {
+      this.reset();
+      try { el.focus({ preventScroll: true }); } catch { /* ignore */ }
+      this.reset();
+    } else if (!want && document.activeElement === el) el.blur();
+    if (want && at) { el.style.left = `${Math.round(at.x)}px`; el.style.top = `${Math.round(at.y)}px`; }
   }
 
   /** Show or hide the keyboard to match the open screen. Focus only sticks when called from a user gesture. */
@@ -179,6 +196,14 @@ export class TouchControls {
   }
   /** Is the keyboard bridge needed after a screen change made outside a touch handler? */
   syncKeyboard() { this.keyboard.sync(); }
+  /** With a keyboard: typing goes through the hidden box while the screen takes text (see SoftKeyboard.syncDesktop). */
+  syncDesktopKeyboard() {
+    if (device.touch) return;
+    const s = this.ui.screen, want = !!s?.wantsText();
+    const f = want ? (s!.widgets.find((w) => w instanceof TextField && w.focused) as TextField | undefined) : undefined;
+    const k = this.canvas.width / Math.max(1, this.canvas.clientWidth || window.innerWidth), g = this.ui.gui.scale / k;
+    this.keyboard.syncDesktop(want, f ? { x: f.x * g, y: (f.y + f.h) * g } : { x: 8, y: (this.ui.gui.h - 16) * g });
+  }
 
   // ---------------------------------------------------------------- layout (GUI units)
   private buttons(): Btn[] {
@@ -209,7 +234,7 @@ export class TouchControls {
     out.push({ id: 'chat', x: mid - 8, y: 1, w: 16, h: 16 }, { id: 'pause', x: mid + 10, y: 1, w: 16, h: 16 });
     const u = this.useTarget;
     if (u) {
-      const w = this.ui.gui.font.width(u.label) + 16;
+      const w = this.ui.gui.textWidth(u.label) + 16;
       out.push({ id: 'use', x: mid - Math.ceil(w / 2), y: H - 58, w, h: 18 });
     }
     return out;

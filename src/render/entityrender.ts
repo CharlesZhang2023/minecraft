@@ -40,6 +40,7 @@ import { EnderDragon, EndCrystal, dragonPose, DRAGON_SCALE } from '../entity/dra
 import { EyeOfEnder } from '../entity/eye';
 import { dragonModel, dragonSkin } from './dragonmodel';
 import { decodeSkin, isCustom, isPreset, lookSlim, presetSkin } from './skins';
+import { glyphVersion } from '../ui/unifont';
 
 interface PartGPU { mesh: ModelMesh; def: M.ModelPart }
 interface ModelGPU { parts: Map<string, PartGPU> }
@@ -1315,7 +1316,9 @@ export class EntityRenderer {
         const v = w.get(bx, by, bz), def = BLOCKS[idOf(v)];
         const wall = def?.shape === Shape.WallSign;
         if (!def || (!wall && def.shape !== Shape.Sign)) continue;
-        const key = 'sign:' + (st.color ?? 15) + ':' + st.lines.join('\n');
+        // (text beyond ASCII is drawn again once its glyphs have arrived)
+        const text = st.lines.join('\n');
+        const key = 'sign:' + (st.color ?? 15) + ':' + text + (/[^\x00-\x7f]/.test(text) ? ':' + glyphVersion : '');
         let tex = this.signTextures.get(key);
         if (!tex) {
           if (this.signTextures.size > 200) {
@@ -1323,11 +1326,12 @@ export class EntityRenderer {
             this.signTextures.clear();
           }
           const cv = document.createElement('canvas');
-          cv.width = 224; cv.height = 64;
+          // twice the font's size: Chinese glyphs are 16 pixels high
+          cv.width = 448; cv.height = 128;
           const ctx = cv.getContext('2d')!;
           ctx.imageSmoothingEnabled = false;
           ctx.save();
-          ctx.scale(1, 1.6);
+          ctx.scale(2, 3.2);
           // dyed text: vanilla darkens the dye a little (black stays black)
           const dc = st.color === undefined || st.color === 15 ? 0 : DYE_RGB[st.color];
           const ink = '#' + (0x1000000 + ((Math.round(((dc >> 16) & 255) * 0.4) << 16) | (Math.round(((dc >> 8) & 255) * 0.4) << 8) | Math.round((dc & 255) * 0.4))).toString(16).slice(1);

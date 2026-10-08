@@ -11,10 +11,12 @@
     "mc": "node tools/agent/mc.mjs",
     "mcp": "node tools/agent/mcp.mjs",
     "sounds": "node tools/sounds/make.mjs",
-    "deploy:cdn": "node tools/cdn.mjs"
+    "deploy:cdn": "node tools/cdn.mjs",
+    "i18n": "node tools/test/run.mjs tools/i18n/zh_tw.ts"
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.74",
+    "opencc-js": "^1.4.2",
     "playwright": "1.57",
     "typescript": "^7.0.2",
     "vite": "^8.3.1"

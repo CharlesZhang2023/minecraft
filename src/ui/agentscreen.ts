@@ -5,6 +5,7 @@ import { Screen, Button, TextField } from './screen';
 import type { UI } from './ui';
 import type { Ctx } from './gui';
 import { agentLink, agentStatus, parsePairing, savePairing, forgetPairing, remembered, startAgent, stopAgent, DEFAULT_PORT } from '../agent/pairing';
+import { t } from '../i18n/i18n';
 
 export class AgentScreen extends Screen {
   code!: TextField;
@@ -25,7 +26,7 @@ export class AgentScreen extends Screen {
       new Button(this.ui, W / 2 + 94, top + 56, 56, 20, 'Paste', () => this.paste()),
       new Button(this.ui, W / 2 - 150, y, 148, 20, () => (agentStatus() === 'off' ? 'Connect' : 'Reconnect'), () => this.connect()),
       Object.assign(new Button(this.ui, W / 2 + 2, y, 148, 20, 'Disconnect', () => this.disconnect()), { enabled: true }),
-      new Button(this.ui, W / 2 - 150, y + 24, 300, 20, () => `Remember on this device: ${this.remember ? 'ON' : 'OFF'}`, () => {
+      new Button(this.ui, W / 2 - 150, y + 24, 300, 20, () => t('Remember on this device: {0}', t(this.remember ? 'ON' : 'OFF')), () => {
         this.remember = !this.remember;
         const pr = agentLink.pairing;
         if (!this.remember) { try { localStorage.removeItem('mc-agent-pair-remember'); } catch { /* fine */ } }
@@ -78,7 +79,7 @@ export class AgentScreen extends Screen {
     }[st];
     // a message for a few seconds, else how the connection is
     if (this.message && performance.now() - this.messageAt < 5000) g.textCenter(ctx, this.message, W / 2, top + 84, '#FFAAAA');
-    else g.textCenter(ctx, agentLink.error ? `Error: ${agentLink.error}` : label, W / 2, top + 84, agentLink.error ? '#FF5555' : col);
+    else g.textCenter(ctx, agentLink.error ? t('Error: {0}', agentLink.error) : label, W / 2, top + 84, agentLink.error ? '#FF5555' : col);
     g.textCenter(ctx, 'It connects to this computer only, not to the server.', W / 2, H - 42, '#808080');
     super.render(ctx, mx, my);
   }
