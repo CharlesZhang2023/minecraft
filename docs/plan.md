@@ -244,6 +244,141 @@ RoboMaster suits the game: the field is regular geometry, the match is already a
   stops at a hinge or bearing, the far side becomes its own sub-level, and the two are joined there.
 - Check: `mc launch`, build a cart with `mc build`, start it with redstone, follow it with `mc shot`.
 
+## Acceptance
+
+A phase is done when every check below passes and its output is in the conversation and in
+[progress.md](progress.md). Status lives in progress.md, not here.
+
+Numbers are in metres, seconds and radians, measured in the simulation (game time, not wall-clock time) unless a
+check says otherwise. New scenarios go in `tools/test/` in the style of `tools/test/blueprints.mjs` (lines starting
+`ok` or `FAIL`, exit code 1 on any `FAIL`) and are added to `tools/test/all.mjs`.
+
+### Every phase
+
+- `npm run check` exits 0.
+- `node tools/test/all.mjs` (dev server on port 5177): no scenario fails that passed in the baseline recorded in
+  progress.md before P0.
+- The new mods are listed in `mods/README.md`'s examples and have a README of their own.
+- `npm run build` succeeds.
+
+### P0 Joints
+
+`node tools/test/joints.mjs`:
+- **Cart**: a block-built cart with four wheels on bearings, driven by `mechanics` motor blocks powered with
+  redstone, travels at least 10 blocks over generated terrain within 30 s.
+- **Pendulum**: a sub-level on a hinge, let go 45° from hanging straight down, passes the bottom at least 4 times
+  within 10 s and never goes past 50°.
+- **No jamming**: Rapier reports no contacts between two sub-levels joined to each other.
+- **Saving**: after saving and reopening the world, the joints are there with the same anchors and axes, and the
+  cart still drives.
+- **Removing**: breaking the hinge block, or landing either side, removes the joint and leaves no Rapier joint
+  behind.
+- **Unchanged without joints**: a sub-level with no joints, assembled in the air, falls and comes to rest on the
+  terrain as before (sub-level count, resting height within 0.1).
+
+### P1 Assemblies and URDF
+
+`node tools/test/run.mjs tools/test/urdfparse.ts` (Node): the four URDF files in `mods/robotics/urdf/`
+(`diffbot`, `mecanum`, `gimbal`, `arm6`) parse with the right numbers of links and joints, joint types, limits and
+masses; a file with xacro left in fails with a message saying to run xacro first.
+
+`node tools/test/robotics.mjs`:
+- **E2**: with the research setting on, a free body falls at 9.81 ± 0.1 m/s² after 1 s; with 10 substeps,
+  `subLevelSubstep` fires 10 times a tick; with the setting off, gravity is 11 as before.
+- **E3**: `mechanics` provides a service and a test mod requires it and calls it; requiring a service nobody
+  provides fails with a clear message.
+- **E4**: a method registered by `robotics` shows in `node tools/agent/mc.mjs help` and can be called from it.
+- **Mass**: each robot's total mass matches its URDF within 1%.
+- **diffbot**: commanded forward, it covers 5 m in 10 s, heading within 10° of where it started.
+- **mecanum**: commanded sideways, it covers 2 m in 5 s, drifting less than 0.5 m forward or back.
+- **gimbal**: yaw and pitch reach targets within 0.02 rad in 2 s.
+- **arm6**: every joint reaches a target within 0.05 rad in 3 s; a target past a limit stops at the limit.
+- **Teleoperation**: simulated W key input drives diffbot forward at least 2 m.
+
+### P2 Lockstep and Gym
+
+`node tools/test/lockstep.mjs`:
+- `sim.pause` stops the world: `game.ticks` is unchanged over 1 s of wall-clock time.
+- `sim.step` with n advances exactly n ticks.
+- `world.reset` brings bodies back to the snapshot within 1e-6.
+- **Replays**: with the deterministic Rapier build, two runs from one snapshot with the same actions give identical
+  observations, bit for bit, over 500 steps in the same browser.
+- **Batching**: 64 environments in one tab step at least 5 times as many environment steps per second as one;
+  both numbers recorded.
+
+In `python/` (its own virtual environment, `python/.venv`, gitignored):
+- `python -m pytest python/tests` passes, including `gymnasium.utils.env_checker.check_env` on `Lander-v0`.
+- **Lander baseline**: the random policy's mean return and landing rate over 50 episodes, recorded. A landing is a
+  touchdown slower than 2 m/s, upright within 15°, inside the pad.
+- **Lander trained**: PPO (Stable-Baselines3), at most 2 hours wall-clock, lands in at least 50% of 50 evaluation
+  episodes.
+
+**Node**: `node tools/test/run.mjs tools/test/headless.ts` steps `Lander-v0` for 1000 ticks with no browser, or
+progress.md records exactly what stops it and what was tried (see Defaults).
+
+### P3 Sensors and ROS
+
+`node tools/test/sensors.mjs`:
+- **Lidar**: facing a wall 4.5 m away, the centre beam reads 4.5 ± 0.05; beams also hit sub-levels.
+- **Depth**: the centre pixel reads the wall's distance within 0.05.
+- **Segmentation**: the centre pixel is the wall's block id.
+- **IMU**: at rest, acceleration 9.81 ± 0.1 upward and angular rate under 0.01 rad/s.
+- **Link camera**: a picture of the requested size from a camera fixed to a link, with the camera moving when the
+  link does.
+
+`node tools/test/rosbridge.mjs`, against a stand-in rosbridge server written in Node:
+- the game connects and publishes `/clock`, `/tf`, `/joint_states`, `/scan` and `/imu` with the fields ROS
+  expects;
+- `/cmd_vel` from the stand-in drives diffbot.
+
+**Real ROS 2 and Nav2**: if `ros2` is on the PATH, Nav2 drives diffbot from A to B in a map imported from Java
+Edition. Otherwise this item is blocked for the user, and progress.md says how to run it.
+
+### P4 RoboMaster
+
+`node tools/test/robomaster.mjs`:
+- The field builds from `mods/robomaster/rules.json`; every number there names its source (rule manual edition and
+  section) or is marked as a placeholder.
+- A projectile on an armour plate takes the configured damage; on any other part, none.
+- Barrel heat over its limit, and chassis power over its limit, are punished the way the config says.
+- Destroying the base ends the match with the right winner.
+- **3v3**: scripted robots play a whole match to a result within the configured match time.
+- **Dataset**: the generator writes 100 images with labels; every labelled plate corner is inside its image, and
+  five spot-check pictures with the labels drawn on are saved in `output/tests`.
+- **Multiplayer**: a host and a guest page both show the match and the guest drives a robot; or progress.md
+  records why the test harness can't open two pages in one world.
+
+### P5 Platform
+
+- **Policies in the page**: the trained lander, exported to ONNX and run with ONNX Runtime Web, lands within 10
+  points of its Python landing rate over 50 episodes.
+- **Shared link**: opening the game with a policy in the address runs it headless with no other set-up.
+- **Meshes**: a URDF with STL and OBJ visuals draws in both WebGPU and WebGL 2 (pictures in `output/tests`, the
+  link's screen area not empty).
+- **Legged robot**: Unitree Go2 from its public URDF stands for 10 s under PD control without its base dropping
+  below 0.2 m. Walking 1 m in 10 s, with a scripted gait or a policy, is tried and its result recorded.
+- **Benchmark**: at least four tasks registered in `gym` (`Lander-v0`, a diffbot go-to-goal, an arm reach, Go2
+  standing), each passing `check_env`, each with a random baseline recorded.
+
+## Defaults
+
+Decisions made in advance, for working without the user. Each one used is noted in progress.md's decision log.
+
+| When | Do |
+|---|---|
+| Rapier isn't good enough for legs | Note it. P5's legged check is standing, which stays required; walking is recorded, not required. Don't switch engines. |
+| Node can't run the simulation | Try a `worker_threads` stand-in for the inline workers first, then a world that only loads saved chunks. If both fail, record why; batched environments in a tab are the training path. |
+| PPO doesn't reach the landing rate | Tune twice (reward shaping, hyperparameters), each within the 2-hour limit. If it still falls short, record the curves; the phase counts as done only if the rate is met, so then keep trying other fixes before moving on. |
+| No ROS 2 on this machine | Don't install it (it needs system packages). Test with the stand-in server; mark the real Nav2 run blocked for the user. |
+| RoboMaster numbers | The latest public rule manual that can be found; otherwise a reasonable placeholder, marked in `rules.json`. |
+| A new npm or pip package is needed | Allowed. Pin the version; npm packages from the registry only. |
+| An existing test fails after a change | Fix the change, not the test. Change a test only if the test itself was wrong, and say why in progress.md. |
+| A check here turns out wrong or impossible | Replace it with an equivalent or stricter one in this file, with the reason in progress.md. Never loosen a number without a recorded reason. |
+| Anything else unclear | Pick the simpler choice that is easy to undo, note it, carry on. |
+
+Never, whatever happens: push, deploy (`npm run deploy:cdn`, `wrangler`), change `dist/`, `dist-cdn/` or `cdn/`,
+rewrite git history, or work on `main`.
+
 ## Risks
 
 | Risk | Answer |

@@ -22,3 +22,7 @@ public/sounds/
 
 # editor swap files
 *.swp
+
+# Python environment for python/ (docs/plan.md, P2)
+python/.venv/
+__pycache__/
