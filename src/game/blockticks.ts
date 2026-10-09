@@ -3,7 +3,7 @@ import { hardenConcrete, basaltForms, updateColumn } from './blockrules';
 import './growth';
 import type { Game } from './game';
 import type { World, Chunk } from '../world/world';
-import { B, B2, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston, isFire } from '../world/blocks';
+import { B, B2, BLOCKS, idOf, metaOf, pack, isLeaves, isLog, isSapling, isSoil, OPAQUE, Render, CHUNK_H, HORIZ, isFlower, LIGHT_OPACITY, FACING6, isPiston, isFire, WATERLOGGED } from '../world/blocks';
 import { familyCanStay } from './families';
 import { stationScheduled } from './stations';
 import { chestLoot } from './loot';
@@ -193,12 +193,16 @@ export class BlockTicker {
     return d.solid || d.fluid && false;
   }
   private canFlowInto(x: number, y: number, z: number, fluid: number) {
-    const id = this.world.getId(x, y, z);
+    const v = this.world.get(x, y, z), id = idOf(v);
     if (id === fluid) return false;
+    // kelp, seagrass and waterlogged blocks already hold water: nothing flows in and washes them away
+    if (WATERLOGGED[v]) return false;
     if (id === B.LAVA || id === B.WATER) return false;
     return !this.blocksFlow(id);
   }
   private level(v: number, fluid: number): number {
+    // (they count as water sources for the water around them)
+    if (fluid === B.WATER && WATERLOGGED[v]) return 0;
     if (idOf(v) !== fluid) return -1;
     return metaOf(v);
   }
@@ -279,7 +283,7 @@ export class BlockTicker {
     for (let i = 0; i < 4; i++) {
       const nx = x + DIRS4[i][0], nz = z + DIRS4[i][1];
       const nv = w.get(nx, y, nz);
-      if (this.blocksFlow(idOf(nv)) || (idOf(nv) === fluid && metaOf(nv) === 0) || (idOf(nv) !== fluid && BLOCKS[idOf(nv)].fluid)) continue;
+      if (this.blocksFlow(idOf(nv)) || this.level(nv, fluid) === 0 || WATERLOGGED[nv] || (idOf(nv) !== fluid && BLOCKS[idOf(nv)].fluid)) continue;
       if (!this.blocksFlow(w.getId(nx, y - 1, nz))) cost[i] = 0;
       else cost[i] = this.flowCost(nx, y, nz, 1, i, fluid);
     }
@@ -295,7 +299,7 @@ export class BlockTicker {
       if (i === opposite) continue;
       const nx = x + DIRS4[i][0], nz = z + DIRS4[i][1];
       const nv = w.get(nx, y, nz);
-      if (this.blocksFlow(idOf(nv)) || (idOf(nv) === fluid && metaOf(nv) === 0)) continue;
+      if (this.blocksFlow(idOf(nv)) || this.level(nv, fluid) === 0 || WATERLOGGED[nv]) continue;
       if (!this.blocksFlow(w.getId(nx, y - 1, nz))) return depth;
       if (depth < 4) {
         const c = this.flowCost(nx, y, nz, depth + 1, i, fluid);

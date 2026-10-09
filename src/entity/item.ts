@@ -15,6 +15,8 @@ export class ItemEntity extends Entity {
   bobOffset = Math.random() * Math.PI * 2;
   persist = true;
   lifespan = 6000;
+  /** Explosions wear it down (vanilla: 5). */
+  health = 5;
   constructor(world: World, public game: Game, public item: ItemStack) {
     super(world);
     this.width = 0.25;

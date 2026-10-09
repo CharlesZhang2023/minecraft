@@ -250,6 +250,40 @@ const pigs = await run((g, p, { blocks }) => {
 });
 ok(pigs?.type === 'spawner' && pigs.mob === 'pig', `a placed spawner holds a pig (${JSON.stringify(pigs)})`);
 
+// flowing water passes kelp, seagrass and waterlogged stairs by: they hold water already (it used to wash kelp out
+// of the sea floor as items, endlessly)
+const wash = await run((g, p, { blocks }) => {
+  const x = Math.floor(p.x), y = Math.floor(p.y) + 40, z = Math.floor(p.z) - 25, w = g.world;
+  // (wide enough that no edge within 4 draws the water away from them)
+  for (let a = -6; a <= 12; a++) for (let c = -6; c <= 6; c++) { w.set(x + a, y - 1, z + c, 1); for (let b = 0; b < 3; b++) w.set(x + a, y + b, z + c, 0); }
+  const id = (n) => blocks.BLOCKS.findIndex((b) => b?.name === n);
+  w.set(x + 2, y, z, id('kelp'));
+  w.set(x + 4, y, z, id('seagrass'));
+  w.set(x + 6, y, z, blocks.pack(id('oak_stairs'), 8));
+  window.__wash = [x, y, z];
+  w.set(x, y, z, blocks.B.WATER);
+  return [x, y, z];
+});
+await wait(4000);
+const washed = await run((g, p, { blocks }) => {
+  const [x, y, z] = window.__wash, w = g.world, n = (dx) => blocks.BLOCKS[w.getId(x + dx, y, z)].name;
+  const items = g.entities.filter((e) => e.typeName === 'Item' && Math.abs(e.x - x) < 10 && Math.abs(e.z - z) < 4).length;
+  return { kelp: n(2), seagrass: n(4), stairs: n(6), water: n(1), items };
+});
+ok(washed.kelp === 'kelp' && washed.seagrass === 'seagrass' && washed.stairs === 'oak_stairs' && washed.water === 'water' && washed.items === 0, `flowing water leaves kelp, seagrass and waterlogged stairs be (${JSON.stringify(washed)})`);
+
+// explosions destroy dropped items as far as they hurt (items have 5 health), but not nether stars
+const blast = await run((g, p, { items }) => {
+  const x = Math.floor(p.x) + 25, y = Math.floor(p.y) + 40, z = Math.floor(p.z) + 25, w = g.world;
+  for (let a = -8; a <= 8; a++) for (let c = -8; c <= 8; c++) { w.set(x + a, y - 1, z + c, 1); for (let b = 0; b < 4; b++) w.set(x + a, y + b, z + c, 0); }
+  const drop = (dx, dz, id) => { const e = g.dropItem(x + 0.5 + dx, y + 0.01, z + 0.5 + dz, { id, count: 1 }); e.vx = e.vy = e.vz = 0; e.onGround = true; return e; };
+  const near = [[2, 0], [0, -3], [5, 0], [0, 6], [-4, -4]].map(([a, c]) => drop(a, c, 4));
+  const star = drop(1, 1, items.itemId('nether_star'));
+  g.interact.explode(x + 0.5, y + 0.49, z + 0.5, 4, false, null);
+  return { gone: near.filter((e) => e.removed).length, of: near.length, star: !star.removed };
+});
+ok(blast.gone === blast.of && blast.star, `a TNT blast destroys the dropped items around it, out to 6 blocks, and leaves the nether star (${JSON.stringify(blast)})`);
+
 ok(t.errors.length === 0, 'no page errors ' + t.errors.slice(0, 3).join(' | '));
 await t.close();
 console.log(fails.length ? `${fails.length} failed` : 'all passed');

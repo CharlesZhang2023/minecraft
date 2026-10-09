@@ -1375,8 +1375,10 @@ export class Interaction {
       const impact = (1 - d) * exposure;
       const shooter = (source as unknown as { shooter?: Entity } | null)?.shooter;
       const attacker = source instanceof LivingEntity ? source : shooter instanceof LivingEntity ? shooter : null;
-      if (e instanceof LivingEntity && e !== attacker) e.damage(Math.floor(((impact * impact + impact) / 2) * 7 * r2 + 1), 'explosion', attacker);
-      if (e instanceof ItemEntity && impact > 0.3) { e.removed = true; continue; }
+      const dmg = Math.floor(((impact * impact + impact) / 2) * 7 * r2 + 1);
+      if (e instanceof LivingEntity && e !== attacker) e.damage(dmg, 'explosion', attacker);
+      // dropped items take the same damage (they have 5 health, as in vanilla); nether stars survive blasts
+      if (e instanceof ItemEntity && impact > 0 && getItem(e.item.id).name !== 'nether_star' && (e.health -= dmg) <= 0) { e.removed = true; continue; }
       e.vx += ex * impact; e.vy += ey * impact; e.vz += ez * impact;
     }
     // sound & particles
@@ -1434,7 +1436,8 @@ export class Interaction {
         for (let k = 0; k <= 1; k += 0.5) {
           const px = b.x0 + (b.x1 - b.x0) * i, py = b.y0 + (b.y1 - b.y0) * j, pz = b.z0 + (b.z1 - b.z0) * k;
           const d = Math.hypot(px - x, py - y, pz - z);
-          const r = raycastBlocks(this.world, x, y, z, (px - x) / d, (py - y) / d, (pz - z) / d, d);
+          // (stopping just short: a point on the bottom of something lying on the ground isn't hidden by the ground)
+          const r = raycastBlocks(this.world, x, y, z, (px - x) / d, (py - y) / d, (pz - z) / d, d - 0.01);
           if (!r || !OPAQUE[this.world.getId(r.x, r.y, r.z)] && !BLOCKS[this.world.getId(r.x, r.y, r.z)].solid) hit++;
           total++;
         }
