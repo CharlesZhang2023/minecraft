@@ -5,7 +5,8 @@ import { decodeColors, type MapData } from '../game/maps';
 import { Renderer, Camera } from '../render/renderer';
 import { LodManager } from '../world/lod';
 import { LOD_TEXTURES, type LodPalette } from '../world/lodgen';
-import { World, Dimension, TileEntity } from '../world/world';
+import { World, Dimension, TileEntity, type Chunk } from '../world/world';
+import { GHOST_LAYERS } from './ghosts';
 import { Player } from '../game/player';
 import { Input } from '../game/input';
 import { device } from '../game/device';
@@ -433,6 +434,7 @@ export class Client {
 
   private dropWorld() {
     this.audio.setWind(0, 1);
+    for (const l of this.ghostLayers) l.dispose(this.renderer);
     if (!this.world) return;
     for (const c of this.world.chunks.values()) this.renderer.freeChunk(c);
     this.world.destroy();
@@ -714,6 +716,8 @@ export class Client {
     if (wheel && !this.ui.screen) p.inventory.selected = (((p.inventory.selected + wheel) % 9) + 9) % 9;
   }
 
+  /** Mouse buttons a mod's clientClick listener took: not sent as held until they're let go. */
+  private clickTaken = new Set<number>();
   /** Tell the server where we are and what we're pressing. */
   private sendInput(inp: { forward: number; strafe: number; jump: boolean; sneak: boolean }) {
     const p = this.player!, conn = this.conn;
@@ -722,15 +726,27 @@ export class Client {
     const va = this.viewAim;
     const act = va !== undefined ? !!va && !this.ui.screen && !p.dead : i.locked && !this.ui.screen && !p.dead;
     const aim = va !== undefined ? va?.dir ?? null : this.touchAim() ? (i.aim ? this.screenRay(i.aim.x, i.aim.y) : null) : this.lookVec(p.yaw, p.pitch);
-    const pressed = va ? [...va.pressed] : i.takeMousePressed();
+    let pressed = va ? [...va.pressed] : i.takeMousePressed();
     if (va) i.takeMousePressed();
+    // mods' tools may take a click for themselves; the button then stays theirs until it's let go
+    const down: Iterable<number> = va ? va.down : i.mouseDown;
+    const isDown = (b: number) => (va ? va.down.includes(b) : i.mouseDown.has(b));
+    for (const b of this.clickTaken) if (!isDown(b)) this.clickTaken.delete(b);
+    if (act && pressed.length && Events.clientClick.any) {
+      pressed = pressed.filter((b) => {
+        const r = Events.clientClick.fire({ client: this, button: b, target: this.target });
+        if (r === undefined) return true;
+        this.clickTaken.add(b);
+        return false;
+      });
+    }
     // a swing at a mob or at the air starts the attack charge over, as it does on the server (for the crosshair bar)
     if (act && pressed.includes(0) && (this.targetEntity || !this.target)) p.attackTicks = 0;
     const held =['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'MetaLeft'].filter((k) => i.isDown(k));
     conn.send({
       t: 'in', x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, yaw: p.yaw, pitch: p.pitch,
       g: p.onGround, sn: p.sneaking, sp: p.sprinting, fl: p.flying, jp: inp.jump, gl: p.gliding, sw: p.swimming, wh: p.wallHit, fw: inp.forward, st: inp.strafe,
-      j: p.jumps, sel: p.inventory.selected, act, md: act ? (va ? [...va.down] : [...i.mouseDown]) : [], mp: act ? pressed : [],
+      j: p.jumps, sel: p.inventory.selected, act, md: act ? [...down].filter((b) => !this.clickTaken.has(b)) : [], mp: act ? pressed : [],
       dir: aim ? [aim.x, aim.y, aim.z] : null, kd: held, kp: this.keyQueue, tp: this.tpId,
     });
     p.jumps = 0;
@@ -1150,6 +1166,8 @@ export class Client {
   steer: ((inp: MoveInput) => MoveInput) | null = null;
   /** Drawn into the world after blocks and entities (lines and boxes from tools, with `r.drawLines`). */
   overlays: ((r: Renderer, cam: Camera) => void)[] = [];
+  /** Layers of ghost blocks drawn with the world's chunks (schematic previews): see GhostLayer. Emptied with the world. */
+  readonly ghostLayers = GHOST_LAYERS;
   /** More places to draw besides around the player (the server must stream them: `ServerPlayer.views`). */
   views: { x: number; z: number; r: number }[] = [];
 
@@ -1413,6 +1431,8 @@ export class Client {
     } else r.drawnLod = 0;
     const ships = this.shipDraws(t);
     r.drawChunks(w.chunks.values(), 'opaque', ships);
+    const ghosts = this.ghostChunks(w);
+    if (ghosts.length) r.drawChunks(ghosts, 'opaque', [], true);
     this.entityRenderer.render(this, t);
     this.drawSelection();
     this.drawStructureBoxes();
@@ -1422,6 +1442,7 @@ export class Client {
     this.particles!.build(pm, cam.x, cam.y, cam.z, t, yaw, pitch);
     r.drawDyn(pm, { blend: false, cull: false, alphaCut: 0.1 });
     r.drawChunks(w.chunks.values(), 'trans', ships);
+    if (ghosts.length) r.drawChunks(ghosts, 'trans', [], true);
     if (!nether && !end) {
       if (!ortho) r.drawClouds(192.33);
       this.weather!.render(t);
@@ -1455,6 +1476,17 @@ export class Client {
     if (this.ui.previewBox) this.entityRenderer.renderPreview(this, this.ui.previewBox, this.gui.scale);
     r.endFrame();
     this.ui.render(ctx);
+  }
+
+  /** Ghost blocks to draw this frame (their changes go to the workers first). */
+  private ghostChunks(w: World): Chunk[] {
+    if (!this.ghostLayers.length) return [];
+    const out: Chunk[] = [];
+    for (const l of this.ghostLayers) {
+      l.update(w, this.renderer);
+      for (const c of l.drawList()) out.push(c);
+    }
+    return out;
   }
 
   /** The sub-levels near enough to draw, posed for this frame. */

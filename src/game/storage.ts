@@ -107,7 +107,8 @@ export const Storage = {
   },
   async deleteWorld(id: string) {
     await tx('worlds', 'readwrite', (s) => s.delete(id));
-    await tx('chunks', 'readwrite', (s) => s.delete(IDBKeyRange.bound(id + ':', id + ':￿')));
+    // the Overworld's chunks are under the world's id, the other dimensions' under id~nether and id~end
+    for (const store of [id, id + '~nether', id + '~end']) await tx('chunks', 'readwrite', (s) => s.delete(IDBKeyRange.bound(store + ':', store + ':￿')));
   },
   async chunkKeys(worldId: string): Promise<Set<string>> {
     try {
@@ -169,6 +170,8 @@ export interface SavedChunk {
   tiles?: unknown;
   /** Saves from before multiplayer deltas don't have it (the server regenerates the chunk to work it out). */
   base?: SavedBase;
+  /** Not made by this game's generator (imported from another game): there's no base, players get it whole. */
+  foreign?: boolean;
 }
 
 export function rleEncode(a: Uint16Array): Uint16Array {

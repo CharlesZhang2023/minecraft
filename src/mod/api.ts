@@ -4,14 +4,16 @@
 import { Render, B, BLOCKS, TEXTURES, pack, idOf, metaOf, HORIZ, FACE_DIRS, FACING6, HORIZ_TO_FACE, tex, blockByName, type BlockOpts } from '../world/blocks';
 import { I, I2, I3, I4, I5, I6, ITEMS, getItem, stack, itemByName, type ItemStack } from '../game/items';
 import { MOD_RECIPES, TAGS, type Ingredient } from '../game/recipes';
-import { rotY, orient6 } from '../world/models';
+import { rotY, orient6, stairShape, chestPartnerDir, joins, wireConnections, wireClimbs, POT_PLANTS } from '../world/models';
+import { stateOf, parseBlock, formatBlock, rotateBlock, mirrorBlock, partnerOf, stateValues, withState, familyOf, suggest } from '../agent/blockspec';
 import { Random } from '../noise';
+import { BIOMES } from '../world/biomes';
 import { registerBlock, registerItem, modBlock, modItem, type BlockRef, type ItemRef, type ItemProps } from './registry';
 import { Events, type EventName, type EventFn } from './events';
 import { inject, type Injection } from './mixin';
 import {
   COMMANDS, CHANNELS, ENTITIES, FEATURES, MAX_PAYLOAD, live,
-  type CommandDef, type EntityFactory, type FeatureSpec, type OreSpec, type ScreenFactory, type TileRenderer, type EntityRendererFn, type TouchButtonDef,
+  type CommandDef, type EntityFactory, type FeatureSpec, type OreSpec, type ScreenFactory, type TileRenderer, type EntityRendererFn, type TouchButtonDef, type WorldActionDef,
 } from './hooks';
 import { defineConfig, type ConfigSchema, type ConfigValues } from './config';
 import { modState } from './state';
@@ -23,16 +25,33 @@ import type { Player } from '../game/player';
 import type { Screen } from '../ui/screen';
 import type { Img } from '../render/pixels';
 import type { PageMc } from './page';
+import { GhostLayer } from '../client/ghosts';
 
 /** The game's own pieces that work everywhere (the page and workers). */
 export const commonMc = {
   B, BLOCKS, I, I2, I3, I4, I5, I6, ITEMS, Render, getItem, stack, itemByName, blockByName, pack, idOf, metaOf, tex,
   HORIZ, FACE_DIRS, FACING6, HORIZ_TO_FACE, rotY, orient6, Random, TAGS,
+  /** The biomes, by the index chunks keep (`chunk.biomes[z * 16 + x]`): `BIOMES[i].name` ('Plains', 'Snowy Taiga'...). */
+  BIOMES,
   /** A texture layer's name (BlockDef.faces holds layers). */
   textureName: (layer: number) => TEXTURES[layer],
   /** A box in 16ths with one texture layer (or one per face: -x +x -y +y -z +z). */
   box: (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, t: number | number[], extra: Partial<import('../world/models').Box> = {}) =>
     ({ x0, y0, z0, x1, y1, z1, tex: Array.isArray(t) ? t : [t, t, t, t, t, t], ...extra }),
+  /**
+   * Block states in words, the way commands and the agent tools write them: `oak_stairs[facing=east,half=top]`.
+   * `stateOf(v)` names a packed value's properties, `parseBlock` / `formatBlock` go between names and values,
+   * `rotateBlock(v, quarterTurns)` / `mirrorBlock(v, 'x' | 'z')` turn a state with a structure, `partnerOf(v)` is the
+   * other half of a door or bed, and `stateValues(id)` lists what each property can be.
+   */
+  blockspec: { stateOf, parseBlock, formatBlock, rotateBlock, mirrorBlock, partnerOf, stateValues, withState, familyOf, suggest },
+  /**
+   * How blocks join their neighbours, as the game draws them (`nb(dx, dy, dz)` reads a neighbour's packed value):
+   * a stair's corner shape (0 straight, 1-2 outer left/right, 3-4 inner left/right), the side a chest's partner is
+   * on, the sides (N, E, S, W) a fence / pane / wall joins on, a redstone wire's sides and climbs, and what a flower
+   * pot holds by meta (block ids).
+   */
+  shapes: { stairShape, chestPartnerDir, joins, wireConnections, wireClimbs, POT_PLANTS },
 };
 /** Everything mods can reach of the game. In workers only the common part exists. */
 export type Mc = typeof commonMc & PageMc;
@@ -79,6 +98,14 @@ export interface ClientApi {
   setView(view: ClientView | null): void;
   /** This mod's view, if it's the one in use. */
   view(): ClientView | null;
+  /**
+   * A new layer of ghost blocks: blocks drawn with the world's own models that aren't in the world (a schematic's
+   * preview). Fill it a chunk column at a time with `setColumn(cx, cz, blocks)`; it's meshed in the background and
+   * drawn while the mod is in play. It's emptied when the player changes world or dimension.
+   */
+  ghostLayer(): GhostLayer;
+  /** An action on the world list (Singleplayer, More...): importing a world from elsewhere, exporting one. */
+  worldAction(def: WorldActionDef): void;
 }
 
 export interface ModContext {
@@ -146,6 +173,8 @@ export function createContext(manifest: ModManifest, mc: Mc, client: ClientApi |
   const inertClient: ClientApi = {
     texture: noop, itemSprite: noop, sound: noop, screen: noop, keybind: noop, tileRenderer: noop, entityRenderer: noop,
     creativeTab: noop, configScreen: noop, openScreen: noop, touchButton: noop, setView: noop, view: () => null,
+    ghostLayer: () => new GhostLayer(id),
+    worldAction: noop,
   };
   const ctx: ModContext = {
     id, version: manifest.version, manifest, realm: modState.realm, mc,

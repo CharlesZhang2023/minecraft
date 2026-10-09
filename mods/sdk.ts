@@ -31,3 +31,7 @@ export type { Ctx } from '../src/ui/gui';
 export type { SubLevel } from '../src/sublevel/ship';
 export type { SubLevels, BlockPhysics } from '../src/sublevel/server';
 export type { Pose, Quat, Vec3 } from '../src/sublevel/pose';
+export type { GhostLayer } from '../src/client/ghosts';
+export type { BlockHit } from '../src/game/raycast';
+export type { WorldActionDef } from '../src/mod/hooks';
+export type { WorldMeta } from '../src/game/storage';

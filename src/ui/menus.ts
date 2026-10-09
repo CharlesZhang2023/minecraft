@@ -1,5 +1,6 @@
 // Menu screens: title, world selection/creation, loading, pause, options, death, chat, sleep.
-import { session } from '../mod/hooks';
+import { session, WORLD_ACTIONS } from '../mod/hooks';
+import { isActive } from '../mod/state';
 import { device } from '../game/device';
 import { Screen, Button, Slider, TextField } from './screen';
 import type { UI } from './ui';
@@ -239,7 +240,10 @@ export class SelectWorldScreen extends Screen {
       this.play,
       new Button(this.ui, W / 2 + 4, H - 52, 150, 20, 'Create New World', () => this.ui.open(new CreateWorldScreen(this.ui, this))),
       this.del,
-      Object.assign(new Button(this.ui, W / 2 - 76, H - 28, 72, 20, 'Edit', () => {}), { enabled: false }),
+      // mods' world actions (importing a world from elsewhere, exporting one) behind More...
+      worldActions().length
+        ? new Button(this.ui, W / 2 - 76, H - 28, 72, 20, 'More...', () => this.ui.open(new WorldActionsScreen(this.ui, this, this.worlds[this.selected] ?? null)))
+        : Object.assign(new Button(this.ui, W / 2 - 76, H - 28, 72, 20, 'Edit', () => {}), { enabled: false }),
       new Button(this.ui, W / 2 + 4, H - 28, 150, 20, 'Cancel', () => this.ui.open(new TitleScreen(this.ui))),
     ];
     this.update();
@@ -308,6 +312,30 @@ export class SelectWorldScreen extends Screen {
   override key(e: KeyboardEvent) {
     if (e.code === 'Escape') { this.ui.open(new TitleScreen(this.ui)); return true; }
     if (e.code === 'Enter') { this.playSel(); return true; }
+    return super.key(e);
+  }
+}
+
+const worldActions = () => WORLD_ACTIONS.filter((a) => isActive(a.mod));
+
+/** Mods' actions on saved worlds, for the world picked in the list (if any). */
+class WorldActionsScreen extends Screen {
+  constructor(ui: UI, private parent: SelectWorldScreen, private world: WorldMeta | null) { super(ui); }
+  override init() {
+    const W = this.gui.w, H = this.gui.h;
+    const list = worldActions();
+    const top = Math.max(40, H / 2 - list.length * 12 - 12);
+    const back = () => this.ui.open(new SelectWorldScreen(this.ui));
+    this.widgets = list.map((a, i) => Object.assign(new Button(this.ui, W / 2 - 100, top + i * 24, 200, 20, a.label, () => a.run(this.ui, this.world, back)), { enabled: !a.needsWorld || !!this.world }));
+    this.widgets.push(new Button(this.ui, W / 2 - 100, top + list.length * 24 + 8, 200, 20, 'Cancel', () => this.ui.open(this.parent)));
+  }
+  override render(ctx: Ctx, mx: number, my: number) {
+    this.gui.dirtBackground(ctx);
+    this.gui.textCenter(ctx, this.world ? t('World: {0}', this.world.name) : 'More', this.gui.w / 2, 20, '#FFFFFF');
+    super.render(ctx, mx, my);
+  }
+  override key(e: KeyboardEvent) {
+    if (e.code === 'Escape') { this.ui.open(this.parent); return true; }
     return super.key(e);
   }
 }

@@ -37,6 +37,8 @@ export class Chunk {
   /** Server: loaded from a save made before bases were recorded: work it out by generating the chunk again. */
   needsBase = false;
   basing = false;
+  /** Blocks that didn't come from this game's generator (a world imported from elsewhere): no base, players get it whole. */
+  foreign = false;
   /** Client: we generate this chunk ourselves from the seed (then apply the server's changes to it). */
   localGen = false;
   /** Client: what the generated blocks must hash to before the changes; null = not checked (far terrain). */
@@ -51,7 +53,9 @@ export class Chunk {
   constructor(public cx: number, public cz: number) {}
 }
 
-type Job = { type: 'gen' | 'mesh' | 'light' | 'base'; chunk: Chunk; version?: number };
+type Job = { type: 'gen' | 'mesh' | 'light' | 'base'; chunk: Chunk; version?: number } | { type: 'extra'; done: (r: never) => void };
+/** Work for the workers that isn't this world's own chunks (ghost blocks' meshes, terrain for an export). */
+interface ExtraJob { msg: Record<string, unknown>; done: (r: never) => void }
 /** Where a chunk's blocks came from (the server records the generator's version as the chunk's base). */
 type Source = 'gen' | 'disk' | 'net';
 
@@ -72,6 +76,8 @@ export class World {
   chunks = new Map<number, Chunk>();
   private workers: { w: Worker; busy: boolean; job: Job | null }[] = [];
   private jobId = 0;
+  /** Jobs for others (ghost blocks' meshes, terrain for an export), done when the world's own work leaves a worker free. */
+  private extraJobs: ExtraJob[] = [];
   savedKeys = new Set<string>();
   onMesh: (c: Chunk, r: MeshResult) => void = () => {};
   onUnload: (c: Chunk) => void = () => {};
@@ -123,6 +129,35 @@ export class World {
   }
   isLoaded(x: number, z: number) {
     return !!this.chunkAt(Math.floor(x), Math.floor(z));
+  }
+  /**
+   * Mesh blocks that aren't this world's, in its workers: `chunks` and `biomes` are a 3x3 neighbourhood (row by
+   * row from -x -z, the centre fifth) like a chunk's. `done` gets the mesh (it waits behind the world's own jobs).
+   */
+  meshExtra(chunks: Uint16Array[], biomes: Uint8Array[], done: (r: MeshResult) => void) {
+    this.extraJobs.push({ msg: { type: 'mesh', cx: 0, cz: 0, chunks, biomes, sky: this.hasSky }, done });
+  }
+  /**
+   * The terrain this world's generator makes for chunk (cx, cz), whether or not the world has it (exporting land
+   * nobody has visited). Works for a world nothing else drives too: jobs start as soon as a worker is free.
+   */
+  generateExtra(cx: number, cz: number): Promise<{ blocks: Uint16Array; biomes: Uint8Array }> {
+    return new Promise((done) => {
+      this.extraJobs.push({ msg: { type: 'gen', seed: this.seed, cx, cz, dim: this.dimension }, done });
+      this.pumpExtra();
+    });
+  }
+  /** Start waiting extra jobs on idle workers. */
+  private pumpExtra() {
+    for (const slot of this.workers) {
+      if (!this.extraJobs.length) return;
+      if (!slot.busy) this.startExtra(slot, this.extraJobs.shift()!);
+    }
+  }
+  private startExtra(slot: { w: Worker; busy: boolean; job: Job | null }, x: ExtraJob) {
+    slot.busy = true;
+    slot.job = { type: 'extra', done: x.done };
+    slot.w.postMessage({ ...x.msg, id: ++this.jobId });
   }
   get(x: number, y: number, z: number): number {
     if (y < 0 || y >= CHUNK_H) return 0;
@@ -384,6 +419,8 @@ export class World {
       } else if (g) {
         gi++;
         this.startGen(slot, g[1]);
+      } else if (this.extraJobs.length) {
+        this.startExtra(slot, this.extraJobs.shift()!);
       } else if (baseCands[bi]) {
         const c = baseCands[bi++];
         c.basing = true;
@@ -428,7 +465,10 @@ export class World {
     if (this.savedKeys.has(ks)) {
       // load from disk asynchronously (doesn't occupy the worker)
       Storage.loadChunk(this.worldId, ks).then((saved) => {
-        if (saved) this.acceptChunk(c, rleDecode(saved.blocks, 16 * 16 * CHUNK_H), saved.biomes, 'disk', saved.tiles as [number, TileEntity][] | undefined, undefined, saved.base);
+        if (saved) {
+          c.foreign = !!saved.foreign;
+          this.acceptChunk(c, rleDecode(saved.blocks, 16 * 16 * CHUNK_H), saved.biomes, 'disk', saved.tiles as [number, TileEntity][] | undefined, undefined, saved.base);
+        }
         else {
           this.savedKeys.delete(ks);
           c.loading = false;
@@ -466,7 +506,7 @@ export class World {
       // the base: straight from the generator, or as recorded in the save (older saves: work it out later)
       if (source === 'gen') c.base = { hash: chunkHash(blocks), orig: new Map() };
       else if (saved) c.base = { hash: saved.h, orig: new Map([...saved.i].map((idx, k) => [idx, saved.v[k]])) };
-      else c.needsBase = true;
+      else if (!c.foreign) c.needsBase = true;
     }
     c.blocks = blocks;
     c.biomes = biomes;
@@ -492,6 +532,7 @@ export class World {
     const job = slot.job!;
     slot.busy = false;
     slot.job = null;
+    if (job.type === 'extra') { job.done(d as never); this.pumpExtra(); return; }
     const c = job.chunk;
     if (d.type === 'gen') {
       if (this.chunks.get(chunkKey(c.cx, c.cz)) !== c) return; // unloaded meanwhile
@@ -538,6 +579,7 @@ export class World {
 
   serialize(c: Chunk): SavedChunk {
     const s: SavedChunk = { blocks: rleEncode(c.blocks), biomes: c.biomes, tiles: [...c.tiles.entries()] };
+    if (c.foreign) s.foreign = true;
     if (c.base) s.base = { h: c.base.hash, i: Uint16Array.from(c.base.orig.keys()), v: Uint16Array.from(c.base.orig.values()) };
     return s;
   }

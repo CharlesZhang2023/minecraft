@@ -309,12 +309,15 @@ export abstract class Renderer {
   /** A sun or moon quad (pos 3, uv 2 floats a vertex, around the camera), added on. */
   protected abstract sunPass(verts: Float32Array, tex: 'sun' | 'moon', alpha: number): void;
 
-  /** Chunks near to far (opaque) or far to near (translucent), section runs that are in view, then sub-levels' chunks. */
-  drawChunks(chunkList: Iterable<Chunk>, pass: 'opaque' | 'trans', ships: ShipDraw[] = []) {
+  /**
+   * Chunks near to far (opaque) or far to near (translucent), section runs that are in view, then sub-levels' chunks.
+   * `extra`: more chunk meshes after the world's (ghost blocks), which neither cast shadows nor count in the stats.
+   */
+  drawChunks(chunkList: Iterable<Chunk>, pass: 'opaque' | 'trans', ships: ShipDraw[] = [], extra = false) {
     const cam = this.cam;
     // (often an iterator, and the shadows go through it too)
     const chunks = Array.isArray(chunkList) ? chunkList : [...chunkList];
-    if (pass === 'opaque') this.prepareShadows(chunks, ships);
+    if (pass === 'opaque' && !extra) this.prepareShadows(chunks, ships);
     const list: [number, Chunk][] = [];
     for (const c of chunks) {
       const g = c.mesh as ChunkMesh | null;
@@ -351,7 +354,7 @@ export abstract class Renderer {
       const runs = runsOf(g, (s) => this.boxVisible(ox, s * 16 - cam.y, oz, ox + 16, s * 16 + 16 - cam.y, oz + 16));
       if (runs.length) draws.push({ mesh: g, ox, oy: -cam.y, oz, rot: IDENT3, px: 0, py: 0, pz: 0, runs });
     }
-    if (pass === 'opaque') this.drawnChunks = list.length;
+    if (pass === 'opaque' && !extra) this.drawnChunks = list.length;
     // sub-levels: each chunk turned about the pivot, then put where the pivot is
     for (const sd of ships) {
       const r = sd.rot;

@@ -2,8 +2,8 @@
 // (browser tests need the dev server: npx vite --port 5177 --strictPort, or MC_PORT=...; MC_GFX=webgl2 draws with WebGL 2)
 import { spawnSync } from 'node:child_process';
 
-const NODE = ['registry', 'recipes', 'nether', 'end', 'overworld', 'translations'];
-const BROWSER = ['families', 'stations', 'nethermobs', 'overworldmobs', 'animals', 'combat', 'progression', 'villages', 'blockrules', 'signs', 'extras', 'endcity', 'banners', 'maps', 'books', 'advancements', 'villagelife', 'bells', 'recipebook', 'commandblocks', 'dispensers', 'chests', 'structures', 'selectors', 'i18n'];
+const NODE = ['registry', 'recipes', 'nether', 'end', 'overworld', 'translations', 'schematics', 'javaworlds'];
+const BROWSER = ['families', 'stations', 'nethermobs', 'overworldmobs', 'animals', 'combat', 'progression', 'villages', 'blockrules', 'signs', 'extras', 'endcity', 'banners', 'maps', 'books', 'advancements', 'villagelife', 'bells', 'recipebook', 'commandblocks', 'dispensers', 'chests', 'structures', 'selectors', 'i18n', 'blueprints', 'javaworld'];
 const arg = process.argv[2];
 const pick = !arg ? [...NODE, ...BROWSER] : arg === 'node' ? NODE : arg === 'browser' ? BROWSER : arg.split(',');
 const results = [];

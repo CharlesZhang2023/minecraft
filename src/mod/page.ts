@@ -26,7 +26,8 @@ import { registerTexture, getTexture } from '../render/textures';
 import { registerItemSprite } from '../render/itemsprites';
 import { registerSound, synth, SAMPLE_RATE } from '../game/audio';
 import { modelBoxes, collisionShapes, selectionShapes } from '../world/models';
-import { SCREENS, KEYBINDS, TILE_RENDERERS, ENTITY_RENDERERS, CREATIVE_TABS, CONFIG_SCREENS, TOUCH_BUTTONS, VIEW, live } from './hooks';
+import { SCREENS, KEYBINDS, TILE_RENDERERS, ENTITY_RENDERERS, CREATIVE_TABS, CONFIG_SCREENS, TOUCH_BUTTONS, VIEW, WORLD_ACTIONS, live } from './hooks';
+import { Storage, rleEncode, rleDecode } from '../game/storage';
 import type { ClientApi } from './api';
 import { blockCtx } from './blockctx';
 import { tex } from '../world/blocks';
@@ -38,6 +39,8 @@ import * as pose from '../sublevel/pose';
 import { airPressure, setBlockPhysics, blockPhysics, PHYS } from '../sublevel/server';
 import { ridingShip } from '../sublevel/collide';
 import { gatherStructure } from '../sublevel/commands';
+import { GhostLayer, GHOST_LAYERS } from '../client/ghosts';
+import { isActive } from './state';
 
 /** The game's classes and helpers (page only). */
 export const pageMc = {
@@ -58,6 +61,12 @@ export const pageMc = {
    * sub-level an entity is standing on.
    */
   SubLevel, pose, airPressure, setBlockPhysics, blockPhysics, PHYS, gatherStructure, ridingShip,
+  /**
+   * Saved worlds (IndexedDB): `listWorlds()`, `saveWorld(meta)`, `chunkKeys(id)` ("cx,cz" of every saved chunk),
+   * `loadChunk(id, key)`, `saveChunks(id, [[key, chunk]])`, with chunks' blocks run-length coded by
+   * `rleEncode` / `rleDecode(data, 65536)`. Write only worlds that aren't open.
+   */
+  storage: Storage, rleEncode, rleDecode,
   /** The page's client and running simulation (null when not playing / not hosting). */
   get client() { return live.client; },
   get game() { return live.game; },
@@ -120,6 +129,12 @@ export function clientApi(mod: string): ClientApi {
       live.client?.viewChanged(was);
     },
     view() { return VIEW.mod === mod ? VIEW.view : null; },
+    worldAction(def) { WORLD_ACTIONS.push({ ...def, mod }); },
+    ghostLayer() {
+      const l = new GhostLayer(mod, () => isActive(mod));
+      GHOST_LAYERS.push(l);
+      return l;
+    },
   };
 }
 

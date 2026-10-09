@@ -13,12 +13,23 @@ export const english = (s) => String(s).replace(/\u0001(.*?)\u0002/gs, (_, json)
   return en.replace(/^(effect|enchantment|mode):(?=\S)/, '').replace(/\{(\d+)\}/g, (all, n) => (args[n] === undefined ? all : english(args[n])));
 });
 
-export async function openWorld({ port = process.env.MC_PORT ?? '5177', seed = 12345, mode = 1, time = 6000, extra = '', width = 1000, height = 600, dim } = {}) {
+export async function openWorld({ port = process.env.MC_PORT ?? '5177', seed = 12345, mode = 1, time = 6000, extra = '', width = 1000, height = 600, dim, mods = [] } = {}) {
   const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal', '--enable-webgl', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage({ viewport: { width, height } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message + ' @ ' + (e.stack ?? '').split('\n').slice(1, 4).join(' <- ')));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // mods from the dev server's repository, installed before the world opens (a fresh browser has none)
+  if (mods.length) {
+    await page.goto(`http://127.0.0.1:${port}/`);
+    await page.waitForFunction(() => !!window.mods, null, { timeout: 60000 });
+    const err = await page.evaluate(async (ids) => {
+      const idx = await (await fetch('/mods/index.json')).json();
+      for (const id of ids) { const e = idx.mods.find((m) => m.id === id); const r = e ? await window.mods.installFromRepo(e) : `no mod ${id}`; if (r) return r; }
+      return null;
+    }, mods);
+    if (err) throw new Error(`installing mods: ${err}`);
+  }
   await page.goto(`http://127.0.0.1:${port}/?autoplay&seed=${seed}&mode=${mode}&time=${time}&id=t${Date.now()}${extra}${process.env.MC_GFX ? '&gfx=' + process.env.MC_GFX : ''}`);
   await page.waitForFunction(() => window.game?.arrived && !window.game.ui.screen && window.game.loadProgress() > 0.99, null, { timeout: 60000 });
   const t = {

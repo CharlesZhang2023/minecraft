@@ -10,6 +10,7 @@ import type { Ctx } from '../ui/gui';
 import type { ActionResult } from './types';
 import type { RenderContext } from './render';
 import type { SubLevel } from '../sublevel/ship';
+import type { BlockHit } from '../game/raycast';
 import { isActive, reportError } from './state';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,6 +88,12 @@ export const Events = {
   subLevelTick: ev<(c: { game: Game; ship: SubLevel; dt: number }) => void>('subLevelTick'),
   // client
   clientTick: ev<(client: Client) => void>('clientTick'),
+  /**
+   * The player clicked in the world (0 attack / mine, 2 use / place), aiming at `target` (the block in reach, or
+   * null): 'success' or 'fail' keeps the click from the server (and holding that button down does nothing until
+   * it's let go), for tools that act on the client, like picking corners of an area.
+   */
+  clientClick: ev<(c: { client: Client; button: number; target: BlockHit | null }) => ActionResult | void>('clientClick'),
   /** Joined a world (single-player or someone else's): the registries are bound, the world is about to load. */
   clientJoin: ev<(client: Client) => void>('clientJoin'),
   /** Draw on the HUD (GUI units, after the game's own HUD). */

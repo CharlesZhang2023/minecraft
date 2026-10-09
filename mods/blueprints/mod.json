@@ -1,0 +1,10 @@
+{
+  "id": "blueprints",
+  "version": "1.0.0",
+  "name": "Blueprints",
+  "description": "Schematics like Litematica: save areas, place them as ghost blocks to build from (layers, verifier, material list, easy place), paste in creative, and import and export Litematica, WorldEdit and structure-block files for Java Edition 1.13 and newer.",
+  "authors": ["Minecraft Web Edition"],
+  "environment": "*",
+  "icon": "item:blueprints:wand",
+  "depends": { "minecraft": ">=1.0.0" }
+}

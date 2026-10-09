@@ -69,6 +69,15 @@ export interface TouchButtonDef {
   onPress(client: Client): void;
 }
 export const TOUCH_BUTTONS: (TouchButtonDef & { mod: string; id: string })[] = [];
+/** Something a mod does with saved worlds (import one, export the selected one), offered on the world list's More... screen. */
+export interface WorldActionDef {
+  label: string;
+  /** Needs a world picked in the list (exporting it); without, it's always offered (importing). */
+  needsWorld?: boolean;
+  /** `world` is the world picked (or null); `back` reopens the world list (showing new or changed worlds). */
+  run(ui: UI, world: import('../game/storage').WorldMeta | null, back: () => void): void;
+}
+export const WORLD_ACTIONS: (WorldActionDef & { mod: string })[] = [];
 
 // ------------------------------------------------------------------ entities
 export type EntityFactory = (world: World, game: Game) => Entity;

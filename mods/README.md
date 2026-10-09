@@ -284,7 +284,7 @@ The full typed interface is `ModContext` in `src/mod/api.ts`.
 | `mod.channel(name)` | A network channel between clients and the server. [Networking](#networking) |
 | `mod.config(schema)` | Per-browser settings with a generated settings page. [Settings](#settings) |
 | `mod.worldData(defaults)` | Data saved with the world, on the server: returns a getter for the current world's copy. |
-| `mod.client.*` | Page-only extension points: `texture`, `itemSprite`, `sound`, `screen`, `keybind`, `touchButton`, `tileRenderer`, `entityRenderer`, `creativeTab`, `configScreen`, `openScreen`, `setView`, `view`. |
+| `mod.client.*` | Page-only extension points: `texture`, `itemSprite`, `sound`, `screen`, `keybind`, `touchButton`, `tileRenderer`, `entityRenderer`, `creativeTab`, `configScreen`, `openScreen`, `setView`, `view`, `ghostLayer`, `worldAction`. |
 | `mod.mc` | The game's pieces (below). |
 
 ### `mod.mc`
@@ -306,6 +306,9 @@ Everywhere (page and workers), from `commonMc` in `src/mod/api.ts`:
 | `rotY(box, facing)`, `orient6(box, facing6)` | Turn boxes (horizontal / any of 6 directions). |
 | `Random` | The game's seeded RNG: `new Random(seed)`, `.next()` in [0, 1), `.int(n)`. |
 | `TAGS` | Ingredient tags (`planks`, `logs`, `wool`…). |
+| `BIOMES` | The biomes, by the index chunks keep (`chunk.biomes[z * 16 + x]`): `BIOMES[i].name`. |
+| `blockspec` | Block states in words, as commands write them: `stateOf(v)` (named properties), `parseBlock('oak_stairs[facing=east]')` / `formatBlock(v)`, `rotateBlock(v, quarterTurns)` / `mirrorBlock(v, 'x' \| 'z')` (turn a state with a structure), `partnerOf(v)` (a door's or bed's other half), `stateValues(id)`, `withState`, `familyOf`, `suggest(name)` (closest block names). |
+| `shapes` | How blocks join their neighbours, as the game draws them (`nb(dx, dy, dz)` reads a neighbour): `stairShape(meta, nb)`, `chestPartnerDir`, `joins(v, nb)` (the sides a fence, pane or wall joins on), `wireConnections` / `wireClimbs`, `POT_PLANTS` (a flower pot's plant by meta). |
 
 Page only, from `pageMc` in `src/mod/page.ts`:
 
@@ -318,6 +321,7 @@ Page only, from `pageMc` in `src/mod/page.ts`:
 | `getTexture(name)` | A block texture's pixels (to paint over, e.g. ore on `getTexture('stone')`). |
 | `synth`, `SAMPLE_RATE` | Sound synthesis: `noise(n, r)`, `tone(n, f0, f1, 'sine'\|'saw'\|'square'\|'tri', vib?, vibF?)`, `lowpass(b, hz)`, `highpass`, `bandpass(b, lo, hi)`, `env(b, attack, decay, curve)`, `mixInto(a, b, gain, offset)`, `normalize(b, peak)`. |
 | `blockCtx(game, x, y, z)` | The context block hooks get, for any block. Server side, in the current dimension. |
+| `storage`, `rleEncode`, `rleDecode` | Saved worlds in this browser: `listWorlds()`, `saveWorld(meta)`, `chunkKeys(storeId)`, `loadChunk(storeId, 'cx,cz')`, `saveChunks(storeId, [[key, chunk]])`. A world's Overworld chunks are stored under its id, the others under `id~nether` and `id~end`; a chunk's `blocks` are run-length coded (`rleDecode(c.blocks, 65536)`). Mark chunks you make yourself `foreign: true` (not this game's generator: players joining get them whole). Write only worlds that aren't open. To have a world's own terrain without opening it, `new mc.World(seed, id, dim, 'local').generateExtra(cx, cz)` (then `destroy()` it). |
 | `device` | `device.touch`: the player is using a finger, not a mouse. |
 | `client`, `game` | Getters: this page's client, and its running simulation (null when not hosting or not playing). Prefer the `client` / `game` your hooks receive. |
 
@@ -631,6 +635,7 @@ It lives on the server only, so send what clients need over a channel.
 | `entityDeath` | server | `{ game, entity, source }` | |
 | `subLevelTick` | server | `{ game, ship, dt }`, each moving sub-level before the physics step | push it ([Sub-levels](#sub-levels-moving-structures)) |
 | `clientTick`, `clientJoin` | client | `client` | |
+| `clientClick` | client | `{ client, button, target }`: a click in the world (0 attack, 2 use) at the block in reach (`target`, or null) | `'success'` / `'fail'` keeps it from the server (and holding that button does nothing until it's let go): tools that act on the client, like picking an area's corners |
 | `screenOpen` | client | `{ screen }` | |
 | `tooltip` | client | `{ stack, lines }` | |
 | `hudRender` | client | `{ ctx, client, width, height, partial }` | draw in GUI units |
@@ -708,6 +713,19 @@ Renderers draw into the world every frame, in world coordinates, through a `Rend
 | `r.tex(name)` | A texture's layer. Item sprites are `'item/<sprite>'`. |
 | `r.light(x, y, z)` | `[sky, block]` light. `[15, 15]` is full bright. |
 | `r.partial`, `r.time`, `r.cam`, `r.client` | `time` is ticks plus the fraction, for animation. |
+
+**World actions.** `mod.client.worldAction({ label, needsWorld?, run(ui, world, back) })` adds a button to the world
+list's **More...** screen (Singleplayer): importing a world from elsewhere, exporting the one picked (`needsWorld`).
+`run` gets the picked world's meta (or null) and `back()`, which reopens the list.
+
+**Ghost blocks.** `const layer = mod.client.ghostLayer()` makes a layer of blocks that are drawn in the world but
+aren't in it: a schematic's preview, a building to come. Fill it a chunk column at a time with
+`layer.setColumn(cx, cz, blocks)`, where `blocks` is a `Uint16Array` of 16 × 16 × 256 packed values indexed like a
+chunk's (`(y * 16 + z) * 16 + x`, 0 is nothing), and `setColumn(cx, cz, null)` removes it. Columns are meshed in the
+background by the game's own mesher (the same models, connections, culling and textures as real blocks) and drawn
+with the world's chunks, solid, while your mod is in play. Nothing collides with them and aiming passes through.
+Set `layer.visible`, or `layer.clear()`. The game empties every layer when the player changes world or dimension.
+Only send columns that changed: each one is meshed again (with its neighbours if its edges changed).
 
 Tips: look up texture layers once (they don't change after load). Very large or very close glows wash out the
 screen, so shrink them near the camera. Skip far-away things.
@@ -1042,6 +1060,7 @@ Each example is a complete mod in this folder; read the one closest to what you'
 | `minimap` (Minimap) | `main.ts` | A client-only mod (`"environment": "client"`): HUD drawing, a rebindable key, a generated settings page. |
 | `overseer` (Overseer) | `main.ts` (wiring), `defs.ts` (units, buildings, blueprints), `cam.ts`, `ctl.ts`, `hud.ts`, `units.ts`, `ai.ts`, `server.ts`, `place.ts`, `state.ts` | A view (`setView`): a flat 2.5D camera, a free pointer with mouse and touch gestures, camera-relative walking and pointer aiming for a hero. A strategy game on top: one mob class for many unit kinds drawn in player skins and armour, server-side unit AI (paths, fights, gathering, building block by block), shared placement rules for the client's ghost and the server's check, `keepLoaded`, a mixin that makes monsters target units, a command, host settings. Its own tour is [`overseer/README.md`](overseer/README.md). |
 | `aeronautics` (Aeronautics) | `main.ts` (wiring), `blocks.ts`, `flight.ts`, `client.ts`, `art.ts` | Sub-levels: assembling and landing structures, forces from the `subLevelTick` event (propellers, hot-air balloons found by a layered flood fill, levitite, gyroscopes), parts that find their sub-level from their tile ticks, a view that turns the movement keys into a pilot's controls sent over a channel, flight readouts on the HUD, tile renderers spinning on moving ships, a hold-to-use tool that drags sub-levels. Its own guide is [`aeronautics/README.md`](aeronautics/README.md). |
+| `blueprints` (Blueprints) | `main.ts` (wiring), `nbt.ts`, `model.ts`, `vanilla.ts`, `tiles.ts`, `formats.ts`, `library.ts`, `placement.ts`, `state.ts`, `capture.ts`, `ghost.ts`, `render.ts`, `paste.ts`, `server.ts`, `blocks.ts`, `ui.ts` | Schematics like Litematica: ghost blocks (`ghostLayer`) compared with the world column by column, a client-side tool (`clientClick`), files read and written in Java Edition's formats (NBT, gzip, Litematica, Sponge, structure files) with the game's blocks in Java's words (`blockspec`, `shapes`), IndexedDB, screens with scrolling lists, a paste streamed to the server in small checked batches, an easy-place request the server checks. Its own guide is [`blueprints/README.md`](blueprints/README.md). |
 | `wands` (Wands) | `main.ts` (wiring), `spelldefs.ts` + `catalog/*.ts` (data), `engine.ts`, `motion.ts`, `server.ts`, `status.ts`, `blocks.ts`, `fx.ts`, `hud.ts`, `editor.ts`, `dummy.ts`, `art.ts`, `icons.ts` | A large mod: hold-to-use items with data in `stack.tag`; server-side projectiles sent as compact per-tick events that each client flies itself; glow rendering; a phone-friendly editor screen with drag and drop, tap-to-move and undo, whose edits the server checks; a touch button; host settings; a mob drawn by its own renderer with private data kept off the entity. Its own reference is [`wands/README.md`](wands/README.md), and every spell is listed in [`wands/SPELLS.md`](wands/SPELLS.md). |
 
 ## Where things are
@@ -1061,6 +1080,8 @@ Each example is a complete mod in this folder; read the one closest to what you'
 | `src/entity/*.ts` | Entities and mobs. |
 | `src/client/client.ts`, `src/ui/*.ts` | The client, screens, HUD, GUI helpers, touch controls. |
 | `src/client/view.ts` | `ClientView`: what a mod's view can take over. |
+| `src/client/ghosts.ts` | Ghost block layers (`mod.client.ghostLayer()`). |
+| `src/agent/blockspec.ts` | Block states in words (`mod.mc.blockspec`). |
 | `src/sublevel/*.ts` | Sub-levels: `ship.ts` (the entity), `server.ts` (`game.sublevels`, physics), `collide.ts` (walking and riding, rays), `pose.ts`, `shipyard.ts`. |
 | `tools/vite-mods.ts` | How mods are built and served. |
 

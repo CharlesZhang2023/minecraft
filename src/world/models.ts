@@ -229,6 +229,17 @@ const connectsWall = (v: number, dir: number) => {
   return SHAPE[id] === BS.Wall || SHAPE[id] === BS.Pane || OPAQUE[id] === 1 || gateAligned(v, dir);
 };
 
+/** The sides (N, E, S, W) a fence, pane, iron bars or wall joins its neighbours on; null for other blocks. */
+export function joins(v: number, nb: Neighbor): boolean[] | null {
+  const id = idOf(v);
+  switch (SHAPE[id]) {
+    case BS.Fence: return HORIZ.map(([dx, dz], d) => connectsFence(id, nb(dx, 0, dz), d));
+    case BS.Pane: return HORIZ.map(([dx, dz]) => connectsPane(nb(dx, 0, dz)));
+    case BS.Wall: return HORIZ.map(([dx, dz], d) => connectsWall(nb(dx, 0, dz), d));
+  }
+  return null;
+}
+
 /** Stair shapes: straight, outer corner left/right, inner corner left/right (vanilla's rules). */
 export const enum StairShape { Straight, OuterLeft, OuterRight, InnerLeft, InnerRight }
 export function stairShape(meta: number, nb: Neighbor | undefined): StairShape {
